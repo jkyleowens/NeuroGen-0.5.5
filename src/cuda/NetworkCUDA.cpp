@@ -11,9 +11,6 @@
 #include <cmath>
 #include <chrono>
 
-// Global network statistics definition (CUDA managed memory for seamless GPU/CPU access)
-__managed__ NetworkStats g_stats;
-
 // ============================================================================
 // CONSTRUCTOR AND DESTRUCTOR
 // ============================================================================
@@ -565,4 +562,19 @@ void NetworkCUDA::processSpikingWrapper() {
     auto end = std::chrono::high_resolution_clock::now();
     
     g_stats.timing_profile.spike_processing_time = static_cast<float>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
+}
+
+void NetworkCUDA::generateDistanceBasedSynapses() {
+    // Implementation to generate synapses based on distance and other biological principles.
+    // This is a placeholder and you will need to fill in the logic based on your design.
+    std::cout << "[NetworkCUDA] Generating distance-based synapses..." << std::endl;
+    
+    int num_neurons = getNumNeurons();
+    int num_synapses = getNumSynapses();
+    
+    std::vector<GPUSynapse> host_synapses(num_synapses);
+    
+    // Your synapse generation logic here...
+    
+    CUDA_CHECK_ERROR(cudaMemcpy(d_synapses, host_synapses.data(), num_synapses * sizeof(GPUSynapse), cudaMemcpyHostToDevice));
 }

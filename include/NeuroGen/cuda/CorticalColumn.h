@@ -335,16 +335,13 @@ struct CorticalColumn {
     }
 };
 
-/**
- * @brief Collection of utility functions for cortical column operations
- */
 namespace ColumnUtils {
     
     /**
      * @brief Calculate inter-column connectivity based on distance and specialization
      */
-    COLUMN_HOST_DEVICE float calculateConnectionProbability(const CorticalColumn& col1, 
-                                                          const CorticalColumn& col2) {
+    inline COLUMN_HOST_DEVICE float calculateConnectionProbability(const CorticalColumn& col1, 
+                                                                  const CorticalColumn& col2) {
         float distance = col1.distanceTo(col2);
         float max_distance = 200.0f;  // 200 micrometers
         
@@ -365,9 +362,9 @@ namespace ColumnUtils {
     /**
      * @brief Update column specialization based on input patterns
      */
-    COLUMN_DEVICE void updateSpecialization(CorticalColumn& column, 
-                                          const float* input_pattern, 
-                                          int pattern_length) {
+    inline COLUMN_DEVICE void updateSpecialization(CorticalColumn& column, 
+                                                  const float* input_pattern, 
+                                                  int pattern_length) {
         if (pattern_length > 8) pattern_length = 8;
         
         // Calculate match between input and column selectivity

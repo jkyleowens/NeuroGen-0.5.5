@@ -1,4 +1,4 @@
-#include "NetworkStats.h"
+#include <NeuroGen/NetworkStats.h>
 #include <sstream>
 #include <iomanip>
 #include <fstream>

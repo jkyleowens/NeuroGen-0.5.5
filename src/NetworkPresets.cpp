@@ -1,4 +1,4 @@
-#include "NetworkPresets.h"
+#include <NeuroGen/NetworkPresets.h>
 
 namespace NetworkPresets {
 
