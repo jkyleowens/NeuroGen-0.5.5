@@ -8,10 +8,10 @@
 #include <functional>
 #include <random>
 
-#include "NeuroGen/Neuron.h"
-#include "NeuroGen/Synapse.h"
-#include "NeuroGen/NetworkStats.h"
-#include "NeuroGen/NetworkConfig.h"
+#include <NeuroGen/Neuron.h>
+#include <NeuroGen/Synapse.h>
+#include <NeuroGen/NetworkStats.h>
+#include <NeuroGen/NetworkConfig.h>
 
 // Forward declaration to prevent circular dependency with NeuralModule
 class NeuralModule;

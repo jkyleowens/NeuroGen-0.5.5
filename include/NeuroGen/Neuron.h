@@ -1,30 +1,72 @@
 #ifndef NEURON_H
 #define NEURON_H
 
-#include "NeuroGen/cuda/NeuronModelConstants.h"
 #include <vector>
-#include <cstdint>
+#include <cstddef>
 
+/**
+ * @struct NeuronParams
+ * @brief Holds all biophysical parameters for the CPU-side neuron model.
+ */
+struct NeuronParams {
+    // Izhikevich model parameters
+    float a = 0.02f;
+    float b = 0.2f;
+    float c = -65.0f; // Reset potential
+    float d = 8.0f;   // Recovery variable reset adjustment
+
+    // Firing and refractory properties
+    float spike_threshold = 30.0f;
+    float absolute_refractory_period = 2.0f; // ms
+};
+
+/**
+ * @class Neuron
+ * @brief Represents a single neuron for CPU-based simulations or initialization.
+ */
 class Neuron {
 public:
-    // Default constructor using constants from the namespace
-    Neuron(uint64_t id);
+    /**
+     * @brief Constructs a Neuron.
+     * @param id A unique identifier for the neuron.
+     * @param params A struct containing the neuron's biophysical parameters.
+     */
+    Neuron(size_t id, const NeuronParams& params);
 
-    // Updates the neuron's state over a single timestep
+    /**
+     * @brief Updates the neuron's state for a single time step.
+     * @param dt The simulation time step in milliseconds.
+     * @param total_input_current The sum of all synaptic currents.
+     */
     void update(float dt, float total_input_current);
 
-    // Checks if the neuron has spiked and resets its state
-    bool has_spiked();
+    /**
+     * @brief Checks if the neuron has fired a spike in the last update.
+     * @return True if the neuron has spiked, false otherwise.
+     */
+    bool has_spiked() const;
 
-    // Getters for state variables
-    uint64_t get_id() const;
+    /**
+     * @brief Gets the neuron's unique identifier.
+     * @return The neuron's ID.
+     */
+    size_t get_id() const;
+
+    /**
+     * @brief Gets the neuron's current membrane potential.
+     * @return The membrane potential in mV.
+     */
     float get_potential() const;
 
 private:
-    uint64_t id;                // Unique identifier for the neuron
-    float potential;            // Membrane potential (in mV)
-    float time_since_last_spike; // Time elapsed since the last spike (in ms)
-    bool spiked;                // Flag indicating if a spike occurred in the current step
+    size_t id_;
+    NeuronParams params_; // Stores the neuron's configuration
+
+    // State variables
+    float potential_;       // Membrane potential (V_m)
+    float recovery_var_;    // Recovery variable (u)
+    float last_spike_time_;
+    bool has_spiked_;
 };
 
 #endif // NEURON_H

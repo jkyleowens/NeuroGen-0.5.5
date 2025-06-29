@@ -1,80 +1,81 @@
 #include <iostream>
+#include <vector>
 #include <memory>
-#include "NeuroGen/ModularNeuralNetwork.h"
 #include "NeuroGen/TaskAutomationModules.h"
 #include "NeuroGen/NetworkConfig.h"
-#include "NeuroGen/Network.h"
+#include "NeuroGen/NeuralModule.h"
+
+// Function to create a default configuration for a neural module
+NetworkConfig create_default_config() {
+    NetworkConfig config;
+    config.num_neurons = 100; // Example: 100 neurons per module
+    config.enable_neurogenesis = true;
+    config.enable_stdp = true;
+    config.enable_pruning = true;
+    return config;
+}
 
 int main() {
-    std::cout << "--- Initializing Modular Neural Network ---" << std::endl;
+    std::cout << "Starting Modular Neural Network Simulation..." << std::endl;
 
-    // 1. Create the main orchestrator for the network of networks.
-    auto modular_net = std::make_unique<ModularNeuralNetwork>();
+    // --- Configuration ---
+    // Create configurations for different modules
+    auto cognitive_config = create_default_config();
+    cognitive_config.neurogenesis_rate = 0.002; // Higher plasticity for cognitive tasks
 
-    // 2. Define configurations for our specialized sub-networks (modules).
-    NetworkConfig sensory_config;
-    // Configure sensory processing module
-    sensory_config.input_size = 128;
-    sensory_config.hidden_size = 256;
-    sensory_config.output_size = 64;
-    sensory_config.dt = 0.1;
-    sensory_config.simulation_time = 1000.0;
-    sensory_config.enable_stdp = true;
-    sensory_config.enable_neurogenesis = true;
-    sensory_config.enable_pruning = true;
+    auto motor_config = create_default_config();
+    motor_config.stdp_learning_rate = 0.005; // Lower learning rate for stable motor control
 
-    NetworkConfig action_config;
-    // Configure action selection module
-    action_config.input_size = 64;
-    action_config.hidden_size = 128;
-    action_config.output_size = 32;
-    action_config.dt = 0.1;
-    action_config.simulation_time = 1000.0;
-    action_config.enable_stdp = true;
-    action_config.enable_neurogenesis = true;
-    action_config.enable_pruning = true;
+    // --- Module Creation ---
+    // Create the underlying neural modules that the task modules will manage
+    auto perception_net = std::make_shared<NeuralModule>("PerceptionNet", cognitive_config);
+    auto planning_net = std::make_shared<NeuralModule>("PlanningNet", cognitive_config);
+    auto motor_control_net = std::make_shared<NeuralModule>("MotorControlNet", motor_config);
 
-    // 3. Create the specialized modules (agents).
-    auto sensory_module = std::make_shared<SensoryProcessingModule>("SensoryModule", sensory_config);
-    auto action_module = std::make_shared<ActionSelectionModule>("ActionModule", action_config);
+    // --- Task-Level Module Creation ---
+    // >>> FIX: Replaced undeclared classes with the correct classes from TaskAutomationModules.h
+    auto cognitive_module = std::make_shared<CognitiveModule>(perception_net, planning_net);
+    auto motor_module = std::make_shared<MotorModule>(motor_control_net);
+    // <<< END FIX
 
-    // 4. Add the modules to the orchestrator.
-    modular_net->addModule(sensory_module);
-    modular_net->addModule(action_module);
+    // --- System Initialization ---
+    // Create a polymorphic vector to hold all task modules
+    std::vector<std::shared_ptr<TaskModule>> task_modules;
+    task_modules.push_back(cognitive_module);
+    task_modules.push_back(motor_module);
 
-    // 5. Initialize all modules (this builds their internal neural circuits).
-    std::cout << "\n--- Initializing all modules... ---" << std::endl;
-    modular_net->initialize();
-    std::cout << "--- Module initialization complete. ---" << std::endl;
-
-
-    // 6. Connect the modules to form a cognitive pathway.
-    // Connect the "OUTPUT" of the sensory module to the "SENSORY_INPUT" of the action module.
-    std::cout << "\n--- Connecting modules... ---" << std::endl;
-    try {
-        modular_net->connect("SensoryModule", "OUTPUT", "ActionModule", "SENSORY_INPUT", 0.1, 0.5);
-        std::cout << "--- Modules connected successfully. ---" << std::endl;
-    } catch (const std::runtime_error& e) {
-        std::cerr << "Error during connection: " << e.what() << std::endl;
-        return 1;
+    // Initialize all modules in a uniform way
+    std::cout << "\nInitializing all task modules..." << std::endl;
+    for (const auto& module : task_modules) {
+        module->initialize();
     }
 
-    // 7. Run the simulation loop.
-    std::cout << "\n--- Starting simulation... ---" << std::endl;
-    const double time_step = 0.1; // ms
-    const int simulation_steps = 1000;
-    for (int i = 0; i < simulation_steps; ++i) {
-        // In a real scenario, you would inject current into the sensory module here
-        // Example: sensory_module->injectCurrentToPopulation("INPUT", sensory_data);
-        
-        modular_net->update(time_step);
+    // --- Simulation Loop ---
+    std::cout << "\nStarting simulation loop..." << std::endl;
+    float total_simulation_time = 100.0f; // ms
+    float dt = 0.1f; // ms
+    int num_steps = static_cast<int>(total_simulation_time / dt);
 
+    for (int i = 0; i < num_steps; ++i) {
+        float current_time = i * dt;
+        // In a real simulation, you would generate inputs here
+        std::vector<float> inputs(100, 0.0f); // Example: 100 input channels
+        if (i % 10 == 0) { // Stimulate every 10 steps
+            inputs[0] = 10.0f; // Inject some current
+        }
+
+        // Update all modules
+        perception_net->update(dt, inputs, 0.1f);
+        planning_net->update(dt, perception_net->get_output(), 0.1f);
+        motor_control_net->update(dt, planning_net->get_output(), 0.1f);
+        
         if (i % 100 == 0) {
-            std::cout << "Simulation step: " << i << std::endl;
+            std::cout << "Time: " << current_time << "ms, Perception Neurons: " 
+                      << perception_net->get_stats().active_neuron_count << std::endl;
         }
     }
 
-    std::cout << "\n--- Simulation finished. ---" << std::endl;
+    std::cout << "\nSimulation finished." << std::endl;
 
     return 0;
 }

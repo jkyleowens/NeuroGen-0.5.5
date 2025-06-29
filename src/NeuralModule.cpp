@@ -1,78 +1,87 @@
-#include <NeuroGen/NeuralModule.h>
+#include "NeuroGen/NeuralModule.h"
+#include <stdexcept>
+#include <iostream>
+#include <vector>
 
-// --- Constructor ---
+// (Constructor and other methods remain the same)
 NeuralModule::NeuralModule(std::string name, const NetworkConfig& config)
-    : module_name_(std::move(name)) {
-    // Now that Network.h is included, std::make_unique has the full definition and works correctly.
+    : module_name_(std::move(name)),
+      active_(true) {
     internal_network_ = std::make_unique<Network>(config);
-}
-
-// --- Core Simulation Methods ---
-void NeuralModule::update(double dt) {
     if (internal_network_) {
-        // This call is now valid because the compiler knows what 'step' is.
-        internal_network_->step(dt);
+        internal_network_->set_module(this);
     }
 }
 
-void NeuralModule::reset() {
-    if (internal_network_) {
-        // This call is now valid.
-        internal_network_->reset();
+NeuralModule::~NeuralModule() = default;
+
+void NeuralModule::update(float dt, const std::vector<float>& inputs, float reward) {
+    if (!active_ || !internal_network_) {
+        return;
     }
+    internal_network_->update(dt, inputs, reward);
+}
+// (set_active, is_active, get_name, etc. remain the same)
+void NeuralModule::set_active(bool active) {
+    active_ = active;
 }
 
-// --- Accessors ---
-const std::string& NeuralModule::getName() const {
+bool NeuralModule::is_active() const {
+    return active_;
+}
+
+const std::string& NeuralModule::get_name() const {
     return module_name_;
 }
 
-Network* NeuralModule::getNetwork() const {
-    return internal_network_.get();
-}
-
-// --- Population and Port Management ---
-
-const std::vector<size_t>& NeuralModule::getNeuronPopulation(const std::string& port_name) const {
-    auto it = neuron_populations_.find(port_name);
-    if (it != neuron_populations_.end()) {
-        return it->second;
+std::vector<float> NeuralModule::get_output() const {
+    if (!internal_network_) {
+        return {};
     }
-    static const std::vector<size_t> empty_vector;
-    return empty_vector;
+    return internal_network_->get_output();
 }
 
-void NeuralModule::addNeuronPopulation(const std::string& port_name, std::vector<size_t> neuron_ids) {
-    neuron_populations_[port_name] = std::move(neuron_ids);
-}
-
-// --- External World Interaction ---
-
-void NeuralModule::injectCurrentToPopulation(const std::string& port_name, const std::vector<double>& currents) {
-    const auto& neuron_ids = getNeuronPopulation(port_name);
-    if (neuron_ids.size() != currents.size()) {
-        return;
-    }
-    for (size_t i = 0; i < neuron_ids.size(); ++i) {
-        // This call is now valid.
-        internal_network_->injectCurrent(neuron_ids[i], currents[i]);
-    }
-}
-
-std::vector<double> NeuralModule::getPotentialsFromPopulation(const std::string& port_name) const {
-    const auto& neuron_ids = getNeuronPopulation(port_name);
-    std::vector<double> potentials;
-    if (neuron_ids.empty()) {
+std::vector<float> NeuralModule::get_neuron_potentials(const std::vector<size_t>& neuron_ids) const {
+    std::vector<float> potentials;
+    if (!internal_network_) {
         return potentials;
     }
-
     potentials.reserve(neuron_ids.size());
+
     for (const auto& neuron_id : neuron_ids) {
-        // This call is now valid.
-        auto neuron = internal_network_->getNeuron(neuron_id);
+        auto neuron = internal_network_->get_neuron(neuron_id);
         if (neuron) {
-            potentials.push_back(neuron->getPotential());
+            potentials.push_back(neuron->get_potential());
+        } else {
+            potentials.push_back(0.0f);
+            std::cerr << "Warning: Neuron with ID " << neuron_id << " not found in module " << module_name_ << std::endl;
         }
     }
     return potentials;
 }
+
+NetworkStats NeuralModule::get_stats() const {
+    if (!internal_network_) {
+        return {};
+    }
+    return internal_network_->get_stats();
+}
+
+Network* NeuralModule::get_network() {
+    return internal_network_.get();
+}
+
+
+// >>> FIX: Implementation for the new port management functions.
+void NeuralModule::register_neuron_port(const std::string& port_name, const std::vector<size_t>& neuron_ids) {
+    neuron_ports_[port_name] = neuron_ids;
+}
+
+const std::vector<size_t>& NeuralModule::get_neuron_population(const std::string& port_name) const {
+    auto it = neuron_ports_.find(port_name);
+    if (it == neuron_ports_.end()) {
+        throw std::runtime_error("Neuron port not found: " + port_name);
+    }
+    return it->second;
+}
+// <<< END FIX

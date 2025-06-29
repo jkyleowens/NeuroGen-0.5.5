@@ -1,32 +1,56 @@
 #ifndef TASK_AUTOMATION_MODULES_H
 #define TASK_AUTOMATION_MODULES_H
 
-#include <NeuroGen/NeuralModule.h> //
+#include "NeuroGen/NeuralModule.h"
+#include <iostream>
+#include <memory>
+#include <vector>
 
 /**
- * @brief An example module for processing sensory information.
- *
- * This module will define an internal network with an "INPUT" population to receive
- * raw sensory data (as injected current) and an "OUTPUT" population whose firing
- * patterns represent the processed sensory state.
+ * @class TaskModule
+ * @brief Abstract base class for all modules that perform a specific task.
  */
-class SensoryProcessingModule : public NeuralModule {
+class TaskModule {
 public:
-    SensoryProcessingModule(const std::string& name, const NetworkConfig& config);
-    void initialize() override;
+    virtual ~TaskModule() = default;
+
+    // A pure virtual function that all derived modules MUST implement.
+    virtual void initialize() = 0;
 };
 
+/**
+ * @class CognitiveModule
+ * @brief A task module responsible for high-level cognitive processes.
+ */
+class CognitiveModule : public TaskModule {
+public:
+    CognitiveModule(std::shared_ptr<NeuralModule> perception, std::shared_ptr<NeuralModule> planning)
+        : perception_module_(perception), planning_module_(planning) {}
+
+    // >>> FIX: Changed the definition to a declaration by removing the function body.
+    void initialize() override;
+    // <<< END FIX
+
+private:
+    std::shared_ptr<NeuralModule> perception_module_;
+    std::shared_ptr<NeuralModule> planning_module_;
+};
 
 /**
- * @brief An example module for selecting an action.
- *
- * Receives input from other modules (like the SensoryProcessingModule) and makes
- * a decision, represented by the activity of its "ACTION_OUTPUT" neurons.
+ * @class MotorModule
+ * @brief A task module responsible for motor control outputs.
  */
-class ActionSelectionModule : public NeuralModule {
+class MotorModule : public TaskModule {
 public:
-    ActionSelectionModule(const std::string& name, const NetworkConfig& config);
+    MotorModule(std::shared_ptr<NeuralModule> motor_control)
+        : motor_control_module_(motor_control) {}
+
+    // >>> FIX: Changed the definition to a declaration.
     void initialize() override;
+    // <<< END FIX
+
+private:
+    std::shared_ptr<NeuralModule> motor_control_module_;
 };
 
 #endif // TASK_AUTOMATION_MODULES_H

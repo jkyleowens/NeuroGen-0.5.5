@@ -7,6 +7,8 @@ NetworkBuilder::NetworkBuilder() {
     // We set the *maximum* allowable neurons here. The actual number will be
     // determined when build() is called.
     config_.max_neurons = 4096; // A default maximum
+    
+    // FIX: Use the 'enable_structural_plasticity' member which is now present.
     config_.enable_structural_plasticity = false;
 }
 
@@ -46,6 +48,8 @@ std::unique_ptr<Network> NetworkBuilder::build() {
     // For now, we'll assume the config needs the *actual* number.
     // Let's create a temporary config for the network constructor.
     NetworkConfig build_config = config_;
+    
+    // FIX: Use the 'num_neurons' member which is now present.
     build_config.num_neurons = total_neurons;
 
 
@@ -85,10 +89,10 @@ std::unique_ptr<Network> NetworkBuilder::build() {
 
     std::cout << "Network built successfully." << std::endl;
     
-    // Correctly get stats using the public accessor methods.
+    // FIX: Correctly get stats using the public member variables.
     NetworkStats final_stats = network->get_stats();
-    std::cout << "Final Stats -> Neurons: " << final_stats.get_num_neurons()
-              << ", Synapses: " << final_stats.get_num_synapses() << std::endl;
+    std::cout << "Final Stats -> Neurons: " << final_stats.active_neuron_count
+              << ", Synapses: " << final_stats.active_synapses << std::endl;
 
     return network;
 }

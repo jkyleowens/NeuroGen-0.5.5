@@ -8,6 +8,10 @@
  * @brief Synaptic connection between neurons with plasticity tracking
  */
 struct Synapse {
+    // >>> FIX: Added missing ID member
+    size_t id;
+    // <<< END FIX
+
     size_t pre_neuron_id;
     size_t post_neuron_id;
     std::string post_compartment;
@@ -29,16 +33,27 @@ struct Synapse {
     double strength_history[10]; // Sliding window for pruning decisions
     size_t history_index;
 
-    Synapse(size_t pre_id, size_t post_id, const std::string& compartment,
+    // >>> FIX: Updated constructor to accept the new ID and all necessary parameters
+    Synapse(size_t id, size_t pre_id, size_t post_id, const std::string& compartment,
             size_t receptor_idx, double w = 0.1, double delay = 1.0)
-        : pre_neuron_id(pre_id), post_neuron_id(post_id),
-          post_compartment(compartment), receptor_index(receptor_idx),
-          weight(w), base_weight(w), axonal_delay(delay),
-          last_pre_spike(-1000.0), last_post_spike(-1000.0),
-          eligibility_trace(0.0), activity_metric(0.0),
-          formation_time(0.0), last_potentiation(0.0), history_index(0) {
+        : id(id), // Initialize the new ID
+          pre_neuron_id(pre_id),
+          post_neuron_id(post_id),
+          post_compartment(compartment),
+          receptor_index(receptor_idx),
+          weight(w),
+          base_weight(w),
+          axonal_delay(delay),
+          last_pre_spike(-1000.0),
+          last_post_spike(-1000.0),
+          eligibility_trace(0.0),
+          activity_metric(0.0),
+          formation_time(0.0),
+          last_potentiation(0.0),
+          history_index(0) {
         std::fill(std::begin(strength_history), std::end(strength_history), w);
     }
+    // <<< END FIX
 };
 
 #endif // SYNAPSE_H

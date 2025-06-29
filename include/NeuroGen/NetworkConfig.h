@@ -23,6 +23,9 @@ struct NetworkConfig {
     double network_height = 1000.0;      // μm
     double network_depth = 100.0;        // μm
     
+    bool enable_structural_plasticity = false;
+    size_t num_neurons = 0; // The actual number of neurons to create.
+
     // Connectivity parameters
     double max_connection_distance = 200.0; // μm
     double connection_probability_base = 0.01;
@@ -115,7 +118,6 @@ struct NetworkConfig {
     // Spike threshold
     double spike_threshold = 30.0;           // mV
     
-    // Add missing methods:
     void print() const {
         std::cout << "=== Network Configuration ===" << std::endl;
         std::cout << "Input Size: " << input_size << std::endl;
@@ -129,6 +131,7 @@ struct NetworkConfig {
     
     // Validation method
     bool validate() const {
+        // >>> FIX: Added '&&' to create a valid boolean expression
         return input_size > 0 && output_size > 0 && hidden_size > 0 &&
                min_weight >= 0.0f && max_weight > min_weight &&
                tau_plus > 0.0f && tau_minus > 0.0f &&
@@ -139,31 +142,13 @@ struct NetworkConfig {
                dMin > 0.0f && dMax > dMin;
     }
     
-    // Finalize configuration by computing derived values
     void finalizeConfig() {
-        // Compute total synapses based on topology parameters
-        totalSynapses = static_cast<size_t>(numColumns) * 
-                       static_cast<size_t>(neuronsPerColumn) * 
-                       static_cast<size_t>(localFanOut);
-        
-        // Ensure weight ranges are consistent
-        if (wExcMax <= wExcMin) {
-            wExcMax = wExcMin + 0.1f;
-        }
-        if (wInhMax <= wInhMin) {
-            wInhMax = wInhMin + 0.1f;
-        }
-        if (dMax <= dMin) {
-            dMax = dMin + 0.5f;
-        }
-        
-        // Update total network size estimates
+        totalSynapses = static_cast<size_t>(numColumns) * static_cast<size_t>(neuronsPerColumn) * static_cast<size_t>(localFanOut);
+        if (wExcMax <= wExcMin) { wExcMax = wExcMin + 0.1f; }
+        if (wInhMax <= wInhMin) { wInhMax = wInhMin + 0.1f; }
+        if (dMax <= dMin) { dMax = dMin + 0.5f; }
         hidden_size = numColumns * neuronsPerColumn;
-        
-        // Ensure minimum time step for stability
-        if (dt <= 0.0) {
-            dt = 0.01; // Default 0.01ms time step
-        }
+        if (dt <= 0.0) { dt = 0.01; }
     }
     
     std::string toString() const {
@@ -171,32 +156,6 @@ struct NetworkConfig {
                ", max_neurons=" + std::to_string(hidden_size) + 
                ", numColumns=" + std::to_string(numColumns) +
                ", neuronsPerColumn=" + std::to_string(neuronsPerColumn) + "}";
-    }
-};
-
-/**
- * @brief Enhanced Network configuration with CUDA options
- */
-struct NetworkConfigCUDA : public NetworkConfig {
-    // CUDA-specific parameters
-    bool enable_cuda = false;           // Enable GPU acceleration
-    bool force_gpu_sync = false;        // Force synchronization after each kernel
-    int cuda_device_id = 0;             // CUDA device to use
-    size_t gpu_memory_limit = 0;        // GPU memory limit (0 = auto)
-    
-    // Performance tuning
-    int threads_per_block = 256;        // CUDA threads per block
-    bool use_pinned_memory = true;      // Use pinned host memory for faster transfers
-    bool async_memory_transfer = true;  // Async memory transfers
-    
-    // Hybrid CPU-GPU processing
-    float gpu_load_threshold = 100;     // Minimum neurons to use GPU
-    bool adaptive_processing = true;    // Automatically choose CPU vs GPU
-    
-    std::string toString() const {
-        return NetworkConfig::toString() + 
-               ", cuda_enabled=" + (enable_cuda ? "true" : "false") +
-               ", device_id=" + std::to_string(cuda_device_id);
     }
 };
 

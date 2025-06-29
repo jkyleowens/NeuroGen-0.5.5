@@ -1,23 +1,19 @@
 #ifndef NEURON_INITIALIZATION_CUH
 #define NEURON_INITIALIZATION_CUH
 
-#include <cuda_runtime.h>
-
-// Forward declarations
-struct GPUNeuronState;
+#include <NeuroGen/cuda/GPUNeuralStructures.h>
 
 /**
- * CUDA kernel for initializing neuron compartments
- * @param neurons Array of neuron states
- * @param N Number of neurons
+ * @brief Initializes the state of all neurons on the GPU.
+ *
+ * This kernel sets each neuron to its baseline resting state before a simulation
+ * begins. It is essential for ensuring a correct and reproducible starting point.
+ * It configures membrane potential, recovery variables, spike times, and all
+ * homeostatic and neuromodulatory parameters to their default initial values.
+ *
+ * @param neurons Pointer to the array of neuron states on the GPU.
+ * @param num_neurons The total number of neurons in the network.
  */
-__global__ void initializeNeuronCompartments(GPUNeuronState* neurons, int N);
-
-/**
- * CUDA kernel for resetting neuron state
- * @param neurons Array of neuron states
- * @param N Number of neurons
- */
-__global__ void resetNeuronState(GPUNeuronState* neurons, int N);
+__global__ void neuronInitializationKernel(GPUNeuronState* neurons, int num_neurons);
 
 #endif // NEURON_INITIALIZATION_CUH
