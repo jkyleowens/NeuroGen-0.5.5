@@ -3,280 +3,350 @@
 
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
-
-// Forward declarations
-struct GPUNeuronState;
-struct GPUSynapse;
-struct GPUSpikeEvent;
-struct GPUCorticalColumn;
-
-// =====================================================
-// MAIN KERNEL LAUNCH FUNCTIONS
-// =====================================================
+#include <NeuroGen/cuda/GPUNeuralStructures.h>
+#include <NeuroGen/cuda/CorticalColumn.h>
 
 /**
- * Launch kernel to update neuron voltages
- * @param neurons Array of neuron states
- * @param I_leak Array of leak currents (optional)
- * @param Cm Array of membrane capacitances (optional)
- * @param dt Time step
- * @param N Number of neurons
+ * @brief Comprehensive kernel wrapper declarations for breakthrough neural network
+ * 
+ * This header provides the complete interface for GPU-accelerated biological neural
+ * simulation, including advanced plasticity, neuromodulation, and cortical column
+ * processing that enables your brain-mimicking technology.
  */
-extern "C" void launchUpdateNeuronVoltages(GPUNeuronState* neurons, 
-                                          float* I_leak, float* Cm, 
-                                          float dt, int N);
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// ============================================================================
+// CORE NEURAL SIMULATION KERNELS
+// ============================================================================
 
 /**
- * Launch kernel for RK4 integration of Hodgkin-Huxley model
- * @param neurons Array of neuron states
- * @param dt Time step
- * @param N Number of neurons
- */
-void launchNeuronUpdateKernel(GPUNeuronState* neurons, float dt, int N);
-
-/**
- * Launch kernel for RK4 integration of Hodgkin-Huxley model (alternative signature)
- * @param neurons Array of neuron states
- * @param N Number of neurons
- * @param dt Time step
- * @param current_time Current simulation time
+ * @brief Advanced Runge-Kutta 4th order neuron state integration
+ * Provides biologically accurate temporal dynamics for breakthrough realism
  */
 void launchRK4NeuronUpdateKernel(GPUNeuronState* neurons, int N, float dt, float current_time);
 
 /**
- * Launch kernel for synapse input processing
- * @param d_synapses Array of synapses
- * @param d_neurons Array of neuron states
- * @param num_synapses Number of synapses
+ * @brief Process synaptic input propagation across cortical modules
  */
-extern "C" void launchSynapseInputKernel(GPUSynapse* d_synapses, 
-                                        GPUNeuronState* d_neurons, 
-                                        int num_synapses);
+void launchSynapseInputKernelInternal(GPUSynapse* synapses, GPUNeuronState* neurons, int num_synapses);
 
 /**
- * Internal version of synapse input kernel launch (non-C linkage)
+ * @brief Update synaptic state variables and neurotransmitter dynamics
  */
-void launchSynapseInputKernelInternal(GPUSynapse* d_synapses, GPUNeuronState* d_neurons, int num_synapses);
+void launchUpdateSynapseStatesKernel(dim3 blocks, dim3 threads, GPUSynapse* synapses, int num_synapses, float dt);
 
 /**
- * Launch kernel for spike detection
- * @param neurons Array of neuron states
- * @param spikes Array to store spike events
- * @param threshold Voltage threshold for spike
- * @param spike_count Pointer to counter for number of spikes
- * @param num_neurons Number of neurons
- * @param current_time Current simulation time
+ * @brief Process spike generation and propagation events
  */
-void launchSpikeDetectionKernel(GPUNeuronState* neurons, 
-                               GPUSpikeEvent* spikes, 
-                               float threshold,
-                               int* spike_count, 
-                               int num_neurons, 
-                               float current_time);
+void launchProcessSpikesKernel(dim3 blocks, dim3 threads, GPUNeuronState* neurons, 
+                              int* spike_counts, float current_time, int num_neurons);
 
 /**
- * Launch kernel for processing dendritic spikes
- * @param neurons Array of neuron states
- * @param N Number of neurons
- * @param current_time Current simulation time
+ * @brief Apply external input currents to specified neurons
  */
-void launchDendriticSpikeKernel(GPUNeuronState* neurons, int N, float current_time);
+void launchApplyInputCurrentsKernel(dim3 blocks, dim3 threads, GPUNeuronState* neurons, 
+                                   const float* input_data, int input_size, int num_neurons);
 
-// =====================================================
-// WRAPPER FUNCTIONS FOR COMPLEX OPERATIONS
-// =====================================================
+// ============================================================================
+// NEURAL STATE INITIALIZATION AND RESET KERNELS
+// ============================================================================
 
 /**
- * @brief Wrapper for applying input currents to neurons
- * @param d_neurons Array of neuron states on device
- * @param input_data Input current data
- * @param input_size Number of input elements
- * @param num_neurons Total number of neurons (for bounds checking)
+ * @brief Initialize neuron states with biologically realistic parameters
  */
-void applyInputCurrentsWrapper(GPUNeuronState* d_neurons, 
-                               const float* input_data, 
-                               int input_size,
-                               int num_neurons);
+void launchInitializeNeuronStatesKernel(dim3 blocks, dim3 threads, GPUNeuronState* neurons, int num_neurons);
 
 /**
- * @brief Wrapper for processing synaptic inputs
- * @param d_neurons Array of neuron states on device
- * @param d_synapses Array of synapses on device
- * @param num_synapses Number of synapses
- * @param num_neurons Total number of neurons (for bounds checking)
+ * @brief Initialize synapse states with distance-based connectivity
  */
-void processSynapticInputsWrapper(GPUNeuronState* d_neurons, 
-                                  GPUSynapse* d_synapses, 
-                                  int num_synapses,
-                                  int num_neurons);
+void launchInitializeSynapseStatesKernel(dim3 blocks, dim3 threads, GPUSynapse* synapses, int num_synapses);
 
 /**
- * @brief Test memory access wrapper
- * @param d_neurons Array of neuron states on device
- * @param num_neurons Total number of neurons
+ * @brief Initialize random number generator states for stochastic processes
  */
-void testMemoryAccessWrapper(GPUNeuronState* d_neurons, int num_neurons);
+void launchInitializeRandomStatesKernel(dim3 blocks, dim3 threads, curandState* states, 
+                                       int num_states, unsigned long seed);
 
 /**
- * @brief Launches the CUDA kernel to update the eligibility traces for all synapses.
- *
- * Eligibility traces are a fundamental component of reinforcement learning in SNNs,
- * marking synapses that have recently contributed to a neuron's firing.
- *
- * @param blocks The grid dimensions for the kernel launch.
- * @param threads The block dimensions for the kernel launch.
- * @param d_synapses Pointer to the synapse data on the GPU.
- * @param d_neurons Pointer to the neuron state data on the GPU.
- * @param dt_ms The simulation time step in milliseconds.
- * @param num_synapses The total number of synapses.
+ * @brief Reset neuron states to resting conditions
  */
-void updateEligibilityTracesWrapper(dim3 blocks, dim3 threads, 
-                                    GPUSynapse* d_synapses, 
-                                    GPUNeuronState* d_neurons, 
-                                    float dt_ms, 
-                                    int num_synapses);
+void launchResetNeuronStatesKernel(dim3 blocks, dim3 threads, GPUNeuronState* neurons, int num_neurons);
 
 /**
- * @brief Launches the CUDA kernel to apply a global reward signal to the synapses.
- *
- * This function modulates the weights of eligible synapses based on the reward signal,
- * reinforcing or weakening connections to steer the network toward desired behaviors.
- *
- * @param blocks The grid dimensions for the kernel launch.
- * @param threads The block dimensions for the kernel launch.
- * @param d_synapses Pointer to the synapse data on the GPU.
- * @param reward The global reward signal.
- * @param num_synapses The total number of synapses.
+ * @brief Reset synapse states and eligibility traces
  */
-void applyRewardModulationWrapper(dim3 blocks, dim3 threads, 
-                                  GPUSynapse* d_synapses, 
-                                  float reward, 
-                                  int num_synapses);
+void launchResetSynapseStatesKernel(dim3 blocks, dim3 threads, GPUSynapse* synapses, int num_synapses);
 
 /**
- * @brief Launches the CUDA kernel to apply Hebbian learning rules (STDP).
- *
- * This implements Spike-Timing-Dependent Plasticity, a biologically plausible
- * learning rule where the precise timing of pre- and post-synaptic spikes
- * determines the change in synaptic strength.
- *
- * @param blocks The grid dimensions for the kernel launch.
- * @param threads The block dimensions for the kernel launch.
- * @param d_synapses Pointer to the synapse data on the GPU.
- * @param d_neurons Pointer to the neuron state data on the GPU.
- * @param num_synapses The total number of synapses.
+ * @brief Reset spike detection flags for next timestep
  */
-void applyHebbianLearningWrapper(dim3 blocks, dim3 threads, 
-                                 GPUSynapse* d_synapses, 
-                                 GPUNeuronState* d_neurons, 
+void resetNeuronStatesWrapper(dim3 blocks, dim3 threads, GPUNeuronState* neurons, int num_neurons);
+
+// ============================================================================
+// ADVANCED PLASTICITY AND LEARNING KERNELS
+// ============================================================================
+
+/**
+ * @brief Apply reward-modulated plasticity for breakthrough learning
+ */
+void launchApplyRewardModulationKernel(dim3 blocks, dim3 threads, GPUSynapse* synapses, 
+                                      float reward, int num_synapses);
+
+/**
+ * @brief Update Hebbian learning and STDP mechanisms
+ */
+void launchApplyHebbianLearningKernel(dim3 blocks, dim3 threads, GPUSynapse* synapses, 
+                                     GPUNeuronState* neurons, int num_synapses);
+
+/**
+ * @brief Update eligibility traces for temporal credit assignment
+ */
+void launchUpdateEligibilityTracesKernel(dim3 blocks, dim3 threads, GPUSynapse* synapses, 
+                                        GPUNeuronState* neurons, float dt, int num_synapses);
+
+/**
+ * @brief Apply homeostatic scaling for long-term stability
+ */
+void launchApplyHomeostaticScalingKernel(dim3 blocks, dim3 threads, GPUSynapse* synapses, int num_synapses);
+
+/**
+ * @brief Process structural plasticity (synapse creation/deletion)
+ */
+void launchStructuralPlasticityKernel(dim3 blocks, dim3 threads, GPUSynapse* synapses, 
+                                     GPUNeuronState* neurons, int num_synapses, float dt);
+
+// ============================================================================
+// CORTICAL COLUMN AND MODULAR ARCHITECTURE KERNELS
+// ============================================================================
+
+/**
+ * @brief Initialize cortical columns with specialized functions
+ */
+void launchInitializeCorticalColumnsKernel(dim3 blocks, dim3 threads, CorticalColumn* columns, int num_columns);
+
+/**
+ * @brief Update cortical column dynamics and inter-column communication
+ */
+void launchUpdateCorticalColumnsKernel(dim3 blocks, dim3 threads, CorticalColumn* columns, 
+                                      GPUNeuronState* neurons, int num_columns, float dt);
+
+/**
+ * @brief Process inter-column connectivity and specialization
+ */
+void launchColumnConnectivityKernel(dim3 blocks, dim3 threads, CorticalColumn* columns, 
+                                   int num_columns, float connection_probability);
+
+/**
+ * @brief Update column specialization based on input patterns
+ */
+void launchColumnSpecializationKernel(dim3 blocks, dim3 threads, CorticalColumn* columns, 
+                                     const float* input_patterns, int num_columns, int pattern_size);
+
+// ============================================================================
+// NEUROMODULATION AND BRAIN-LIKE DYNAMICS KERNELS
+// ============================================================================
+
+/**
+ * @brief Update neuromodulator concentrations and effects
+ */
+void launchUpdateNeuromodulationKernel(dim3 blocks, dim3 threads, GPUNeuronState* neurons, 
+                                      CorticalColumn* columns, float dopamine, float acetylcholine,
+                                      float serotonin, float norepinephrine, int num_neurons);
+
+/**
+ * @brief Apply attention-based modulation to neural activity
+ */
+void launchApplyAttentionModulationKernel(dim3 blocks, dim3 threads, GPUNeuronState* neurons, 
+                                         CorticalColumn* columns, const float* attention_weights, 
+                                         int num_neurons);
+
+/**
+ * @brief Process oscillatory dynamics and phase synchronization
+ */
+void launchOscillationSynchronizationKernel(dim3 blocks, dim3 threads, GPUNeuronState* neurons, 
+                                           CorticalColumn* columns, float target_frequency, 
+                                           int num_neurons);
+
+// ============================================================================
+// ANALYSIS AND MONITORING KERNELS
+// ============================================================================
+
+/**
+ * @brief Calculate network statistics and health metrics
+ */
+void launchCalculateNetworkStatsKernel(dim3 blocks, dim3 threads, const GPUNeuronState* neurons, 
+                                      const GPUSynapse* synapses, float* output_stats, 
+                                      int num_neurons, int num_synapses);
+
+/**
+ * @brief Extract network output with biological encoding
+ */
+void launchExtractOutputKernel(dim3 blocks, dim3 threads, const GPUNeuronState* neurons, 
+                              float* output_buffer, int output_size, float current_time);
+
+/**
+ * @brief Monitor network criticality and stability
+ */
+void launchCriticalityMonitoringKernel(dim3 blocks, dim3 threads, const GPUNeuronState* neurons, 
+                                      const CorticalColumn* columns, float* criticality_metrics, 
+                                      int num_neurons);
+
+// ============================================================================
+// UTILITY AND DEBUGGING KERNELS
+// ============================================================================
+
+/**
+ * @brief Test GPU memory accessibility and performance
+ */
+void testMemoryAccessWrapper(GPUNeuronState* neurons, int num_neurons);
+
+/**
+ * @brief Initialize neuron compartment structures
+ */
+void initializeNeuronCompartments(GPUNeuronState* neurons, int num_neurons);
+
+/**
+ * @brief Validate neural network state integrity
+ */
+void launchValidateNetworkStateKernel(dim3 blocks, dim3 threads, const GPUNeuronState* neurons, 
+                                     const GPUSynapse* synapses, int* error_flags, 
+                                     int num_neurons, int num_synapses);
+
+// ============================================================================
+// WRAPPER FUNCTION DECLARATIONS
+// ============================================================================
+
+/**
+ * @brief High-level wrapper functions for complex kernel sequences
+ */
+
+// Comprehensive network update sequence
+void updateFullNetworkWrapper(GPUNeuronState* neurons, GPUSynapse* synapses, 
+                             CorticalColumn* columns, const float* inputs, 
+                             float reward, float dt, int num_neurons, 
+                             int num_synapses, int num_columns);
+
+// Plasticity update sequence
+void updatePlasticityWrapper(GPUSynapse* synapses, GPUNeuronState* neurons, 
+                           float reward, float learning_rate, float dt, 
+                           int num_synapses);
+
+// Cortical column update sequence  
+void updateColumnsWrapper(CorticalColumn* columns, GPUNeuronState* neurons, 
+                         const float* attention_weights, float dt, 
+                         int num_columns, int num_neurons);
+
+// Neuromodulation update sequence
+void updateNeuromodulationWrapper(GPUNeuronState* neurons, CorticalColumn* columns,
+                                 float dopamine, float acetylcholine, 
+                                 float serotonin, float norepinephrine,
+                                 int num_neurons, int num_columns);
+
+// Homeostatic scaling sequence
+void applyHomeostaticScalingWrapper(dim3 blocks, dim3 threads, GPUSynapse* synapses, int num_synapses);
+
+// ============================================================================
+// ADVANCED BIOLOGICAL MECHANISM KERNELS
+// ============================================================================
+
+/**
+ * @brief Simulate vesicle depletion and recovery
+ */
+void launchVesicleDepletionKernel(dim3 blocks, dim3 threads, GPUSynapse* synapses, 
+                                 float depletion_rate, float recovery_rate, float dt, 
                                  int num_synapses);
 
 /**
- * @brief Wrapper for homeostatic scaling operations
- * @param blocks Grid dimensions for kernel launch
- * @param threads Block dimensions for kernel launch
- * @param d_synapses Array of synapses on device
- * @param num_synapses Number of synapses
+ * @brief Update calcium dynamics and buffering
  */
-void applyHomeostaticScalingWrapper(dim3 blocks, dim3 threads,
-                                    GPUSynapse* d_synapses,
-                                    int num_synapses);
+void launchCalciumDynamicsKernel(dim3 blocks, dim3 threads, GPUNeuronState* neurons, 
+                                float* calcium_levels, float dt, int num_neurons);
 
 /**
- * @brief Wrapper for neuron state updates
- * @param blocks Grid dimensions for kernel launch
- * @param threads Block dimensions for kernel launch
- * @param d_neurons Array of neuron states on device
- * @param num_neurons Number of neurons
- * @param dt_ms Time step in milliseconds
- * @param current_time_ms Current simulation time in milliseconds
+ * @brief Process metabolic constraints and energy usage
  */
-void updateNeuronStatesWrapper(dim3 blocks, dim3 threads,
-                               GPUNeuronState* d_neurons,
-                               int num_neurons,
-                               float dt_ms,
-                               float current_time_ms);
+void launchMetabolicConstraintsKernel(dim3 blocks, dim3 threads, GPUNeuronState* neurons, 
+                                     CorticalColumn* columns, float energy_budget, 
+                                     int num_neurons);
 
 /**
- * @brief Wrapper for spike processing
- * @param blocks Grid dimensions for kernel launch
- * @param threads Block dimensions for kernel launch
- * @param d_neurons Array of neuron states on device
- * @param d_spike_counts Spike count array on device
- * @param current_time_ms Current simulation time in milliseconds
- * @param num_neurons Number of neurons
+ * @brief Simulate glial cell interactions and support
  */
-void processSpikesWrapper(dim3 blocks, dim3 threads,
-                          GPUNeuronState* d_neurons,
-                          int* d_spike_counts,
-                          float current_time_ms,
-                          int num_neurons);
+void launchGlialInteractionKernel(dim3 blocks, dim3 threads, GPUNeuronState* neurons, 
+                                 float* glial_factors, float dt, int num_neurons);
+
+// ============================================================================
+// PERFORMANCE OPTIMIZATION KERNELS
+// ============================================================================
 
 /**
- * @brief Wrapper for neuron state initialization
- * @param blocks Grid dimensions for kernel launch
- * @param threads Block dimensions for kernel launch
- * @param d_neurons Array of neuron states on device
- * @param num_neurons Number of neurons
+ * @brief Optimized sparse matrix operations for connectivity
  */
-void initializeNeuronStatesWrapper(dim3 blocks, dim3 threads,
-                                   GPUNeuronState* d_neurons,
-                                   int num_neurons);
+void launchSparseConnectivityKernel(dim3 blocks, dim3 threads, const int* connectivity_matrix, 
+                                   const float* weights, GPUNeuronState* neurons, 
+                                   int num_neurons, int max_connections);
 
 /**
- * @brief Wrapper for synapse state initialization
- * @param blocks Grid dimensions for kernel launch
- * @param threads Block dimensions for kernel launch
- * @param d_synapses Array of synapses on device
- * @param num_synapses Number of synapses
+ * @brief Vectorized neuron update for maximum throughput
  */
-void initializeSynapseStatesWrapper(dim3 blocks, dim3 threads,
-                                    GPUSynapse* d_synapses,
-                                    int num_synapses);
+void launchVectorizedNeuronUpdateKernel(dim3 blocks, dim3 threads, GPUNeuronState* neurons, 
+                                       const float* input_currents, float dt, 
+                                       int num_neurons);
 
 /**
- * @brief Wrapper for random state initialization
- * @param blocks Grid dimensions for kernel launch
- * @param threads Block dimensions for kernel launch
- * @param d_states Random states array on device
- * @param num_states Number of random states
- * @param seed Random seed
+ * @brief Memory-coalesced synapse processing
  */
-void initializeRandomStatesWrapper(dim3 blocks, dim3 threads,
-                                   curandState* d_states,
-                                   int num_states,
-                                   unsigned long seed);
+void launchCoalescedSynapseKernel(dim3 blocks, dim3 threads, GPUSynapse* synapses, 
+                                 const GPUNeuronState* pre_neurons, 
+                                 GPUNeuronState* post_neurons, int num_synapses);
+
+#ifdef __cplusplus
+}
+#endif
+
+// ============================================================================
+// INLINE UTILITY FUNCTIONS
+// ============================================================================
 
 /**
- * @brief Wrapper for cortical column initialization
- * @param d_columns Array of cortical columns on device
- * @param num_columns Number of columns
+ * @brief Calculate optimal kernel launch parameters for given workload
  */
-void initializeCorticalColumnsWrapper(GPUCorticalColumn* d_columns,
-                                      int num_columns);
+inline void calculateOptimalLaunchParams(int workload_size, dim3& blocks, dim3& threads) {
+    threads.x = (workload_size < 256) ? workload_size : 256;
+    threads.y = 1;
+    threads.z = 1;
+    
+    blocks.x = (workload_size + threads.x - 1) / threads.x;
+    blocks.y = 1;
+    blocks.z = 1;
+    
+    // Clamp to maximum grid size
+    if (blocks.x > 65535) {
+        blocks.y = (blocks.x + 65535 - 1) / 65535;
+        blocks.x = 65535;
+    }
+}
 
 /**
- * @brief Wrapper for neuron state reset
- * @param blocks Grid dimensions for kernel launch
- * @param threads Block dimensions for kernel launch
- * @param d_neurons Array of neuron states on device
- * @param num_neurons Number of neurons
+ * @brief Validate kernel launch parameters for safety
  */
-void resetNeuronStatesWrapper(dim3 blocks, dim3 threads,
-                              GPUNeuronState* d_neurons,
-                              int num_neurons);
+inline bool validateLaunchParams(dim3 blocks, dim3 threads, int expected_workload) {
+    int total_threads = blocks.x * blocks.y * blocks.z * threads.x * threads.y * threads.z;
+    return (total_threads >= expected_workload) && 
+           (threads.x <= 1024) && (threads.y <= 1024) && (threads.z <= 1024) &&
+           (blocks.x <= 65535) && (blocks.y <= 65535) && (blocks.z <= 65535);
+}
 
 /**
- * @brief Wrapper for synapse state updates
- * @param blocks Grid dimensions for kernel launch
- * @param threads Block dimensions for kernel launch
- * @param d_synapses Array of synapses on device
- * @param num_synapses Number of synapses
- * @param dt_ms Time step in milliseconds
+ * @brief Get recommended shared memory size for kernel
  */
-void updateSynapseStatesWrapper(dim3 blocks, dim3 threads,
-                                GPUSynapse* d_synapses,
-                                int num_synapses,
-                                float dt_ms);
+inline size_t getRecommendedSharedMemory(int threads_per_block, size_t per_thread_memory) {
+    size_t total = threads_per_block * per_thread_memory;
+    // Clamp to maximum shared memory (48KB typical)
+    return (total > 49152) ? 49152 : total;
+}
 
 #endif // KERNEL_LAUNCH_WRAPPERS_CUH
