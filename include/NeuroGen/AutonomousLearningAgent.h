@@ -16,6 +16,7 @@
 #include <NeuroGen/TaskAutomationModules.h>
 #include <NeuroGen/EnhancedLearningSystem.h>
 #include <NeuroGen/Phase3IntegrationFramework.h>
+#include <NeuroGen/DynamicNeuralNetwork.h>
 
 // Vision and screen capture
 #ifdef USE_OPENCV
@@ -315,8 +316,9 @@ public:
     
     bool initialize();
     void configure_modules(const std::unordered_map<std::string, NetworkConfig>& module_configs);
+    void configure_learning_parameters(float lr, float decay, float scaling);
     void setup_inter_module_connections();
-    void initialize_visual_system();
+    bool initialize_visual_system();
     
     // ========================================================================
     // AUTONOMOUS OPERATION

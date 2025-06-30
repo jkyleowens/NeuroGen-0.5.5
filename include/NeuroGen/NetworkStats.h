@@ -19,6 +19,16 @@
     #define STATS_MANAGED
 #endif
 
+
+enum class SystemState {
+    STABLE,
+    LEARNING,
+    PRUNING,
+    GROWING,
+    DEGRADED,
+    INACTIVE
+};
+
 /**
  * @brief Comprehensive network statistics for biologically-inspired neural networks
  * 
