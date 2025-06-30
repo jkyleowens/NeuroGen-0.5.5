@@ -18,6 +18,7 @@ CUDA_PATH := /opt/cuda
 
 # Executable Name
 TARGET := NeuroGen
+TARGET_AUTONOMOUS := NeuroGen_Autonomous
 
 # Compiler Flags
 # Note: The -I$(INCLUDE_DIR) flag tells the compilers where to find your header files.
@@ -53,9 +54,16 @@ CUDA_DEPS := $(patsubst $(CUDA_SRC_DIR)/%.cu,$(CUDA_DEPS_DIR)/%.d,$(CUDA_SOURCES
 
 all: $(TARGET)
 
+autonomous: $(TARGET_AUTONOMOUS)
+
 # Linking the final executable
 $(TARGET): $(OBJECTS)
 	@echo "Linking $(TARGET)..."
+	$(LINK) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
+# Linking the autonomous learning executable
+$(TARGET_AUTONOMOUS): $(filter-out $(OBJ_DIR)/main.o,$(OBJECTS)) $(OBJ_DIR)/main_autonomous.o
+	@echo "Linking $(TARGET_AUTONOMOUS)..."
 	$(LINK) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 # C++ compilation rule
@@ -80,9 +88,9 @@ $(OBJ_DIR) $(CUDA_OBJ_DIR) $(DEPS_DIR) $(CUDA_DEPS_DIR):
 
 clean:
 	@echo "Cleaning up..."
-	rm -rf $(OBJ_DIR) $(TARGET) $(DEPS_DIR)
+	rm -rf $(OBJ_DIR) $(TARGET) $(TARGET_AUTONOMOUS) $(DEPS_DIR)
 
-.PHONY: all clean
+.PHONY: all autonomous clean
 
 # Include dependency files
 -include $(DEPS)

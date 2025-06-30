@@ -1,61 +1,341 @@
-#include "NeuroGen/cuda/EnhancedSTDPKernel.cuh"
-#include "NeuroGen/cuda/NeuronModelConstants.h" // Correct header for constants
-#include "NeuroGen/LearningRuleConstants.h"
-#include <math_constants.h> // For CUDART_PI_F
+// ============================================================================
+// COMPLETE CUDA KERNEL IMPLEMENTATIONS
+// File: src/cuda/EnhancedSTDPKernels.cu
+// ============================================================================
 
-// >>> FIX: The function signature now exactly matches the declaration in the .cuh file.
+#include <cuda_runtime.h>
+#include <device_launch_parameters.h>
+#include <math.h>
+#include <cstdio>
+
+// Include our GPU data structures
+#include <NeuroGen/cuda/GPUNeuralStructures.h>
+
+// ============================================================================
+// ENHANCED STDP KERNEL WITH MULTI-FACTOR PLASTICITY
+// ============================================================================
+
+/**
+ * @brief Enhanced STDP kernel with biological realism and multi-factor learning
+ */
 __global__ void enhancedSTDPKernel(
     GPUSynapse* synapses,
     const GPUNeuronState* neurons,
+    GPUPlasticityState* plasticity_states,
+    GPUNetworkConfig* config,
+    GPUNeuromodulatorState* neuromodulators,
     float current_time,
     float dt,
-    int num_synapses)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= num_synapses) return;
-
-    // Use the correct data structures as defined in the header.
-    GPUSynapse& synapse = synapses[idx];
-    if (synapse.active == 0) return;
-
+    int num_synapses
+) {
+    int synapse_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (synapse_idx >= num_synapses) return;
+    
+    GPUSynapse& synapse = synapses[synapse_idx];
+    
+    // Check if synapse is active and plastic
+    if (synapse.active == 0 || !synapse.is_plastic) return;
+    
+    // Get pre and post neurons
+    if (synapse.pre_neuron_idx < 0 || synapse.post_neuron_idx < 0) return;
+    
     const GPUNeuronState& pre_neuron = neurons[synapse.pre_neuron_idx];
     const GPUNeuronState& post_neuron = neurons[synapse.post_neuron_idx];
-
-    // --- 1. Get Spike Timing Information ---
-    float t_pre = pre_neuron.last_spike_time;
-    float t_post = post_neuron.last_spike_time;
-    float dt_spike = t_post - t_pre;
-
-    // --- 2. Calculate Calcium-Dependent Plasticity ---
-    // Get local calcium from the correct compartment of the postsynaptic neuron.
-    int compartment_idx = synapse.post_compartment;
-    float local_calcium = post_neuron.ca_conc[compartment_idx];
-    float calcium_factor = 0.0f;
-
-    // Use the correct, namespaced constants.
-    if (local_calcium > NeuronModelConstants::CA_THRESHOLD_LTP) {
-        calcium_factor = (local_calcium - NeuronModelConstants::CA_THRESHOLD_LTP) / (1.5f - NeuronModelConstants::CA_THRESHOLD_LTP);
-        calcium_factor = fminf(1.0f, calcium_factor);
-    } else if (local_calcium > NeuronModelConstants::CA_THRESHOLD_LTD) {
-        calcium_factor = (local_calcium - NeuronModelConstants::CA_THRESHOLD_LTD) / (NeuronModelConstants::CA_THRESHOLD_LTP - NeuronModelConstants::CA_THRESHOLD_LTD);
-        calcium_factor = -fminf(1.0f, 1.0f - calcium_factor);
-    }
-
-    // --- 3. Calculate Spike-Timing-Dependent Component ---
-    float timing_factor = 0.0f;
-    if (fabsf(dt_spike) < 50.0f) { // 50ms STDP window
-        if (dt_spike > 0) { // Pre-before-post (LTP)
-            timing_factor = NeuronModelConstants::STDP_A_PLUS * expf(-dt_spike / NeuronModelConstants::STDP_TAU_PLUS);
-        } else { // Post-before-pre (LTD)
-            timing_factor = -NeuronModelConstants::STDP_A_MINUS * expf(dt_spike / NeuronModelConstants::STDP_TAU_MINUS);
+    
+    // Multi-compartment STDP with dendritic integration
+    int target_compartment = synapse.post_compartment;
+    if (target_compartment >= MAX_COMPARTMENTS) target_compartment = 0;
+    
+    // Enhanced spike timing calculation
+    float pre_spike_time = pre_neuron.last_spike_time;
+    float post_spike_time = post_neuron.last_spike_time;
+    float delta_t = post_spike_time - pre_spike_time;
+    
+    // Only process recent spike pairs (within 100ms window)
+    if (fabsf(delta_t) > 100.0f) return;
+    
+    // Multi-factor plasticity computation
+    float plasticity_magnitude = 0.0f;
+    
+    // 1. Classical STDP component
+    float stdp_window = 20.0f; // 20ms STDP window
+    if (fabsf(delta_t) < stdp_window) {
+        if (delta_t > 0) {
+            // LTP: Post after pre
+            plasticity_magnitude = __expf(-delta_t / 10.0f) * 0.01f;
+        } else {
+            // LTD: Pre after post
+            plasticity_magnitude = -__expf(delta_t / 10.0f) * 0.008f;
         }
     }
-
-    // --- 4. Combine Factors to Update Eligibility Trace ---
-    // The fast trace represents the immediate potential for change.
-    if (fabsf(calcium_factor) > 0.01f && fabsf(timing_factor) > 0.0001f) {
-        float dw = timing_factor * (1.0f + fabsf(calcium_factor)) * synapse.plasticity_modulation;
-        // The eligibility_trace will be used by the reward modulation kernel later.
-        atomicAdd(&synapse.eligibility_trace, dw);
+    
+    // 2. Calcium-dependent modulation
+    float ca_concentration = post_neuron.ca_conc[target_compartment];
+    float ca_factor = 1.0f + (ca_concentration - 1.0f) * 0.5f; // Baseline ca = 1.0
+    plasticity_magnitude *= ca_factor;
+    
+    // 3. Neuromodulation (dopamine, acetylcholine)
+    float dopamine_factor = 1.0f + neuromodulators->dopamine_concentration * 
+                           synapse.dopamine_sensitivity * 0.3f;
+    float ach_factor = 1.0f + neuromodulators->acetylcholine_level * 
+                      synapse.acetylcholine_sensitivity * 0.2f;
+    plasticity_magnitude *= dopamine_factor * ach_factor;
+    
+    // 4. Metaplasticity: history-dependent scaling
+    plasticity_magnitude *= synapse.metaplasticity_factor;
+    
+    // 5. BCM-like threshold modulation
+    float post_activity = post_neuron.average_firing_rate;
+    float bcm_threshold = post_neuron.bcm_threshold;
+    float bcm_factor = post_activity * (post_activity - bcm_threshold);
+    if (bcm_factor > 0) {
+        plasticity_magnitude *= 1.2f; // Enhance LTP above threshold
+    } else {
+        plasticity_magnitude *= 0.8f; // Reduce below threshold
     }
+    
+    // Apply learning rate and time step
+    float weight_change = plasticity_magnitude * synapse.learning_rate * dt;
+    
+    // Update synaptic weight with bounds
+    synapse.weight += weight_change;
+    synapse.weight = fmaxf(synapse.min_weight, fminf(synapse.weight, synapse.max_weight));
+    
+    // Update eligibility trace
+    synapse.eligibility_trace += fabsf(weight_change);
+    synapse.eligibility_trace *= __expf(-dt / 1000.0f); // 1s decay
+    
+    // Update metaplasticity factor
+    synapse.metaplasticity_factor += weight_change * 0.001f;
+    synapse.metaplasticity_factor = fmaxf(0.5f, fminf(synapse.metaplasticity_factor, 2.0f));
+    
+    // Update activity metrics
+    synapse.activity_metric = synapse.activity_metric * 0.99f + fabsf(weight_change) * 0.01f;
+    synapse.last_active_time = current_time;
+}
+
+/**
+ * @brief BCM learning rule with adaptive threshold
+ */
+__global__ void bcmLearningKernel(
+    GPUSynapse* synapses,
+    const GPUNeuronState* neurons,
+    GPUPlasticityState* plasticity_states,
+    float current_time,
+    float dt,
+    int num_synapses
+) {
+    int synapse_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (synapse_idx >= num_synapses) return;
+    
+    GPUSynapse& synapse = synapses[synapse_idx];
+    if (synapse.active == 0 || !synapse.is_plastic) return;
+    
+    const GPUNeuronState& pre_neuron = neurons[synapse.pre_neuron_idx];
+    const GPUNeuronState& post_neuron = neurons[synapse.post_neuron_idx];
+    
+    // BCM rule: weight change depends on pre and post activity
+    float pre_rate = pre_neuron.firing_rate;
+    float post_rate = post_neuron.firing_rate;
+    float threshold = post_neuron.bcm_threshold;
+    
+    // BCM learning rule
+    float weight_change = plasticity_states->bcm_learning_rate * pre_rate * post_rate * 
+                         (post_rate - threshold) * dt;
+    
+    // Apply change with bounds
+    synapse.weight += weight_change;
+    synapse.weight = fmaxf(synapse.min_weight, fminf(synapse.weight, synapse.max_weight));
+}
+
+/**
+ * @brief Homeostatic regulation kernel
+ */
+__global__ void homeostaticRegulationKernel(
+    GPUSynapse* synapses,
+    GPUNeuronState* neurons,
+    float target_activity,
+    float regulation_strength,
+    float dt,
+    int num_neurons,
+    int num_synapses
+) {
+    int neuron_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (neuron_idx >= num_neurons) return;
+    
+    GPUNeuronState& neuron = neurons[neuron_idx];
+    if (neuron.active == 0) return;
+    
+    // Synaptic scaling based on activity deviation
+    float activity_deviation = neuron.average_firing_rate - target_activity;
+    float scaling_factor = 1.0f - regulation_strength * activity_deviation * dt;
+    scaling_factor = fmaxf(0.5f, fminf(scaling_factor, 2.0f));
+    
+    // Apply scaling to all synapses of this neuron
+    neuron.synaptic_scaling_factor *= scaling_factor;
+    neuron.synaptic_scaling_factor = fmaxf(0.1f, fminf(neuron.synaptic_scaling_factor, 5.0f));
+    
+    // Intrinsic excitability adjustment
+    float excitability_change = -regulation_strength * activity_deviation * dt * 0.1f;
+    neuron.excitability += excitability_change;
+    neuron.excitability = fmaxf(0.5f, fminf(neuron.excitability, 2.0f));
+    
+    // Update BCM threshold
+    float threshold_change = regulation_strength * activity_deviation * dt * 0.01f;
+    neuron.bcm_threshold += threshold_change;
+    neuron.bcm_threshold = fmaxf(0.1f, fminf(neuron.bcm_threshold, 10.0f));
+}
+
+// ============================================================================
+// REINFORCEMENT LEARNING KERNELS
+// File: src/cuda/ReinforcementLearningKernels.cu
+// ============================================================================
+
+/**
+ * @brief Dopaminergic system update kernel
+ */
+__global__ void dopamineUpdateKernel(
+    GPUNeuronState* da_neurons,
+    GPUNeuronState* network_neurons,
+    float reward_signal,
+    float predicted_reward,
+    float current_time,
+    float dt,
+    int num_da_neurons,
+    int num_network_neurons
+) {
+    int da_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (da_idx >= num_da_neurons) return;
+    
+    GPUNeuronState& da_neuron = da_neurons[da_idx];
+    if (da_neuron.active == 0) return;
+    
+    // Compute reward prediction error
+    float prediction_error = reward_signal - predicted_reward;
+    
+    // Update dopamine concentration based on prediction error
+    float dopamine_change = prediction_error * 0.1f * dt;
+    da_neuron.dopamine_concentration += dopamine_change;
+    da_neuron.dopamine_concentration = fmaxf(0.0f, fminf(da_neuron.dopamine_concentration, 2.0f));
+    
+    // Update firing rate based on dopamine level
+    da_neuron.firing_rate = da_neuron.dopamine_concentration * 10.0f; // 10Hz per unit dopamine
+    
+    // Diffuse dopamine to nearby network neurons
+    for (int i = 0; i < fminf(64, num_network_neurons); i++) {
+        int target_idx = (da_idx * 64 + i) % num_network_neurons;
+        GPUNeuronState& neuron = network_neurons[target_idx];
+        
+        if (neuron.active) {
+            // Simple spatial diffusion model
+            float distance = fabsf(float(target_idx - da_idx * 64));
+            float diffusion_factor = __expf(-distance / 20.0f); // 20-neuron diffusion radius
+            
+            float dopamine_transfer = da_neuron.dopamine_concentration * diffusion_factor * dt * 0.01f;
+            neuron.dopamine_concentration += dopamine_transfer;
+            neuron.dopamine_concentration = fmaxf(0.0f, fminf(neuron.dopamine_concentration, 1.0f));
+        }
+    }
+    
+    // Decay dopamine
+    da_neuron.dopamine_concentration *= __expf(-dt / 100.0f); // 100ms decay
+}
+
+/**
+ * @brief Actor-critic learning kernel
+ */
+__global__ void actorCriticUpdateKernel(
+    ActorCriticState* actor_critic_states,
+    const float* state_features,
+    int action_taken,
+    float reward_received,
+    float dt,
+    int num_features,
+    int num_actions
+) {
+    int state_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (state_idx >= 1) return; // Single actor-critic state for now
+    
+    ActorCriticState& ac = actor_critic_states[state_idx];
+    
+    // Update state value estimate
+    float td_error = reward_received - ac.state_value;
+    ac.state_value += 0.01f * td_error * dt; // Critic learning rate
+    
+    // Update action preferences (policy gradient)
+    if (action_taken >= 0 && action_taken < num_actions) {
+        float advantage = td_error; // Simplified advantage estimate
+        
+        // Update action preferences
+        for (int a = 0; a < num_actions; a++) {
+            if (a == action_taken) {
+                ac.policy_parameters[a] += 0.001f * advantage * dt; // Actor learning rate
+            } else {
+                ac.policy_parameters[a] -= 0.001f * advantage * dt * 0.1f; // Negative update for other actions
+            }
+        }
+        
+        // Compute action probabilities using softmax
+        float max_param = ac.policy_parameters[0];
+        for (int a = 1; a < num_actions; a++) {
+            max_param = fmaxf(max_param, ac.policy_parameters[a]);
+        }
+        
+        float sum_exp = 0.0f;
+        for (int a = 0; a < num_actions; a++) {
+            ac.action_probabilities[a] = __expf(ac.policy_parameters[a] - max_param);
+            sum_exp += ac.action_probabilities[a];
+        }
+        
+        // Normalize probabilities
+        for (int a = 0; a < num_actions; a++) {
+            ac.action_probabilities[a] /= (sum_exp + 1e-8f);
+        }
+    }
+    
+    // Update baseline estimate
+    ac.baseline_estimate = ac.baseline_estimate * 0.99f + reward_received * 0.01f;
+    
+    // Update advantage estimate
+    ac.advantage_estimate = reward_received - ac.baseline_estimate;
+}
+
+/**
+ * @brief Curiosity-driven exploration kernel
+ */
+__global__ void curiosityUpdateKernel(
+    CuriosityState* curiosity_states,
+    const float* environmental_features,
+    float prediction_error,
+    float dt,
+    int num_features
+) {
+    int curiosity_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (curiosity_idx >= 1) return; // Single curiosity state
+    
+    CuriosityState& curiosity = curiosity_states[curiosity_idx];
+    
+    // Update surprise level based on prediction error
+    curiosity.surprise_level = curiosity.surprise_level * 0.9f + prediction_error * 0.1f;
+    
+    // Update novelty detector
+    float state_novelty = 0.0f;
+    for (int i = 0; i < fminf(32, num_features); i++) {
+        float feature = (i < num_features) ? environmental_features[i] : 0.0f;
+        float distance = fabsf(feature - curiosity.novelty_detector[i]);
+        state_novelty += distance;
+        
+        // Update novelty detector with exponential moving average
+        curiosity.novelty_detector[i] = curiosity.novelty_detector[i] * 0.99f + feature * 0.01f;
+    }
+    
+    curiosity.familiarity_level = 1.0f / (1.0f + state_novelty);
+    
+    // Update exploration drive
+    curiosity.random_exploration = 0.1f * (1.0f - curiosity.mastery_level);
+    curiosity.directed_exploration = state_novelty * (1.0f - curiosity.familiarity_level) * 0.1f;
+    
+    // Update mastery level based on prediction accuracy
+    float prediction_accuracy = 1.0f / (1.0f + curiosity.surprise_level);
+    curiosity.mastery_level = curiosity.mastery_level * 0.999f + prediction_accuracy * 0.001f;
 }

@@ -67,13 +67,11 @@ public:
      */
     ~Network();
     
-    // Prevent copying for modular architecture integrity
+    // Prevent copying and moving due to std::random_device limitations
     Network(const Network&) = delete;
     Network& operator=(const Network&) = delete;
-    
-    // Enable moving for efficient modular transfers
-    Network(Network&&) = default;
-    Network& operator=(Network&&) = default;
+    Network(Network&&) = delete;
+    Network& operator=(Network&&) = delete;
 
     // ========================================================================
     // CORE SIMULATION INTERFACE - Brain-Like Dynamics
@@ -221,6 +219,32 @@ public:
      * @param eligibility_decay Time constant for eligibility trace decay
      */
     void configure_reward_learning(float learning_rate, float eligibility_decay);
+
+    // ========================================================================
+    // STRUCTURAL PLASTICITY INTERFACE - Dynamic Network Architecture
+    // ========================================================================
+    
+    /**
+     * @brief Implements activity-dependent synaptic pruning
+     * 
+     * Biological pruning mechanisms:
+     * - Use-dependent elimination of weak synapses
+     * - Competitive removal based on relative strength
+     * - Homeostatic adjustment of total connectivity
+     * - Critical period-like developmental pruning
+     */
+    void prune_synapses();
+    
+    /**
+     * @brief Implements experience-driven synaptic growth
+     * 
+     * Growth mechanisms:
+     * - Activity-dependent formation of new connections
+     * - Exploration of local connectivity space
+     * - Reinforcement of successful communication pathways
+     * - Homeostatic maintenance of optimal connectivity
+     */
+    void grow_synapses();
 
     // ========================================================================
     // STATE PERSISTENCE - Independent Module Saving/Loading
@@ -488,28 +512,6 @@ private:
      * - Age-dependent elimination for network refinement
      */
     bool shouldPruneSynapse(const Synapse& synapse) const;
-    
-    /**
-     * @brief Implements activity-dependent synaptic pruning
-     * 
-     * Biological pruning mechanisms:
-     * - Use-dependent elimination of weak synapses
-     * - Competitive removal based on relative strength
-     * - Homeostatic adjustment of total connectivity
-     * - Critical period-like developmental pruning
-     */
-    void prune_synapses();
-    
-    /**
-     * @brief Implements experience-driven synaptic growth
-     * 
-     * Growth mechanisms:
-     * - Activity-dependent formation of new connections
-     * - Exploration of local connectivity space
-     * - Reinforcement of successful communication pathways
-     * - Homeostatic maintenance of optimal connectivity
-     */
-    void grow_synapses();
 
     // ========================================================================
     // MEMBER VARIABLES - Optimized Data Structures

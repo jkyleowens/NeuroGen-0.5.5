@@ -1,822 +1,1369 @@
-// Phase3IntegrationFramework.h
+// ============================================================================
+// COMPREHENSIVE HEADER ARCHITECTURE FIXES
+// File: include/NeuroGen/NeuralConstants.h
+// ============================================================================
+
+#ifndef NEURAL_CONSTANTS_H
+#define NEURAL_CONSTANTS_H
+
+// ============================================================================
+// NEURAL RECEPTOR AND CHANNEL CONSTANTS
+// ============================================================================
+
+// Receptor type enumeration and constants
+#define NUM_RECEPTOR_TYPES 8
+#define RECEPTOR_AMPA 0
+#define RECEPTOR_NMDA 1
+#define RECEPTOR_GABA_A 2
+#define RECEPTOR_GABA_B 3
+#define RECEPTOR_GLYCINE 4
+#define RECEPTOR_ACETYLCHOLINE 5
+#define RECEPTOR_DOPAMINE 6
+#define RECEPTOR_SEROTONIN 7
+
+// Neural developmental stages
+#define NEURAL_STAGE_PROGENITOR 0
+#define NEURAL_STAGE_DIFFERENTIATION 1
+#define NEURAL_STAGE_MIGRATION 2
+#define NEURAL_STAGE_MATURATION 3
+#define NEURAL_STAGE_ADULT 4
+#define NEURAL_STAGE_SENESCENCE 5
+
+// Compartment types
+#define COMPARTMENT_SOMA 0
+#define COMPARTMENT_BASAL 1
+#define COMPARTMENT_APICAL 2
+#define COMPARTMENT_SPINE 3
+#define COMPARTMENT_AXON 4
+
+// Maximum structure sizes
+#define MAX_COMPARTMENTS 8
+#define MAX_DENDRITIC_SPIKES 4
+#define MAX_SYNAPSES_PER_NEURON 1000
+#define MAX_NEURAL_PROGENITORS 10000
+
+// Biophysical constants
+#define RESTING_POTENTIAL -70.0f
+#define SPIKE_THRESHOLD -55.0f
+#define SPIKE_PEAK 30.0f
+#define REVERSAL_POTENTIAL_EXCITATORY 0.0f
+#define REVERSAL_POTENTIAL_INHIBITORY -70.0f
+
+// Time constants (ms)
+#define TAU_MEMBRANE 20.0f
+#define TAU_CALCIUM 50.0f
+#define TAU_PLASTICITY 1000.0f
+#define TAU_DEVELOPMENT 86400000.0f  // 24 hours in ms
+
+// Learning constants
+#define STDP_LEARNING_RATE 0.01f
+#define BCM_LEARNING_RATE 0.001f
+#define HOMEOSTATIC_RATE 0.0001f
+#define NEUROGENESIS_RATE 0.0001f
+
+// Utility macros for device/host compatibility
+#ifdef __CUDACC__
+    #define DEVICE_HOST __device__ __host__
+    #define DEVICE_ONLY __device__
+    #define CUDA_MIN(a, b) fminf(a, b)
+    #define CUDA_MAX(a, b) fmaxf(a, b)
+#else
+    #define DEVICE_HOST
+    #define DEVICE_ONLY
+    #define CUDA_MIN(a, b) std::min(a, b)
+    #define CUDA_MAX(a, b) std::max(a, b)
+#endif
+
+#endif // NEURAL_CONSTANTS_H
+
+// ============================================================================
+// COMPLETE GPU NEURAL STRUCTURES (UPDATED)
+// File: include/NeuroGen/cuda/GPUNeuralStructures.h
+// ============================================================================
+
+#ifndef GPU_NEURAL_STRUCTURES_H
+#define GPU_NEURAL_STRUCTURES_H
+
+#include "NeuroGen/NeuralConstants.h"
+
+// ============================================================================
+// COMPLETE GPU NEURON STATE STRUCTURE
+// ============================================================================
+
+struct GPUNeuronState {
+    // === CORE MEMBRANE DYNAMICS ===
+    float V;                            // Membrane potential (mV)
+    float u;                            // Recovery variable (Izhikevich)
+    float I_syn[MAX_COMPARTMENTS];      // Synaptic currents per compartment
+    float ca_conc[MAX_COMPARTMENTS];    // Calcium concentrations
+    
+    // === TIMING AND ACTIVITY ===
+    float last_spike_time;              // Time of last spike
+    float previous_spike_time;          // Previous spike time
+    float average_firing_rate;          // Running average firing rate
+    float average_activity;             // Average activity level
+    float activity_level;               // CRITICAL FIX: Added missing member
+    
+    // === PLASTICITY AND ADAPTATION ===
+    float excitability;                 // Intrinsic excitability
+    float synaptic_scaling_factor;      // Global synaptic scaling
+    float bcm_threshold;                // BCM learning threshold
+    float plasticity_threshold;         // Plasticity induction threshold
+    
+    // === NEUROMODULATION ===
+    float dopamine_concentration;       // Local dopamine level
+    float acetylcholine_level;          // Local acetylcholine level
+    float serotonin_level;              // Local serotonin level
+    float norepinephrine_level;         // Local norepinephrine level
+    
+    // === ION CHANNELS ===
+    float na_m, na_h;                   // Sodium channel states
+    float k_n;                          // Potassium channel state
+    float ca_channel_state;             // Calcium channel state
+    float channel_expression[NUM_RECEPTOR_TYPES]; // CRITICAL FIX: Added missing array
+    float channel_maturation[NUM_RECEPTOR_TYPES]; // CRITICAL FIX: Added missing array
+    
+    // === MULTI-COMPARTMENT SUPPORT ===
+    float V_compartments[MAX_COMPARTMENTS];        // Compartment voltages
+    int compartment_types[MAX_COMPARTMENTS];       // Compartment types
+    int num_compartments;                          // Number of active compartments
+    bool dendritic_spike[MAX_DENDRITIC_SPIKES];    // Dendritic spike states
+    float dendritic_spike_time[MAX_DENDRITIC_SPIKES]; // Dendritic spike timing
+    
+    // === NETWORK PROPERTIES ===
+    int neuron_type;                    // Neuron type (excitatory/inhibitory)
+    int layer_id;                       // Cortical layer
+    int column_id;                      // Cortical column
+    int active;                         // Activity flag
+    bool is_principal_cell;             // Principal vs interneuron
+    
+    // === SPATIAL PROPERTIES ===
+    float position_x, position_y, position_z;     // 3D coordinates
+    float orientation_theta;            // Orientation
+    
+    // === DEVELOPMENT ===
+    int developmental_stage;            // Current development stage
+    float maturation_factor;            // Maturation level [0,1]
+    float birth_time;                   // Time of neurogenesis
+    
+    // === METABOLISM ===
+    float energy_level;                 // Cellular energy
+    float metabolic_demand;             // Energy demand
+    float glucose_uptake;               // Glucose consumption rate
+};
+
+// ============================================================================
+// ENHANCED GPU SYNAPSE STRUCTURE
+// ============================================================================
+
+struct GPUSynapse {
+    // === CONNECTIVITY ===
+    int pre_neuron_idx;                 // Presynaptic neuron index
+    int post_neuron_idx;                // Postsynaptic neuron index
+    int post_compartment;               // Target compartment
+    int receptor_index;                 // Receptor type
+    int active;                         // Activity flag
+    
+    // === SYNAPTIC PROPERTIES ===
+    float weight;                       // Current weight
+    float max_weight, min_weight;       // Weight bounds
+    float delay;                        // Synaptic delay
+    float effective_weight;             // Modulated weight
+    
+    // === PLASTICITY ===
+    float eligibility_trace;            // Eligibility trace
+    float plasticity_modulation;        // Plasticity modulation
+    bool is_plastic;                    // CRITICAL FIX: Added missing member
+    float learning_rate;                // Synapse-specific learning rate
+    float metaplasticity_factor;        // Meta-plasticity scaling
+    
+    // === TIMING ===
+    float last_pre_spike_time;          // Last presynaptic spike
+    float last_post_spike_time;         // Last postsynaptic spike
+    float last_active_time;             // Last activation time
+    float activity_metric;              // Activity measure
+    float last_potentiation;            // Last potentiation time
+    
+    // === NEUROMODULATION ===
+    float dopamine_sensitivity;         // Dopamine sensitivity
+    float acetylcholine_sensitivity;    // ACh sensitivity
+    float serotonin_sensitivity;        // Serotonin sensitivity
+    float dopamine_level;               // Local dopamine
+    
+    // === VESICLE DYNAMICS ===
+    int vesicle_count;                  // Available vesicles
+    float release_probability;          // Release probability
+    float facilitation_factor;          // Short-term facilitation
+    float depression_factor;            // Short-term depression
+    
+    // === CALCIUM DYNAMICS ===
+    float presynaptic_calcium;          // Pre-synaptic calcium
+    float postsynaptic_calcium;         // Post-synaptic calcium
+    
+    // === HOMEOSTASIS ===
+    float homeostatic_scaling;          // Homeostatic scaling
+    float target_activity;              // Target activity level
+    
+    // === BIOPHYSICS ===
+    float conductance;                  // Synaptic conductance
+    float reversal_potential;           // Reversal potential
+    float time_constant_rise;           // Rise time constant
+    float time_constant_decay;          // Decay time constant
+    
+    // === DEVELOPMENT ===
+    int developmental_stage;            // Development stage
+    float structural_stability;         // Resistance to pruning
+    float growth_factor;                // Growth tendency
+};
+
+// ============================================================================
+// FORWARD DECLARATIONS FOR COMPLEX TYPES
+// ============================================================================
+
+// Value function approximation structure
+struct ValueFunction {
+    float state_features[64];           // State feature representation
+    float value_weights[64];            // Value function weights
+    float state_value;                  // Current state value estimate
+    float td_error;                     // Temporal difference error
+    float learning_rate;                // Value function learning rate
+    float eligibility_trace;            // Eligibility trace for TD learning
+    int feature_dimensions;             // Number of active features
+    bool is_active;                     // Whether this function is active
+};
+
+// Actor-critic learning structure
+struct ActorCriticState {
+    float policy_parameters[32];        // Policy parameters
+    float action_probabilities[32];     // Action probabilities
+    float action_preferences[32];       // Action preferences
+    float action_eligibility[32];       // Action eligibility traces
+    float state_value;                  // State value estimate
+    float baseline_estimate;            // Baseline for advantage
+    float advantage_estimate;           // Advantage estimate
+    float exploration_bonus;            // Exploration bonus
+    float uncertainty_estimate;         // Epistemic uncertainty
+    int num_actions;                    // Number of possible actions
+    bool is_learning;                   // Learning flag
+};
+
+// Curiosity-driven exploration system
+struct CuriosityState {
+    float novelty_detector[32];         // Novelty detection features
+    float surprise_level;               // Current surprise level
+    float familiarity_level;            // Familiarity with current state
+    float information_gain;             // Expected information gain
+    float competence_progress;          // Learning progress measure
+    float mastery_level;                // Current mastery level
+    float random_exploration;           // Random exploration drive
+    float directed_exploration;         // Directed exploration drive
+    float goal_exploration;             // Goal-directed exploration
+    bool is_exploring;                  // Exploration flag
+};
+
+// Neural progenitor cell structure
+struct NeuralProgenitor {
+    // === PROGENITOR IDENTITY ===
+    int progenitor_id;                  // Unique identifier
+    int progenitor_type;                // Type of progenitor
+    int developmental_stage;            // Current stage
+    
+    // === SPATIAL PROPERTIES ===
+    float position_x, position_y, position_z;     // 3D coordinates
+    float migration_vector_x, migration_vector_y, migration_vector_z; // Migration direction
+    
+    // === TEMPORAL PROPERTIES ===
+    float birth_time;                   // Time of creation
+    float differentiation_time;         // Time of differentiation
+    float last_division_time;           // Last division time
+    
+    // === PROLIFERATION ===
+    int division_count;                 // Number of divisions
+    int max_divisions;                  // Maximum allowed divisions
+    float division_probability;         // Probability of division
+    bool can_divide;                    // Division capability
+    
+    // === DIFFERENTIATION ===
+    float differentiation_probability;  // Probability of differentiation
+    float excitatory_bias;              // Bias toward excitatory fate
+    float inhibitory_bias;              // Bias toward inhibitory fate
+    float interneuron_probability;      // Probability of interneuron fate
+    
+    // === ENVIRONMENTAL SENSING ===
+    float local_activity_level;         // Local network activity
+    float local_neuron_density;         // Local neuron density
+    float growth_factor_concentration;  // Growth factor levels
+    float competition_pressure;         // Competition from other cells
+    
+    // === MOLECULAR STATE ===
+    float transcription_factors[8];     // Key transcription factors
+    float growth_signals[4];            // Growth signaling molecules
+    float apoptosis_signals[4];         // Cell death signals
+    
+    // === FATE SPECIFICATION ===
+    int target_layer;                   // Target cortical layer
+    int target_column;                  // Target cortical column
+    int target_neuron_type;             // Target neuron type
+    bool fate_committed;                // Whether fate is determined
+    
+    // === ACTIVITY STATE ===
+    bool is_active;                     // Whether progenitor is active
+    bool is_migrating;                  // Currently migrating
+    bool is_differentiating;            // Currently differentiating
+    bool marked_for_deletion;           // Scheduled for removal
+};
+
+// Additional forward declarations
+struct DevelopmentalTrajectory;
+struct SynapticProgenitor;
+struct SynapticCompetition;
+struct PruningAssessment;
+struct CompetitiveElimination;
+struct NeuralHomeostasis;
+struct SynapticHomeostasis;
+struct NetworkHomeostasis;
+struct STDPRuleConfig;
+struct NeurogenesisController;
+struct SynaptogenesisController;
+struct PruningController;
+struct CoordinationController;
+struct PlasticityState;
+struct DopamineNeuron;
+
+#endif // GPU_NEURAL_STRUCTURES_H
+
+// ============================================================================
+// FIXED ENHANCED STDP FRAMEWORK HEADER
+// File: include/NeuroGen/EnhancedSTDPFramework.h  
+// ============================================================================
+
+#ifndef ENHANCED_STDP_FRAMEWORK_H
+#define ENHANCED_STDP_FRAMEWORK_H
+
+#include <vector>
+#include <memory>
+#include <string>
+#include <mutex>
+#include "NeuroGen/NeuralConstants.h"
+
+// Forward declarations (no CUDA dependencies)
+struct GPUSynapse;
+struct GPUNeuronState;
+struct GPUPlasticityState;
+struct GPUNeuromodulatorState;
+
+/**
+ * @brief Enhanced STDP Framework with Comprehensive Biological Realism
+ * 
+ * This framework implements multiple forms of synaptic plasticity that mirror
+ * the sophistication found in biological neural circuits, including:
+ * - Classical STDP with precise timing dependence
+ * - BCM learning rule with sliding threshold
+ * - Homeostatic synaptic scaling
+ * - Neuromodulatory influences (dopamine, acetylcholine, serotonin)
+ * - Meta-plasticity mechanisms
+ * - Multi-compartment dendritic integration
+ */
+class EnhancedSTDPFramework {
+private:
+    // GPU memory management (using void* to avoid CUDA types)
+    void* d_synapses_;
+    void* d_neurons_;
+    void* d_plasticity_states_;
+    void* d_neuromodulator_states_;
+    void* d_stdp_config_;
+    
+    // Network dimensions
+    int num_synapses_;
+    int num_neurons_;
+    bool cuda_initialized_;
+    
+    // Learning parameters
+    float stdp_learning_rate_;
+    float bcm_learning_rate_;
+    float homeostatic_rate_;
+    float neuromodulation_strength_;
+    float metaplasticity_rate_;
+    
+    // Performance tracking
+    mutable std::mutex framework_mutex_;
+    mutable float total_weight_change_;
+    mutable float plasticity_events_;
+    mutable float last_update_time_;
+    mutable float average_eligibility_trace_;
+
+public:
+    // ========================================================================
+    // CONSTRUCTION AND LIFECYCLE
+    // ========================================================================
+    
+    EnhancedSTDPFramework();
+    ~EnhancedSTDPFramework();
+    
+    /**
+     * @brief Initialize the STDP framework with network specifications
+     * @param num_neurons Total number of neurons in the network
+     * @param num_synapses Total number of synapses in the network
+     * @return Success status of initialization
+     */
+    bool initialize(int num_neurons, int num_synapses);
+    
+    /**
+     * @brief Configure comprehensive learning parameters
+     * @param stdp_rate STDP learning rate for spike-timing dependent plasticity
+     * @param bcm_rate BCM learning rate for threshold adaptation
+     * @param homeostatic_rate Rate of homeostatic regulation
+     * @param neuromod_strength Strength of neuromodulatory influences
+     */
+    void configure_learning_parameters(float stdp_rate, float bcm_rate, 
+                                     float homeostatic_rate, float neuromod_strength);
+    
+    // ========================================================================
+    // MAIN PLASTICITY MECHANISMS - C++ WRAPPER INTERFACE
+    // ========================================================================
+    
+    /**
+     * @brief Execute enhanced STDP with multi-factor modulation
+     * @param current_time Current simulation time (milliseconds)
+     * @param dt Integration time step (milliseconds)
+     */
+    void update_enhanced_stdp(float current_time, float dt);
+    
+    /**
+     * @brief Apply BCM learning rule with adaptive threshold
+     * @param current_time Current simulation time
+     * @param dt Time step
+     */
+    void update_bcm_learning(float current_time, float dt);
+    
+    /**
+     * @brief Execute homeostatic regulation mechanisms
+     * @param target_activity Target network activity level (Hz)
+     * @param dt Time step
+     */
+    void update_homeostatic_regulation(float target_activity, float dt);
+    
+    /**
+     * @brief Apply neuromodulatory influences on plasticity
+     * @param dopamine_level Global dopamine concentration
+     * @param acetylcholine_level Global acetylcholine level
+     * @param dt Time step
+     */
+    void update_neuromodulation(float dopamine_level, float acetylcholine_level, float dt);
+    
+    /**
+     * @brief Update meta-plasticity mechanisms
+     * @param experience_level Current experience level
+     * @param dt Time step
+     */
+    void update_metaplasticity(float experience_level, float dt);
+    
+    /**
+     * @brief Execute comprehensive plasticity update (all mechanisms)
+     * @param current_time Current simulation time
+     * @param dt Time step
+     * @param dopamine_level Dopamine concentration
+     * @param target_activity Target activity level
+     */
+    void update_all_plasticity_mechanisms(float current_time, float dt, 
+                                        float dopamine_level, float target_activity);
+    
+    // ========================================================================
+    // MONITORING AND ANALYSIS
+    // ========================================================================
+    
+    /**
+     * @brief Get total synaptic weight change magnitude
+     * @return Cumulative weight change since last reset
+     */
+    float get_total_weight_change() const;
+    
+    /**
+     * @brief Get number of plasticity events
+     * @return Count of significant plasticity events
+     */
+    float get_plasticity_events() const;
+    
+    /**
+     * @brief Get average synaptic weight across network
+     * @return Mean synaptic weight
+     */
+    float get_average_synaptic_weight() const;
+    
+    /**
+     * @brief Get average eligibility trace magnitude
+     * @return Mean eligibility trace value
+     */
+    float get_average_eligibility_trace() const;
+    
+    /**
+     * @brief Get comprehensive plasticity statistics
+     * @param stats Output vector containing detailed statistics
+     */
+    void get_plasticity_statistics(std::vector<float>& stats) const;
+    
+    /**
+     * @brief Generate detailed plasticity report
+     * @param filename Output filename for detailed report
+     */
+    void generate_plasticity_report(const std::string& filename) const;
+    
+    // ========================================================================
+    // STATE MANAGEMENT AND PERSISTENCE
+    // ========================================================================
+    
+    /**
+     * @brief Save complete plasticity state to file
+     * @param filename Base filename for state persistence
+     * @return Success status
+     */
+    bool save_plasticity_state(const std::string& filename) const;
+    
+    /**
+     * @brief Load complete plasticity state from file
+     * @param filename Base filename for state loading
+     * @return Success status
+     */
+    bool load_plasticity_state(const std::string& filename);
+    
+    /**
+     * @brief Reset all plasticity mechanisms to baseline
+     */
+    void reset_plasticity_state();
+    
+    /**
+     * @brief Set plasticity mechanism enable/disable flags
+     * @param enable_stdp Enable STDP mechanisms
+     * @param enable_bcm Enable BCM learning
+     * @param enable_homeostatic Enable homeostatic regulation
+     * @param enable_neuromodulation Enable neuromodulatory influences
+     */
+    void configure_plasticity_mechanisms(bool enable_stdp, bool enable_bcm, 
+                                       bool enable_homeostatic, bool enable_neuromodulation);
+
+private:
+    // ========================================================================
+    // INTERNAL CUDA WRAPPER FUNCTIONS
+    // ========================================================================
+    
+    /**
+     * @brief Initialize CUDA resources and memory allocation
+     * @return Success status of CUDA initialization
+     */
+    bool initialize_cuda_resources();
+    
+    /**
+     * @brief Release all CUDA resources
+     */
+    void cleanup_cuda_resources();
+    
+    /**
+     * @brief Launch enhanced STDP kernel (internal wrapper)
+     * @param current_time Current simulation time
+     * @param dt Time step
+     */
+    void launch_enhanced_stdp_kernel(float current_time, float dt);
+    
+    /**
+     * @brief Launch BCM learning kernel (internal wrapper)
+     * @param current_time Current simulation time
+     * @param dt Time step
+     */
+    void launch_bcm_learning_kernel(float current_time, float dt);
+    
+    /**
+     * @brief Launch homeostatic regulation kernel (internal wrapper)
+     * @param target_activity Target activity level
+     * @param dt Time step
+     */
+    void launch_homeostatic_kernel(float target_activity, float dt);
+    
+    /**
+     * @brief Launch neuromodulation kernel (internal wrapper)
+     * @param dopamine_level Dopamine concentration
+     * @param acetylcholine_level Acetylcholine level
+     * @param dt Time step
+     */
+    void launch_neuromodulation_kernel(float dopamine_level, float acetylcholine_level, float dt);
+    
+    /**
+     * @brief Update performance metrics from GPU
+     */
+    void update_performance_metrics();
+    
+    /**
+     * @brief Validate CUDA operation success
+     * @param operation_name Operation name for error reporting
+     * @return Success status
+     */
+    bool validate_cuda_operation(const std::string& operation_name) const;
+    
+    /**
+     * @brief Copy statistics from GPU to CPU
+     */
+    void copy_statistics_from_gpu();
+    
+    /**
+     * @brief Configure optimal GPU execution parameters
+     */
+    void configure_gpu_execution_parameters();
+};
+
+#endif // ENHANCED_STDP_FRAMEWORK_H
+
+// ============================================================================
+// FIXED ADVANCED REINFORCEMENT LEARNING HEADER
+// File: include/NeuroGen/AdvancedReinforcementLearning.h
+// ============================================================================
+
+#ifndef ADVANCED_REINFORCEMENT_LEARNING_H
+#define ADVANCED_REINFORCEMENT_LEARNING_H
+
+#include <vector>
+#include <memory>
+#include <string>
+#include <mutex>
+#include "NeuroGen/NeuralConstants.h"
+
+// Forward declarations (avoiding CUDA dependencies)
+struct GPUNeuronState;
+struct ActorCriticState;
+struct CuriosityState;
+struct ValueFunction;
+struct DopamineNeuron;
+
+/**
+ * @brief Advanced Reinforcement Learning with Biologically-Inspired Mechanisms
+ * 
+ * This system implements sophisticated reinforcement learning algorithms that
+ * mirror the computational principles found in biological reward systems:
+ * - Dopaminergic prediction error computation
+ * - Actor-critic architecture with eligibility traces
+ * - Curiosity-driven intrinsic motivation
+ * - Multi-timescale learning (seconds to hours)
+ * - Experience replay and consolidation
+ * - Meta-learning and adaptation
+ */
+class AdvancedReinforcementLearning {
+private:
+    // GPU memory management (void* to avoid CUDA dependencies)
+    void* d_da_neurons_;
+    void* d_actor_critic_states_;
+    void* d_curiosity_states_;
+    void* d_value_functions_;
+    void* d_reward_signals_;
+    void* d_experience_buffer_;
+    
+    // Network parameters
+    int num_da_neurons_;
+    int num_network_neurons_;
+    int num_value_functions_;
+    bool cuda_initialized_;
+    
+    // Learning parameters
+    float actor_learning_rate_;
+    float critic_learning_rate_;
+    float curiosity_strength_;
+    float exploration_noise_;
+    float experience_replay_rate_;
+    
+    // Performance tracking
+    mutable std::mutex rl_mutex_;
+    float total_reward_;
+    float prediction_accuracy_;
+    int learning_updates_;
+    float exploration_efficiency_;
+
+public:
+    // ========================================================================
+    // CONSTRUCTION AND LIFECYCLE
+    // ========================================================================
+    
+    AdvancedReinforcementLearning();
+    ~AdvancedReinforcementLearning();
+    
+    /**
+     * @brief Initialize reinforcement learning system
+     * @param num_da_neurons Number of dopamine neurons
+     * @param num_network_neurons Total network neurons for modulation
+     * @param num_value_functions Number of parallel value functions
+     * @return Success status
+     */
+    bool initialize(int num_da_neurons, int num_network_neurons, int num_value_functions = 1);
+    
+    /**
+     * @brief Configure comprehensive learning parameters
+     * @param actor_lr Actor network learning rate
+     * @param critic_lr Critic network learning rate
+     * @param curiosity_strength Intrinsic motivation strength
+     * @param exploration_noise Exploration noise magnitude
+     */
+    void configure_learning_parameters(float actor_lr, float critic_lr, 
+                                     float curiosity_strength, float exploration_noise);
+    
+    // ========================================================================
+    // MAIN LEARNING MECHANISMS - C++ WRAPPER INTERFACE
+    // ========================================================================
+    
+    /**
+     * @brief Update dopaminergic system with reward processing
+     * @param reward_signal Current environmental reward
+     * @param predicted_reward Value function prediction
+     * @param current_time Current simulation time
+     * @param dt Time step
+     */
+    void update_dopaminergic_system(float reward_signal, float predicted_reward, 
+                                   float current_time, float dt);
+    
+    /**
+     * @brief Update actor-critic learning with experience
+     * @param state_features Current state representation
+     * @param action_taken Action that was executed
+     * @param reward_received Reward from environment
+     * @param next_state_features Subsequent state representation
+     * @param dt Time step
+     */
+    void update_actor_critic(const std::vector<float>& state_features, int action_taken,
+                           float reward_received, const std::vector<float>& next_state_features, 
+                           float dt);
+    
+    /**
+     * @brief Update curiosity-driven exploration system
+     * @param environmental_features Current environmental observations
+     * @param prediction_error Prediction error magnitude
+     * @param dt Time step
+     */
+    void update_curiosity_system(const std::vector<float>& environmental_features,
+                                float prediction_error, float dt);
+    
+    /**
+     * @brief Execute experience replay for consolidation
+     * @param num_replay_samples Number of experiences to replay
+     * @param dt Time step
+     */
+    void execute_experience_replay(int num_replay_samples, float dt);
+    
+    /**
+     * @brief Update value function approximation
+     * @param state_features Current state features
+     * @param target_value Target value for update
+     * @param dt Time step
+     */
+    void update_value_function(const std::vector<float>& state_features, 
+                              float target_value, float dt);
+    
+    // ========================================================================
+    // DECISION MAKING INTERFACE
+    // ========================================================================
+    
+    /**
+     * @brief Get action probabilities from actor network
+     * @param state_features Current state representation
+     * @return Probability distribution over actions
+     */
+    std::vector<float> get_action_probabilities(const std::vector<float>& state_features) const;
+    
+    /**
+     * @brief Get state value estimate from critic network
+     * @param state_features Current state representation
+     * @return Estimated state value
+     */
+    float get_state_value_estimate(const std::vector<float>& state_features) const;
+    
+    /**
+     * @brief Get intrinsic motivation signal
+     * @param state_features Current state
+     * @return Curiosity-driven reward bonus
+     */
+    float get_intrinsic_motivation(const std::vector<float>& state_features) const;
+    
+    /**
+     * @brief Sample action from policy
+     * @param state_features Current state
+     * @param exploration_factor Exploration intensity [0,1]
+     * @return Selected action index
+     */
+    int sample_action(const std::vector<float>& state_features, float exploration_factor = 1.0f) const;
+    
+    // ========================================================================
+    // MONITORING AND ANALYSIS
+    // ========================================================================
+    
+    /**
+     * @brief Get current dopamine levels across DA neurons
+     * @return Vector of dopamine concentrations
+     */
+    std::vector<float> get_dopamine_levels() const;
+    
+    /**
+     * @brief Get comprehensive learning performance metrics
+     * @param metrics Output vector containing performance data
+     */
+    void get_performance_metrics(std::vector<float>& metrics) const;
+    
+    /**
+     * @brief Get total accumulated reward
+     * @return Cumulative reward received
+     */
+    float get_total_reward() const;
+    
+    /**
+     * @brief Get prediction accuracy of value functions
+     * @return Current prediction accuracy [0,1]
+     */
+    float get_prediction_accuracy() const;
+    
+    /**
+     * @brief Get exploration efficiency metric
+     * @return Exploration efficiency measure
+     */
+    float get_exploration_efficiency() const;
+    
+    /**
+     * @brief Generate detailed learning report
+     * @param filename Output filename for detailed analysis
+     */
+    void generate_learning_report(const std::string& filename) const;
+    
+    // ========================================================================
+    // STATE MANAGEMENT
+    // ========================================================================
+    
+    /**
+     * @brief Save complete RL state to file
+     * @param filename Base filename for state files
+     * @return Success status
+     */
+    bool save_rl_state(const std::string& filename) const;
+    
+    /**
+     * @brief Load complete RL state from file
+     * @param filename Base filename for state files
+     * @return Success status
+     */
+    bool load_rl_state(const std::string& filename);
+    
+    /**
+     * @brief Reset all learning state to baseline
+     */
+    void reset_learning_state();
+
+private:
+    // ========================================================================
+    // INTERNAL CUDA WRAPPER FUNCTIONS
+    // ========================================================================
+    
+    /**
+     * @brief Initialize CUDA resources for RL
+     * @return Success status
+     */
+    bool initialize_cuda_resources();
+    
+    /**
+     * @brief Cleanup all CUDA resources
+     */
+    void cleanup_cuda_resources();
+    
+    /**
+     * @brief Launch dopamine update kernel (internal wrapper)
+     * @param reward_signal Reward signal
+     * @param predicted_reward Predicted reward
+     * @param current_time Current time
+     * @param dt Time step
+     */
+    void launch_dopamine_update_kernel(float reward_signal, float predicted_reward,
+                                     float current_time, float dt);
+    
+    /**
+     * @brief Launch actor-critic update kernel (internal wrapper)
+     * @param state_features State features
+     * @param action_taken Action taken
+     * @param reward_received Reward received
+     * @param dt Time step
+     */
+    void launch_actor_critic_kernel(const std::vector<float>& state_features, 
+                                   int action_taken, float reward_received, float dt);
+    
+    /**
+     * @brief Launch curiosity update kernel (internal wrapper)
+     * @param environmental_features Environmental features
+     * @param prediction_error Prediction error
+     * @param dt Time step
+     */
+    void launch_curiosity_kernel(const std::vector<float>& environmental_features,
+                                float prediction_error, float dt);
+    
+    /**
+     * @brief Copy results from GPU to CPU
+     */
+    void copy_results_from_gpu();
+    
+    /**
+     * @brief Validate CUDA operations
+     * @param operation_name Operation name for error reporting
+     * @return Success status
+     */
+    bool validate_cuda_operation(const std::string& operation_name) const;
+    
+    /**
+     * @brief Store experience in replay buffer
+     * @param state Current state
+     * @param action Action taken
+     * @param reward Reward received
+     * @param next_state Next state
+     */
+    void store_experience(const std::vector<float>& state, int action, 
+                         float reward, const std::vector<float>& next_state);
+};
+
+#endif // ADVANCED_REINFORCEMENT_LEARNING_H
+
+// ============================================================================
+// FIXED DYNAMIC NEUROGENESIS FRAMEWORK HEADER
+// File: include/NeuroGen/DynamicNeurogenesisFramework.h
+// ============================================================================
+
+#ifndef DYNAMIC_NEUROGENESIS_FRAMEWORK_H
+#define DYNAMIC_NEUROGENESIS_FRAMEWORK_H
+
+#include <vector>
+#include <memory>
+#include <string>
+#include <mutex>
+#include "NeuroGen/NeuralConstants.h"
+
+// Forward declarations (no CUDA dependencies)
+struct GPUNeuronState;
+struct NeuralProgenitor;
+struct DevelopmentalTrajectory;
+struct ValueFunction;
+
+/**
+ * @brief Dynamic Neurogenesis Framework - C++ Only Interface
+ * 
+ * Implements biologically-realistic neurogenesis mechanisms including:
+ * - Neural progenitor cell dynamics
+ * - Activity-dependent neurogenesis
+ * - Developmental trajectory control
+ * - Spatial organization and migration
+ * - Experience-dependent plasticity
+ */
+class DynamicNeurogenesisFramework {
+private:
+    // GPU memory management (void* to avoid CUDA dependencies)
+    void* d_neural_progenitors_;
+    void* d_neurons_;
+    void* d_developmental_trajectories_;
+    void* d_value_functions_;
+    void* d_neurogenesis_controller_;
+    
+    // Network parameters
+    int max_progenitors_;
+    int current_progenitors_;
+    int max_neurons_;
+    int current_neurons_;
+    bool cuda_initialized_;
+    
+    // Neurogenesis parameters
+    float neurogenesis_rate_;
+    float activity_threshold_;
+    float spatial_competition_radius_;
+    float experience_dependence_;
+    
+    // Performance tracking
+    mutable std::mutex neurogenesis_mutex_;
+    int neurons_generated_;
+    int progenitors_created_;
+    float average_maturation_time_;
+
+public:
+    // ========================================================================
+    // CONSTRUCTION AND LIFECYCLE
+    // ========================================================================
+    
+    DynamicNeurogenesisFramework();
+    ~DynamicNeurogenesisFramework();
+    
+    /**
+     * @brief Initialize neurogenesis framework
+     * @param max_progenitors Maximum number of progenitor cells
+     * @param max_neurons Maximum number of mature neurons
+     * @param initial_neurogenesis_rate Initial rate of neurogenesis
+     * @return Success status
+     */
+    bool initialize(int max_progenitors, int max_neurons, float initial_neurogenesis_rate);
+    
+    /**
+     * @brief Configure neurogenesis parameters
+     * @param neurogenesis_rate Rate of new neuron generation
+     * @param activity_threshold Activity threshold for neurogenesis
+     * @param spatial_radius Spatial competition radius
+     * @param experience_dep Experience dependence factor
+     */
+    void configure_neurogenesis_parameters(float neurogenesis_rate, float activity_threshold,
+                                         float spatial_radius, float experience_dep);
+    
+    // ========================================================================
+    // MAIN NEUROGENESIS MECHANISMS - C++ WRAPPER INTERFACE
+    // ========================================================================
+    
+    /**
+     * @brief Update neurogenesis control mechanisms
+     * @param current_time Current simulation time
+     * @param dt Time step
+     * @param global_activity_level Overall network activity
+     */
+    void update_neurogenesis_control(float current_time, float dt, float global_activity_level);
+    
+    /**
+     * @brief Execute progenitor cell spawning
+     * @param current_time Current simulation time
+     * @param dt Time step
+     * @param environmental_factors Environmental influences
+     */
+    void update_progenitor_spawning(float current_time, float dt, 
+                                   const std::vector<float>& environmental_factors);
+    
+    /**
+     * @brief Update progenitor cell development
+     * @param current_time Current simulation time
+     * @param dt Time step
+     */
+    void update_progenitor_development(float current_time, float dt);
+    
+    /**
+     * @brief Execute neuron differentiation from progenitors
+     * @param current_time Current simulation time
+     * @param dt Time step
+     */
+    void update_neuron_differentiation(float current_time, float dt);
+    
+    /**
+     * @brief Update developmental trajectories
+     * @param current_time Current simulation time
+     * @param dt Time step
+     */
+    void update_developmental_trajectories(float current_time, float dt);
+    
+    // ========================================================================
+    // MONITORING AND ANALYSIS
+    // ========================================================================
+    
+    /**
+     * @brief Get current number of active progenitors
+     * @return Number of progenitor cells
+     */
+    int get_current_progenitor_count() const;
+    
+    /**
+     * @brief Get current number of mature neurons
+     * @return Number of differentiated neurons
+     */
+    int get_current_neuron_count() const;
+    
+    /**
+     * @brief Get neurogenesis rate statistics
+     * @param stats Output vector for neurogenesis statistics
+     */
+    void get_neurogenesis_statistics(std::vector<float>& stats) const;
+    
+    /**
+     * @brief Get developmental stage distribution
+     * @return Vector of counts per developmental stage
+     */
+    std::vector<int> get_developmental_stage_distribution() const;
+    
+    /**
+     * @brief Generate neurogenesis report
+     * @param filename Output filename for detailed report
+     */
+    void generate_neurogenesis_report(const std::string& filename) const;
+    
+    // ========================================================================
+    // STATE MANAGEMENT
+    // ========================================================================
+    
+    /**
+     * @brief Save neurogenesis state to file
+     * @param filename Base filename for state files
+     * @return Success status
+     */
+    bool save_neurogenesis_state(const std::string& filename) const;
+    
+    /**
+     * @brief Load neurogenesis state from file
+     * @param filename Base filename for state files
+     * @return Success status
+     */
+    bool load_neurogenesis_state(const std::string& filename);
+    
+    /**
+     * @brief Reset neurogenesis to baseline state
+     */
+    void reset_neurogenesis_state();
+
+private:
+    // ========================================================================
+    // INTERNAL CUDA WRAPPER FUNCTIONS (NO DEVICE CODE IN HEADER)
+    // ========================================================================
+    
+    /**
+     * @brief Initialize CUDA resources for neurogenesis
+     * @return Success status
+     */
+    bool initialize_cuda_resources();
+    
+    /**
+     * @brief Cleanup CUDA resources
+     */
+    void cleanup_cuda_resources();
+    
+    /**
+     * @brief Launch neurogenesis control kernel (wrapper)
+     * @param current_time Current time
+     * @param dt Time step
+     * @param global_activity Global activity level
+     */
+    void launch_neurogenesis_control_kernel(float current_time, float dt, float global_activity);
+    
+    /**
+     * @brief Launch progenitor spawning kernel (wrapper)
+     * @param current_time Current time
+     * @param dt Time step
+     * @param environmental_factors Environmental influences
+     */
+    void launch_progenitor_spawning_kernel(float current_time, float dt,
+                                          const std::vector<float>& environmental_factors);
+    
+    /**
+     * @brief Copy statistics from GPU to CPU
+     */
+    void copy_statistics_from_gpu();
+    
+    /**
+     * @brief Validate CUDA operations
+     * @param operation_name Operation name for error reporting
+     * @return Success status
+     */
+    bool validate_cuda_operation(const std::string& operation_name) const;
+};
+
+#endif // DYNAMIC_NEUROGENESIS_FRAMEWORK_H
+
+// ============================================================================
+// FIXED PHASE 3 INTEGRATION FRAMEWORK HEADER
+// File: include/NeuroGen/Phase3IntegrationFramework.h
+// ============================================================================
+
 #ifndef PHASE3_INTEGRATION_FRAMEWORK_H
 #define PHASE3_INTEGRATION_FRAMEWORK_H
 
-#include "EnhancedSTDPFramework.h"
-#include "AdvancedReinforcementLearning.h"
-#include "DynamicNeurogenesisFramework.h"
-#include "DynamicSynaptogenesisFramework.h"
-#include "NeuralPruningFramework.h"
-#include "HomeostaticRegulationSystem.h"
-#include <cuda_runtime.h>
-#include <curand_kernel.h>
-#include <chrono>
+#include "NeuroGen/EnhancedSTDPFramework.h"
+#include "NeuroGen/AdvancedReinforcementLearning.h"
+#include "NeuroGen/DynamicNeurogenesisFramework.h"
 #include <vector>
 #include <memory>
+#include <string>
+#include <mutex>
+#include <chrono>
 
 /**
- * Complete Phase 3 integration framework implementing:
- * - Unified dynamic neural network with all Phase 3 features
- * - Coordinated plasticity, neurogenesis, and pruning
- * - Adaptive learning with homeostatic regulation
- * - Real-time performance monitoring and optimization
- * - Scalable architecture for large networks
+ * @brief Phase 3 Integration Framework - Complete Neural System Integration
+ * 
+ * This framework integrates all advanced neural mechanisms into a unified
+ * system that exhibits emergent intelligence through the interaction of:
+ * - Multi-factor synaptic plasticity
+ * - Dopaminergic reinforcement learning
+ * - Activity-dependent neurogenesis
+ * - Homeostatic regulation
+ * - Meta-learning and adaptation
  */
-
-// ========================================
-// INTEGRATION CONSTANTS
-// ========================================
-
-// System coordination parameters
-#define INTEGRATION_TIMESTEP_MS         0.1f      // Base integration timestep
-#define ADAPTIVE_TIMESTEP_ENABLED       true      // Enable adaptive timestep
-#define COORDINATION_UPDATE_INTERVAL    10        // Steps between coordination updates
-#define PERFORMANCE_MONITORING_INTERVAL 1000     // Steps between performance checks
-
-// Resource management
-#define MEMORY_POOL_SIZE_MB            1024      // Memory pool size in MB
-#define COMPUTATION_BUDGET_MS          10.0f     // Maximum computation time per step
-#define DYNAMIC_LOAD_BALANCING         true      // Enable dynamic load balancing
-#define MEMORY_COMPACTION_THRESHOLD    0.8f      // Trigger compaction at 80% fragmentation
-
-// Learning coordination
-#define MULTI_TIMESCALE_COORDINATION   true      // Coordinate multiple timescales
-#define LEARNING_RATE_ADAPTATION       true      // Adaptive learning rates
-#define CURIOSITY_DRIVEN_EXPLORATION   true      // Enable curiosity-driven learning
-#define EXPERIENCE_REPLAY_ENABLED      true      // Enable experience replay
-
-/**
- * System state tracking for coordination
- */
-struct SystemState {
-    // Network topology metrics
-    int current_neuron_count;           // Current number of active neurons
-    int current_synapse_count;          // Current number of active synapses
-    float network_density;              // Connection density
-    float small_world_coefficient;      // Small-world network coefficient
-    
-    // Activity and performance metrics
-    float global_activity_level;        // Overall network activity
-    float learning_progress_rate;       // Rate of learning progress
-    float exploration_exploitation_ratio; // Exploration vs exploitation balance
-    float network_efficiency;           // Computational efficiency
-    
-    // Resource utilization
-    float memory_utilization;           // Memory usage percentage
-    float computation_utilization;      // Computation usage percentage
-    float energy_efficiency;            // Energy efficiency metric
-    float resource_fragmentation;       // Resource fragmentation level
-    
-    // Adaptation metrics
-    float plasticity_rate;              // Rate of synaptic changes
-    float structural_change_rate;       // Rate of structural modifications
-    float homeostatic_error;            // Deviation from homeostatic targets
-    float stability_index;              // Network stability measure
-    
-    // Learning and performance
-    float prediction_accuracy;          // Prediction accuracy
-    float reward_prediction_error;      // RPE magnitude
-    float novelty_detection_rate;       // Rate of novelty detection
-    float competence_progression;       // Rate of skill acquisition
-};
-
-/**
- * Coordination controller managing system-wide dynamics
- */
-struct CoordinationController {
-    // Temporal coordination
-    float current_time;                 // Current simulation time
-    float adaptive_timestep;            // Current adaptive timestep
-    int coordination_cycle;             // Current coordination cycle
-    float temporal_scale_factor;        // Temporal scaling factor
-    
-    // Process scheduling
-    bool plasticity_update_due;         // Plasticity update scheduled
-    bool neurogenesis_update_due;       // Neurogenesis update scheduled
-    bool pruning_update_due;            // Pruning update scheduled
-    bool homeostasis_update_due;        // Homeostasis update scheduled
-    
-    // Load balancing
-    float plasticity_load;              // Computational load of plasticity
-    float neurogenesis_load;            // Computational load of neurogenesis
-    float pruning_load;                 // Computational load of pruning
-    float homeostasis_load;             // Computational load of homeostasis
-    
-    // Adaptive scheduling
-    int plasticity_update_interval;     // Interval for plasticity updates
-    int neurogenesis_update_interval;   // Interval for neurogenesis updates
-    int pruning_update_interval;        // Interval for pruning updates
-    int homeostasis_update_interval;    // Interval for homeostasis updates
-    
-    // Resource allocation
-    float memory_allocation[4];         // Memory allocation per subsystem
-    float computation_allocation[4];    // Computation allocation per subsystem
-    float priority_weights[4];          // Priority weights for subsystems
-    
-    // Emergency controls
-    bool emergency_pruning_active;      // Emergency pruning activated
-    bool learning_rate_reduction;       // Learning rate reduction active
-    bool structural_modifications_paused; // Structural modifications paused
-    bool stability_protection_mode;     // Stability protection activated
-};
-
-/**
- * Complete dynamic neural network class integrating all Phase 3 features
- */
-class DynamicNeuralNetwork {
-public:
-    // ========================================
-    // CONSTRUCTION AND INITIALIZATION
-    // ========================================
-    
-    DynamicNeuralNetwork(int initial_neurons, int initial_synapses, int max_capacity_neurons, int max_capacity_synapses);
-    ~DynamicNeuralNetwork();
-    
-    bool initialize();
-    bool initializePhase3Systems();
-    bool validateInitialization();
-    
-    // ========================================
-    // MAIN SIMULATION INTERFACE
-    // ========================================
-    
-    void simulationStep(float dt, float current_time);
-    void adaptiveSimulationStep(float target_dt, float current_time);
-    void multiStepSimulation(int num_steps, float dt, float start_time);
-    
-    // ========================================
-    // LEARNING AND ADAPTATION
-    // ========================================
-    
-    void setRewardSignal(float reward);
-    void setEnvironmentalFeatures(const std::vector<float>& features);
-    void enableCuriosityDrivenLearning(bool enable);
-    void setLearningRateAdaptation(bool enable);
-    
-    // ========================================
-    // DYNAMIC STRUCTURE CONTROL
-    // ========================================
-    
-    void enableNeurogenesis(bool enable);
-    void enableSynaptogenesis(bool enable);
-    void enablePruning(bool enable);
-    void setStructuralPlasticityRate(float rate);
-    
-    // ========================================
-    // HOMEOSTATIC CONTROL
-    // ========================================
-    
-    void setHomeostaticTargets(float activity_target, float connectivity_target);
-    void enableHomeostaticRegulation(bool enable);
-    void setStabilityProtection(bool enable);
-    
-    // ========================================
-    // MONITORING AND ANALYSIS
-    // ========================================
-    
-    SystemState getSystemState() const;
-    void getDetailedStatistics(std::vector<float>& stats) const;
-    void exportNetworkStructure(const std::string& filename) const;
-    void generatePerformanceReport(const std::string& filename) const;
-    
-    // ========================================
-    // PERFORMANCE OPTIMIZATION
-    // ========================================
-    
-    void enableAdaptiveTimestep(bool enable);
-    void setComputationBudget(float budget_ms);
-    void enableMemoryOptimization(bool enable);
-    void optimizeForLatency();
-    void optimizeForThroughput();
-    
-    // ========================================
-    // DEVICE MEMORY ACCESS
-    // ========================================
-    
-    GPUNeuronState* getDeviceNeurons() const { return d_neurons_; }
-    GPUSynapse* getDeviceSynapses() const { return d_synapses_; }
-    
+class Phase3IntegrationFramework {
 private:
-    // ========================================
-    // DEVICE MEMORY MANAGEMENT
-    // ========================================
+    // Component frameworks
+    std::unique_ptr<EnhancedSTDPFramework> stdp_framework_;
+    std::unique_ptr<AdvancedReinforcementLearning> rl_framework_;
+    std::unique_ptr<DynamicNeurogenesisFramework> neurogenesis_framework_;
     
-    // Core neural structures
-    GPUNeuronState* d_neurons_;
-    GPUSynapse* d_synapses_;
-    curandState* d_rng_states_;
+    // Network parameters
+    int num_neurons_;
+    int num_synapses_;
+    int num_modules_;
     
-    // Phase 3 component states
-    PlasticityState* d_plasticity_states_;
-    DopamineNeuron* d_dopamine_neurons_;
-    ValueFunction* d_value_functions_;
-    ActorCriticState* d_actor_critic_states_;
-    CuriositySystem* d_curiosity_systems_;
-    
-    // Dynamic structure components
-    NeuralProgenitor* d_neural_progenitors_;
-    DevelopmentalTrajectory* d_developmental_trajectories_;
-    SynapticProgenitor* d_synaptic_progenitors_;
-    SynapticCompetition* d_synaptic_competition_;
-    
-    // Pruning and regulation
-    PruningAssessment* d_neuron_assessments_;
-    PruningAssessment* d_synapse_assessments_;
-    CompetitiveElimination* d_neuron_competition_;
-    CompetitiveElimination* d_synapse_competition_;
-    
-    // Homeostatic regulation
-    NeuralHomeostasis* d_neural_homeostasis_;
-    SynapticHomeostasis* d_synaptic_homeostasis_;
-    NetworkHomeostasis* d_network_homeostasis_;
-    
-    // Control and coordination
-    STDPRuleConfig* d_stdp_config_;
-    NeurogenesisController* d_neurogenesis_controller_;
-    SynaptogenesisController* d_synaptogenesis_controller_;
-    PruningController* d_pruning_controller_;
-    CoordinationController* d_coordination_controller_;
-    
-    // Environmental interface
-    float* d_global_reward_signal_;
-    float* d_environmental_features_;
-    float* d_global_neuromodulators_;
-    
-    // Performance monitoring
-    float* d_performance_metrics_;
-    int* d_active_element_counts_;
-    
-    // ========================================
-    // SYSTEM CONFIGURATION
-    // ========================================
-    
-    int max_neurons_;
-    int max_synapses_;
-    int max_progenitors_;
-    int current_neurons_;
-    int current_synapses_;
-    
-    float current_time_;
-    float adaptive_timestep_;
-    int simulation_step_count_;
-    
-    bool phase3_initialized_;
-    bool homeostatic_regulation_enabled_;
-    bool structural_plasticity_enabled_;
-    bool curiosity_learning_enabled_;
-    
-    // ========================================
-    // PERFORMANCE MONITORING
-    // ========================================
-    
-    std::chrono::high_resolution_clock::time_point last_performance_check_;
-    std::vector<float> performance_history_;
-    float average_step_time_ms_;
-    float peak_memory_usage_mb_;
-    
-    // ========================================
-    // PRIVATE METHODS
-    // ========================================
-    
-    // Initialization helpers
-    bool allocateDeviceMemory();
-    void deallocateDeviceMemory();
-    bool initializeRandomStates();
-    bool initializeControllers();
-    
-    // Simulation coordination
-    void coordinateSubsystems(float dt);
-    void updateCoordinationController(float dt);
-    void adaptiveScheduling();
-    void resourceLoadBalancing();
-    
-    // Performance optimization
-    void performanceMonitoring();
-    void memoryCompaction();
-    void adaptiveTimestepControl(float dt);
-    void emergencyStabilization();
-    
-    // Subsystem updates
-    void updatePlasticity(float dt);
-    void updateNeurogenesis(float dt);
-    void updateSynaptogenesis(float dt);
-    void updatePruning(float dt);
-    void updateHomeostasis(float dt);
-    void updateReinforcementLearning(float dt);
-    
-    // Utility functions
-    void updateSystemState();
-    void validateSystemIntegrity();
-    bool checkResourceLimits();
-    void handleSystemErrors();
-};
-
-// ========================================
-// IMPLEMENTATION
-// ========================================
-
-DynamicNeuralNetwork::DynamicNeuralNetwork(
-    int initial_neurons, 
-    int initial_synapses, 
-    int max_capacity_neurons, 
-    int max_capacity_synapses
-) : max_neurons_(max_capacity_neurons)
-  , max_synapses_(max_capacity_synapses)
-  , max_progenitors_(max_capacity_neurons / 10)  // 10% progenitor capacity
-  , current_neurons_(initial_neurons)
-  , current_synapses_(initial_synapses)
-  , current_time_(0.0f)
-  , adaptive_timestep_(INTEGRATION_TIMESTEP_MS)
-  , simulation_step_count_(0)
-  , phase3_initialized_(false)
-  , homeostatic_regulation_enabled_(true)
-  , structural_plasticity_enabled_(true)
-  , curiosity_learning_enabled_(true)
-  , average_step_time_ms_(0.0f)
-  , peak_memory_usage_mb_(0.0f)
-{
-    // Initialize all device pointers to nullptr
-    d_neurons_ = nullptr;
-    d_synapses_ = nullptr;
-    d_rng_states_ = nullptr;
-    d_plasticity_states_ = nullptr;
-    d_dopamine_neurons_ = nullptr;
-    d_value_functions_ = nullptr;
-    d_actor_critic_states_ = nullptr;
-    d_curiosity_systems_ = nullptr;
-    d_neural_progenitors_ = nullptr;
-    d_developmental_trajectories_ = nullptr;
-    d_synaptic_progenitors_ = nullptr;
-    d_synaptic_competition_ = nullptr;
-    d_neuron_assessments_ = nullptr;
-    d_synapse_assessments_ = nullptr;
-    d_neuron_competition_ = nullptr;
-    d_synapse_competition_ = nullptr;
-    d_neural_homeostasis_ = nullptr;
-    d_synaptic_homeostasis_ = nullptr;
-    d_network_homeostasis_ = nullptr;
-    d_stdp_config_ = nullptr;
-    d_neurogenesis_controller_ = nullptr;
-    d_synaptogenesis_controller_ = nullptr;
-    d_pruning_controller_ = nullptr;
-    d_coordination_controller_ = nullptr;
-    d_global_reward_signal_ = nullptr;
-    d_environmental_features_ = nullptr;
-    d_global_neuromodulators_ = nullptr;
-    d_performance_metrics_ = nullptr;
-    d_active_element_counts_ = nullptr;
-}
-
-DynamicNeuralNetwork::~DynamicNeuralNetwork() {
-    deallocateDeviceMemory();
-}
-
-bool DynamicNeuralNetwork::initialize() {
-    printf("Initializing Dynamic Neural Network (Phase 3)...\n");
-    printf("Target capacity: %d neurons, %d synapses\n", max_neurons_, max_synapses_);
-    
-    // Allocate device memory
-    if (!allocateDeviceMemory()) {
-        fprintf(stderr, "Failed to allocate device memory\n");
-        return false;
-    }
-    
-    // Initialize random number generators
-    if (!initializeRandomStates()) {
-        fprintf(stderr, "Failed to initialize random states\n");
-        return false;
-    }
-    
-    // Initialize control systems
-    if (!initializeControllers()) {
-        fprintf(stderr, "Failed to initialize controllers\n");
-        return false;
-    }
-    
-    // Initialize Phase 3 systems
-    if (!initializePhase3Systems()) {
-        fprintf(stderr, "Failed to initialize Phase 3 systems\n");
-        return false;
-    }
-    
-    // Validate initialization
-    if (!validateInitialization()) {
-        fprintf(stderr, "Initialization validation failed\n");
-        return false;
-    }
-    
-    phase3_initialized_ = true;
-    last_performance_check_ = std::chrono::high_resolution_clock::now();
-    
-    printf("Dynamic Neural Network initialization complete\n");
-    return true;
-}
-
-void DynamicNeuralNetwork::simulationStep(float dt, float current_time) {
-    auto step_start = std::chrono::high_resolution_clock::now();
-    
-    current_time_ = current_time;
-    simulation_step_count_++;
-    
-    // ========================================
-    // COORDINATION AND SCHEDULING
-    // ========================================
-    
-    if (simulation_step_count_ % COORDINATION_UPDATE_INTERVAL == 0) {
-        coordinateSubsystems(dt);
-    }
-    
-    // ========================================
-    // CORE NEURAL DYNAMICS (ALWAYS ACTIVE)
-    // ========================================
-    
-    // Update ion channel dynamics (from Phase 2)
-    launchEnhancedSynapticInput(
-        d_synapses_, d_neurons_, nullptr, // No spike events for now
-        nullptr, nullptr, // No current arrays for now
-        nullptr, nullptr, // No synapse mapping for now
-        current_synapses_, current_neurons_, 0,
-        current_time, dt
-    );
-    
-    // Update calcium dynamics
-    launchCalciumDynamics(d_neurons_, dt, current_neurons_);
-    
-    // Update neuron voltages with enhanced RK4
-    dim3 block(256);
-    dim3 grid((current_neurons_ + block.x - 1) / block.x);
-    enhancedRK4NeuronUpdateKernel<<<grid, block>>>(
-        d_neurons_, dt, current_time, current_neurons_
-    );
-    
-    // ========================================
-    // PHASE 3 SUBSYSTEM UPDATES
-    // ========================================
-    
-    CoordinationController coord_state;
-    cudaMemcpy(&coord_state, d_coordination_controller_, sizeof(CoordinationController), 
-               cudaMemcpyDeviceToHost);
-    
-    // Update plasticity (high frequency)
-    if (coord_state.plasticity_update_due) {
-        updatePlasticity(dt);
-    }
-    
-    // Update reinforcement learning (high frequency)
-    updateReinforcementLearning(dt);
-    
-    // Update homeostasis (medium frequency)
-    if (coord_state.homeostasis_update_due) {
-        updateHomeostasis(dt);
-    }
-    
-    // Update neurogenesis (low frequency)
-    if (coord_state.neurogenesis_update_due) {
-        updateNeurogenesis(dt);
-    }
-    
-    // Update synaptogenesis (low frequency)
-    if (coord_state.neurogenesis_update_due) { // Same schedule as neurogenesis
-        updateSynaptogenesis(dt);
-    }
-    
-    // Update pruning (low frequency)
-    if (coord_state.pruning_update_due) {
-        updatePruning(dt);
-    }
-    
-    // ========================================
-    // SYSTEM MONITORING AND OPTIMIZATION
-    // ========================================
-    
-    if (simulation_step_count_ % PERFORMANCE_MONITORING_INTERVAL == 0) {
-        performanceMonitoring();
-        updateSystemState();
-        
-        // Check for emergency interventions
-        if (checkResourceLimits()) {
-            emergencyStabilization();
-        }
-    }
-    
-    // ========================================
-    // ADAPTIVE TIMESTEP CONTROL
-    // ========================================
-    
-    if (ADAPTIVE_TIMESTEP_ENABLED) {
-        adaptiveTimestepControl(dt);
-    }
-    
-    // ========================================
-    // PERFORMANCE TRACKING
-    // ========================================
-    
-    auto step_end = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(step_end - step_start);
-    float step_time_ms = duration.count() / 1000.0f;
-    
-    // Update running average
-    average_step_time_ms_ = average_step_time_ms_ * 0.99f + step_time_ms * 0.01f;
-    
-    // Check computation budget
-    if (step_time_ms > COMPUTATION_BUDGET_MS) {
-        // Exceeded budget - trigger adaptive scheduling
-        adaptiveScheduling();
-    }
-    
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        fprintf(stderr, "CUDA error in simulation step: %s\n", cudaGetErrorString(err));
-        handleSystemErrors();
-    }
-    
-    cudaDeviceSynchronize();
-}
-
-void DynamicNeuralNetwork::coordinateSubsystems(float dt) {
-    // Update coordination controller
-    updateCoordinationController(dt);
-    
-    // Determine which subsystems need updates
-    CoordinationController coord_state;
-    cudaMemcpy(&coord_state, d_coordination_controller_, sizeof(CoordinationController), 
-               cudaMemcpyDeviceToHost);
-    
-    // Schedule updates based on intervals and load
-    coord_state.plasticity_update_due = 
-        (simulation_step_count_ % coord_state.plasticity_update_interval == 0);
-    coord_state.homeostasis_update_due = 
-        (simulation_step_count_ % coord_state.homeostasis_update_interval == 0);
-    coord_state.neurogenesis_update_due = 
-        (simulation_step_count_ % coord_state.neurogenesis_update_interval == 0);
-    coord_state.pruning_update_due = 
-        (simulation_step_count_ % coord_state.pruning_update_interval == 0);
-    
-    // Copy updated scheduling back
-    cudaMemcpy(d_coordination_controller_, &coord_state, sizeof(CoordinationController), 
-               cudaMemcpyHostToDevice);
-}
-
-void DynamicNeuralNetwork::updatePlasticity(float dt) {
-    // Enhanced STDP with multi-factor plasticity
-    launchEnhancedSTDP(
-        d_synapses_, d_neurons_, d_plasticity_states_, d_stdp_config_,
-        d_global_neuromodulators_, current_time_, dt, current_synapses_
-    );
-}
-
-void DynamicNeuralNetwork::updateReinforcementLearning(float dt) {
-    // Advanced reinforcement learning with RPE and curiosity
-    launchAdvancedReinforcementLearning(
-        d_dopamine_neurons_, d_value_functions_, d_actor_critic_states_,
-        d_curiosity_systems_, d_neurons_, d_global_reward_signal_,
-        d_environmental_features_, current_time_, dt,
-        current_neurons_ / 100, current_neurons_  // Sample of dopamine neurons
-    );
-}
-
-void DynamicNeuralNetwork::updateNeurogenesis(float dt) {
-    // Dynamic neurogenesis system
-    launchNeurogenesisSystem(
-        d_neural_progenitors_, d_neurons_, d_neurogenesis_controller_,
-        d_developmental_trajectories_, d_value_functions_, d_rng_states_,
-        d_active_element_counts_, current_time_, dt, max_progenitors_,
-        current_neurons_, max_neurons_
-    );
-    
-    // Check for new neurons created
-    int new_neuron_count;
-    cudaMemcpy(&new_neuron_count, d_active_element_counts_, sizeof(int), 
-               cudaMemcpyDeviceToHost);
-    
-    if (new_neuron_count > 0) {
-        current_neurons_ = min(max_neurons_, current_neurons_ + new_neuron_count);
-        printf("Neurogenesis: %d new neurons created (total: %d)\n", 
-               new_neuron_count, current_neurons_);
-    }
-}
-
-void DynamicNeuralNetwork::updateSynaptogenesis(float dt) {
-    // Dynamic synaptogenesis system
-    launchSynaptogenesisSystem(
-        d_synaptic_progenitors_, d_neurons_, d_synapses_, d_synaptic_competition_,
-        d_synaptogenesis_controller_, d_rng_states_, current_time_, dt,
-        max_progenitors_, current_neurons_, current_synapses_
-    );
-}
-
-void DynamicNeuralNetwork::updatePruning(float dt) {
-    // Neural pruning and elimination
-    launchNeuralPruningSystem(
-        d_neurons_, d_synapses_, d_neuron_assessments_, d_synapse_assessments_,
-        d_neuron_competition_, d_synapse_competition_, d_pruning_controller_,
-        d_value_functions_, d_rng_states_, current_time_, dt,
-        current_neurons_, current_synapses_
-    );
-}
-
-void DynamicNeuralNetwork::updateHomeostasis(float dt) {
-    // Homeostatic regulation system
-    launchHomeostaticRegulationSystem(
-        d_neurons_, d_synapses_, d_neural_homeostasis_, d_synaptic_homeostasis_,
-        d_network_homeostasis_, d_plasticity_states_, d_value_functions_,
-        current_time_, dt, current_neurons_, current_synapses_
-    );
-}
-
-SystemState DynamicNeuralNetwork::getSystemState() const {
-    SystemState state;
-    
-    // Copy network state from device
-    NetworkHomeostasis network_state;
-    cudaMemcpy(&network_state, d_network_homeostasis_, sizeof(NetworkHomeostasis), 
-               cudaMemcpyDeviceToHost);
-    
-    // Fill system state structure
-    state.current_neuron_count = current_neurons_;
-    state.current_synapse_count = current_synapses_;
-    state.network_density = (float)current_synapses_ / (current_neurons_ * current_neurons_);
-    state.global_activity_level = network_state.global_activity_level;
-    state.network_efficiency = network_state.allocation_efficiency;
-    state.stability_index = network_state.stability_index;
-    state.homeostatic_error = network_state.activity_regulation_error;
+    // Integration state
+    bool is_initialized_;
+    bool cuda_available_;
+    bool real_time_mode_;
     
     // Performance metrics
-    state.memory_utilization = peak_memory_usage_mb_ / MEMORY_POOL_SIZE_MB;
-    state.computation_utilization = average_step_time_ms_ / COMPUTATION_BUDGET_MS;
+    float integration_efficiency_;
+    float overall_learning_rate_;
+    std::chrono::steady_clock::time_point last_update_;
     
-    return state;
-}
+    // Thread safety
+    mutable std::mutex framework_mutex_;
 
-bool DynamicNeuralNetwork::allocateDeviceMemory() {
-    cudaError_t err;
-    size_t total_memory = 0;
+public:
+    // ========================================================================
+    // CONSTRUCTION AND LIFECYCLE
+    // ========================================================================
     
-    printf("Allocating device memory for dynamic neural network...\n");
+    Phase3IntegrationFramework();
+    ~Phase3IntegrationFramework();
     
-    // Core neural structures
-    err = cudaMalloc(&d_neurons_, max_neurons_ * sizeof(GPUNeuronState));
-    if (err != cudaSuccess) return false;
-    total_memory += max_neurons_ * sizeof(GPUNeuronState);
+    /**
+     * @brief Initialize the complete Phase 3 framework
+     * @param num_neurons Number of neurons
+     * @param num_synapses Number of synapses
+     * @param num_modules Number of neural modules
+     * @return Success status
+     */
+    bool initialize(int num_neurons, int num_synapses, int num_modules);
     
-    err = cudaMalloc(&d_synapses_, max_synapses_ * sizeof(GPUSynapse));
-    if (err != cudaSuccess) return false;
-    total_memory += max_synapses_ * sizeof(GPUSynapse);
+    /**
+     * @brief Configure comprehensive learning parameters
+     * @param stdp_rate STDP learning rate
+     * @param rl_rate Reinforcement learning rate
+     * @param neurogenesis_rate Neurogenesis rate
+     * @param integration_strength Framework integration strength
+     */
+    void configure_learning_parameters(float stdp_rate, float rl_rate, 
+                                     float neurogenesis_rate, float integration_strength);
     
-    err = cudaMalloc(&d_rng_states_, max_neurons_ * sizeof(curandState));
-    if (err != cudaSuccess) return false;
-    total_memory += max_neurons_ * sizeof(curandState);
+    // ========================================================================
+    // MAIN INTEGRATION INTERFACE
+    // ========================================================================
     
-    // Phase 3 plasticity components
-    err = cudaMalloc(&d_plasticity_states_, max_synapses_ * sizeof(PlasticityState));
-    if (err != cudaSuccess) return false;
-    total_memory += max_synapses_ * sizeof(PlasticityState);
+    /**
+     * @brief Execute complete learning update across all frameworks
+     * @param current_time Current simulation time
+     * @param dt Time step
+     * @param reward_signal Environmental reward signal
+     * @param environmental_features Current environmental state
+     */
+    void update_integrated_learning(float current_time, float dt, float reward_signal,
+                                   const std::vector<float>& environmental_features);
     
-    // Reinforcement learning components
-    int num_dopamine_neurons = max_neurons_ / 100;  // 1% dopamine neurons
-    err = cudaMalloc(&d_dopamine_neurons_, num_dopamine_neurons * sizeof(DopamineNeuron));
-    if (err != cudaSuccess) return false;
-    total_memory += num_dopamine_neurons * sizeof(DopamineNeuron);
+    /**
+     * @brief Update plasticity mechanisms across all components
+     * @param current_time Current time
+     * @param dt Time step
+     * @param dopamine_level Dopamine concentration
+     */
+    void update_plasticity_mechanisms(float current_time, float dt, float dopamine_level);
     
-    err = cudaMalloc(&d_value_functions_, num_dopamine_neurons * sizeof(ValueFunction));
-    if (err != cudaSuccess) return false;
-    total_memory += num_dopamine_neurons * sizeof(ValueFunction);
+    /**
+     * @brief Update reinforcement learning components
+     * @param state_features Current state
+     * @param action_taken Action executed
+     * @param reward_received Reward from environment
+     * @param dt Time step
+     */
+    void update_reinforcement_learning(const std::vector<float>& state_features, 
+                                     int action_taken, float reward_received, float dt);
     
-    err = cudaMalloc(&d_actor_critic_states_, num_dopamine_neurons * sizeof(ActorCriticState));
-    if (err != cudaSuccess) return false;
-    total_memory += num_dopamine_neurons * sizeof(ActorCriticState);
+    /**
+     * @brief Update neurogenesis and structural plasticity
+     * @param current_time Current time
+     * @param dt Time step
+     * @param global_activity Global network activity
+     */
+    void update_structural_plasticity(float current_time, float dt, float global_activity);
     
-    err = cudaMalloc(&d_curiosity_systems_, num_dopamine_neurons * sizeof(CuriositySystem));
-    if (err != cudaSuccess) return false;
-    total_memory += num_dopamine_neurons * sizeof(CuriositySystem);
+    // ========================================================================
+    // MONITORING AND ANALYSIS
+    // ========================================================================
     
-    // Dynamic structure components
-    err = cudaMalloc(&d_neural_progenitors_, max_progenitors_ * sizeof(NeuralProgenitor));
-    if (err != cudaSuccess) return false;
-    total_memory += max_progenitors_ * sizeof(NeuralProgenitor);
+    /**
+     * @brief Get comprehensive learning statistics
+     * @param stats Output vector for all statistics
+     */
+    void get_comprehensive_statistics(std::vector<float>& stats) const;
     
-    err = cudaMalloc(&d_developmental_trajectories_, max_progenitors_ * sizeof(DevelopmentalTrajectory));
-    if (err != cudaSuccess) return false;
-    total_memory += max_progenitors_ * sizeof(DevelopmentalTrajectory);
+    /**
+     * @brief Get integration efficiency metric
+     * @return Integration efficiency [0,1]
+     */
+    float get_integration_efficiency() const;
     
-    err = cudaMalloc(&d_synaptic_progenitors_, max_progenitors_ * sizeof(SynapticProgenitor));
-    if (err != cudaSuccess) return false;
-    total_memory += max_progenitors_ * sizeof(SynapticProgenitor);
+    /**
+     * @brief Get overall learning progress
+     * @return Learning progress metric
+     */
+    float get_overall_learning_progress() const;
     
-    err = cudaMalloc(&d_synaptic_competition_, max_progenitors_ * sizeof(SynapticCompetition));
-    if (err != cudaSuccess) return false;
-    total_memory += max_progenitors_ * sizeof(SynapticCompetition);
+    /**
+     * @brief Generate comprehensive system report
+     * @param filename Output filename for detailed analysis
+     */
+    void generate_system_report(const std::string& filename) const;
     
-    // Pruning components
-    err = cudaMalloc(&d_neuron_assessments_, max_neurons_ * sizeof(PruningAssessment));
-    if (err != cudaSuccess) return false;
-    total_memory += max_neurons_ * sizeof(PruningAssessment);
+    // ========================================================================
+    // STATE MANAGEMENT
+    // ========================================================================
     
-    err = cudaMalloc(&d_synapse_assessments_, max_synapses_ * sizeof(PruningAssessment));
-    if (err != cudaSuccess) return false;
-    total_memory += max_synapses_ * sizeof(PruningAssessment);
+    /**
+     * @brief Save complete framework state
+     * @param filename Base filename for state files
+     * @return Success status
+     */
+    bool save_complete_state(const std::string& filename) const;
     
-    err = cudaMalloc(&d_neuron_competition_, max_neurons_ * sizeof(CompetitiveElimination));
-    if (err != cudaSuccess) return false;
-    total_memory += max_neurons_ * sizeof(CompetitiveElimination);
+    /**
+     * @brief Load complete framework state
+     * @param filename Base filename for state files
+     * @return Success status
+     */
+    bool load_complete_state(const std::string& filename);
     
-    err = cudaMalloc(&d_synapse_competition_, max_synapses_ * sizeof(CompetitiveElimination));
-    if (err != cudaSuccess) return false;
-    total_memory += max_synapses_ * sizeof(CompetitiveElimination);
-    
-    // Homeostatic regulation components
-    err = cudaMalloc(&d_neural_homeostasis_, max_neurons_ * sizeof(NeuralHomeostasis));
-    if (err != cudaSuccess) return false;
-    total_memory += max_neurons_ * sizeof(NeuralHomeostasis);
-    
-    err = cudaMalloc(&d_synaptic_homeostasis_, max_synapses_ * sizeof(SynapticHomeostasis));
-    if (err != cudaSuccess) return false;
-    total_memory += max_synapses_ * sizeof(SynapticHomeostasis);
-    
-    err = cudaMalloc(&d_network_homeostasis_, sizeof(NetworkHomeostasis));
-    if (err != cudaSuccess) return false;
-    total_memory += sizeof(NetworkHomeostasis);
-    
-    // Control structures
-    err = cudaMalloc(&d_stdp_config_, sizeof(STDPRuleConfig));
-    if (err != cudaSuccess) return false;
-    total_memory += sizeof(STDPRuleConfig);
-    
-    err = cudaMalloc(&d_neurogenesis_controller_, sizeof(NeurogenesisController));
-    if (err != cudaSuccess) return false;
-    total_memory += sizeof(NeurogenesisController);
-    
-    err = cudaMalloc(&d_synaptogenesis_controller_, sizeof(SynaptogenesisController));
-    if (err != cudaSuccess) return false;
-    total_memory += sizeof(SynaptogenesisController);
-    
-    err = cudaMalloc(&d_pruning_controller_, sizeof(PruningController));
-    if (err != cudaSuccess) return false;
-    total_memory += sizeof(PruningController);
-    
-    err = cudaMalloc(&d_coordination_controller_, sizeof(CoordinationController));
-    if (err != cudaSuccess) return false;
-    total_memory += sizeof(CoordinationController);
-    
-    // Environmental interface
-    err = cudaMalloc(&d_global_reward_signal_, sizeof(float));
-    if (err != cudaSuccess) return false;
-    total_memory += sizeof(float);
-    
-    err = cudaMalloc(&d_environmental_features_, 64 * sizeof(float));
-    if (err != cudaSuccess) return false;
-    total_memory += 64 * sizeof(float);
-    
-    err = cudaMalloc(&d_global_neuromodulators_, 4 * sizeof(float));
-    if (err != cudaSuccess) return false;
-    total_memory += 4 * sizeof(float);
-    
-    // Performance monitoring
-    err = cudaMalloc(&d_performance_metrics_, 32 * sizeof(float));
-    if (err != cudaSuccess) return false;
-    total_memory += 32 * sizeof(float);
-    
-    err = cudaMalloc(&d_active_element_counts_, 4 * sizeof(int));
-    if (err != cudaSuccess) return false;
-    total_memory += 4 * sizeof(int);
-    
-    peak_memory_usage_mb_ = total_memory / (1024.0f * 1024.0f);
-    printf("Total device memory allocated: %.2f MB\n", peak_memory_usage_mb_);
-    
-    return true;
-}
+    /**
+     * @brief Reset all frameworks to baseline state
+     */
+    void reset_all_frameworks();
 
-void DynamicNeuralNetwork::deallocateDeviceMemory() {
-    // Free all device memory
-    if (d_neurons_) cudaFree(d_neurons_);
-    if (d_synapses_) cudaFree(d_synapses_);
-    if (d_rng_states_) cudaFree(d_rng_states_);
-    if (d_plasticity_states_) cudaFree(d_plasticity_states_);
-    if (d_dopamine_neurons_) cudaFree(d_dopamine_neurons_);
-    if (d_value_functions_) cudaFree(d_value_functions_);
-    if (d_actor_critic_states_) cudaFree(d_actor_critic_states_);
-    if (d_curiosity_systems_) cudaFree(d_curiosity_systems_);
-    if (d_neural_progenitors_) cudaFree(d_neural_progenitors_);
-    if (d_developmental_trajectories_) cudaFree(d_developmental_trajectories_);
-    if (d_synaptic_progenitors_) cudaFree(d_synaptic_progenitors_);
-    if (d_synaptic_competition_) cudaFree(d_synaptic_competition_);
-    if (d_neuron_assessments_) cudaFree(d_neuron_assessments_);
-    if (d_synapse_assessments_) cudaFree(d_synapse_assessments_);
-    if (d_neuron_competition_) cudaFree(d_neuron_competition_);
-    if (d_synapse_competition_) cudaFree(d_synapse_competition_);
-    if (d_neural_homeostasis_) cudaFree(d_neural_homeostasis_);
-    if (d_synaptic_homeostasis_) cudaFree(d_synaptic_homeostasis_);
-    if (d_network_homeostasis_) cudaFree(d_network_homeostasis_);
-    if (d_stdp_config_) cudaFree(d_stdp_config_);
-    if (d_neurogenesis_controller_) cudaFree(d_neurogenesis_controller_);
-    if (d_synaptogenesis_controller_) cudaFree(d_synaptogenesis_controller_);
-    if (d_pruning_controller_) cudaFree(d_pruning_controller_);
-    if (d_coordination_controller_) cudaFree(d_coordination_controller_);
-    if (d_global_reward_signal_) cudaFree(d_global_reward_signal_);
-    if (d_environmental_features_) cudaFree(d_environmental_features_);
-    if (d_global_neuromodulators_) cudaFree(d_global_neuromodulators_);
-    if (d_performance_metrics_) cudaFree(d_performance_metrics_);
-    if (d_active_element_counts_) cudaFree(d_active_element_counts_);
-}
+private:
+    // ========================================================================
+    // INTERNAL INTEGRATION METHODS
+    // ========================================================================
+    
+    /**
+     * @brief Initialize CUDA resources for all frameworks
+     * @return Success status
+     */
+    bool initialize_cuda_resources();
+    
+    /**
+     * @brief Cleanup all CUDA resources
+     */
+    void cleanup_cuda_resources();
+    
+    /**
+     * @brief Synchronize learning between frameworks
+     */
+    void synchronize_framework_learning();
+    
+    /**
+     * @brief Update integration metrics
+     */
+    void update_integration_metrics();
+    
+    /**
+     * @brief Validate framework states
+     * @return Validation success
+     */
+    bool validate_framework_states() const;
+    
+    /**
+     * @brief Coordinate framework interactions
+     * @param current_time Current time
+     * @param dt Time step
+     */
+    void coordinate_framework_interactions(float current_time, float dt);
+    
+    /**
+     * @brief Handle framework errors and recovery
+     */
+    void handle_framework_errors();
+};
 
 #endif // PHASE3_INTEGRATION_FRAMEWORK_H

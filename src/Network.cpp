@@ -225,20 +225,27 @@ void Network::initialize_synapses() {
         return;
     }
     
-    // Create initial random connectivity with biological constraints
+    // Create initial connectivity with enhanced parameters for version 0.5.5
     std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
     std::uniform_real_distribution<float> weight_dist(config_.min_weight, config_.max_weight);
     std::uniform_int_distribution<int> delay_dist(1, 5);
     
+    // Enhanced target synapses for version 0.5.5 - aim for realistic connectivity
     size_t target_synapses = std::min(static_cast<size_t>(config_.totalSynapses), 
-                                     neurons_.size() * neurons_.size() / 10);
+                                     neurons_.size() * neurons_.size() / 4); // More aggressive targeting
+    
+    // Ensure minimum connectivity for small networks
+    size_t min_synapses = neurons_.size() * 3; // At least 3 connections per neuron on average
+    target_synapses = std::max(target_synapses, min_synapses);
+    
+    std::cout << "🎯 Target synapses: " << target_synapses << " (for " << neurons_.size() << " neurons)" << std::endl;
     
     size_t created_synapses = 0;
     for (size_t pre = 0; pre < neurons_.size() && created_synapses < target_synapses; pre++) {
         for (size_t post = 0; post < neurons_.size() && created_synapses < target_synapses; post++) {
             if (pre == post) continue; // No self-connections
             
-            // Biological connection probability (distance-dependent)
+            // Enhanced connection probability for biological realism with better connectivity
             float connection_prob = calculateConnectionProbability(pre, post);
             
             if (prob_dist(random_engine_) < connection_prob) {
@@ -255,6 +262,32 @@ void Network::initialize_synapses() {
     }
     
     std::cout << "✅ Created " << created_synapses << " synaptic connections" << std::endl;
+    
+    // If we still have very few connections, create some guaranteed ones
+    if (created_synapses < min_synapses / 2) {
+        std::cout << "🔧 Creating additional connections to ensure network functionality..." << std::endl;
+        
+        size_t additional_created = 0;
+        std::uniform_int_distribution<size_t> neuron_dist(0, neurons_.size() - 1);
+        
+        while (additional_created < min_synapses / 2 && (created_synapses + additional_created) < target_synapses) {
+            size_t pre = neuron_dist(random_engine_);
+            size_t post = neuron_dist(random_engine_);
+            
+            if (pre != post && !synapseExists(pre, post)) {
+                std::string synapse_type = (prob_dist(random_engine_) < config_.exc_ratio) ? 
+                                          "excitatory" : "inhibitory";
+                float weight = weight_dist(random_engine_);
+                int delay = delay_dist(random_engine_);
+                
+                if (createSynapse(pre, post, synapse_type, delay, weight)) {
+                    additional_created++;
+                }
+            }
+        }
+        
+        std::cout << "✅ Created " << additional_created << " additional synaptic connections" << std::endl;
+    }
 }
 
 // ============================================================================
@@ -362,21 +395,37 @@ void Network::prune_synapses() {
 }
 
 void Network::grow_synapses() {
-    // Create new synaptic connections in active regions
-    size_t max_new_synapses = synapses_.size() / 100; // Limit growth to 1% per step
+    // Enhanced synaptic growth for version 0.5.5
+    if (synapses_.size() >= static_cast<size_t>(config_.totalSynapses)) return;
+    
+    size_t max_new_synapses = std::max(static_cast<size_t>(5), synapses_.size() / 50); // Grow 2% per step, minimum 5
     size_t created = 0;
     
     std::uniform_real_distribution<float> prob_dist(0.0f, 1.0f);
+    std::uniform_real_distribution<float> weight_dist(config_.min_weight * 0.5f, config_.max_weight * 0.7f);
     std::uniform_int_distribution<size_t> neuron_dist(0, neurons_.size() - 1);
     
-    for (size_t attempt = 0; attempt < max_new_synapses * 10 && created < max_new_synapses; attempt++) {
+    for (size_t attempt = 0; attempt < max_new_synapses * 20 && created < max_new_synapses; attempt++) {
         size_t pre_id = neuron_dist(random_engine_);
         size_t post_id = neuron_dist(random_engine_);
         
         if (pre_id != post_id && !synapseExists(pre_id, post_id)) {
-            // Check if both neurons are sufficiently active
+            // Enhanced growth: prefer active neurons but also allow spontaneous growth
+            bool should_connect = false;
+            
             if (isNeuronActive(pre_id) && isNeuronActive(post_id)) {
-                float weight = 0.1f; // Small initial weight
+                // High probability for active-active connections
+                should_connect = prob_dist(random_engine_) < 0.8f;
+            } else if (isNeuronActive(pre_id) || isNeuronActive(post_id)) {
+                // Medium probability for partially active connections
+                should_connect = prob_dist(random_engine_) < 0.4f;
+            } else {
+                // Low probability for inactive connections (exploration)
+                should_connect = prob_dist(random_engine_) < 0.1f;
+            }
+            
+            if (should_connect) {
+                float weight = weight_dist(random_engine_);
                 std::string type = (prob_dist(random_engine_) < config_.exc_ratio) ? 
                                   "excitatory" : "inhibitory";
                 
@@ -388,7 +437,7 @@ void Network::grow_synapses() {
     }
     
     if (created > 0) {
-        std::cout << "🌱 Grew " << created << " new synapses" << std::endl;
+        std::cout << "🌱 Grew " << created << " new synapses (total: " << synapses_.size() << ")" << std::endl;
     }
 }
 
@@ -407,10 +456,20 @@ bool Network::shouldPruneSynapse(const Synapse& synapse) const {
 // ============================================================================
 
 float Network::calculateConnectionProbability(size_t pre_id, size_t post_id) const {
-    // Simple distance-based connection probability
-    float base_prob = 0.1f;
-    float distance_factor = 1.0f / (1.0f + std::abs(static_cast<int>(post_id - pre_id)) / 10.0f);
-    return base_prob * distance_factor;
+    // Enhanced connection probability for version 0.5.5
+    constexpr float BASE_PROB = 0.15f; // 15% base connection probability
+    constexpr float DISTANCE_SCALE = 20.0f; // Characteristic distance scale
+    
+    float distance = std::abs(static_cast<float>(post_id) - static_cast<float>(pre_id));
+    float distance_factor = std::exp(-distance / DISTANCE_SCALE);
+    
+    // Add small-world topology bias for enhanced connectivity
+    float random_factor = 0.05f; // 5% random long-range connections
+    
+    // Boost probability for version 0.5.5 features
+    float enhanced_prob = (BASE_PROB * distance_factor + random_factor) * 1.5f;
+    
+    return std::min(0.4f, enhanced_prob); // Cap at 40% for biological realism
 }
 
 float Network::calculateTotalSynapticInput(size_t neuron_id) const {

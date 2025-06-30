@@ -333,6 +333,246 @@ std::vector<float> NetworkCUDA::get_output() const {
 }
 
 // ============================================================================
+// NETWORKCU DA IMPLEMENTATION - Core Methods
+// ============================================================================
+
+NetworkCUDA::NetworkCUDA(const NetworkConfig& config) 
+    : config_(config),
+      system_initialized_(false),
+      num_neurons_(config.hidden_size),
+      num_synapses_(config.hidden_size * 4), // Estimate based on connectivity
+      current_simulation_time_(0.0f),
+      simulation_step_count_(0),
+      d_neurons_(nullptr),
+      d_synapses_(nullptr),
+      d_input_currents_(nullptr),
+      d_spike_count_(nullptr),
+      d_network_stats_(nullptr),
+      allocated_memory_mb_(0.0f) {
+    
+    std::cout << "🧠 Initializing NetworkCUDA with " << num_neurons_ << " neurons..." << std::endl;
+    
+    // Allocate GPU memory
+    allocate_gpu_memory();
+    
+    // Initialize GPU state
+    initialize_gpu_state();
+    
+    system_initialized_ = true;
+    std::cout << "✅ NetworkCUDA initialized successfully" << std::endl;
+}
+
+NetworkCUDA::~NetworkCUDA() {
+    cleanup_resources();
+    std::cout << "🧠 NetworkCUDA destroyed" << std::endl;
+}
+
+void NetworkCUDA::allocate_gpu_memory() {
+    cudaError_t err;
+    
+    // Allocate neurons
+    err = cudaMalloc(&d_neurons_, num_neurons_ * sizeof(GPUNeuronState));
+    if (err != cudaSuccess) {
+        throw std::runtime_error("Failed to allocate neuron memory: " + std::string(cudaGetErrorString(err)));
+    }
+    
+    // Allocate synapses
+    err = cudaMalloc(&d_synapses_, num_synapses_ * sizeof(GPUSynapse));
+    if (err != cudaSuccess) {
+        throw std::runtime_error("Failed to allocate synapse memory: " + std::string(cudaGetErrorString(err)));
+    }
+    
+    // Allocate auxiliary arrays
+    err = cudaMalloc(&d_input_currents_, num_neurons_ * sizeof(float));
+    if (err != cudaSuccess) {
+        throw std::runtime_error("Failed to allocate input currents: " + std::string(cudaGetErrorString(err)));
+    }
+    
+    err = cudaMalloc(&d_spike_count_, sizeof(int));
+    if (err != cudaSuccess) {
+        throw std::runtime_error("Failed to allocate spike count: " + std::string(cudaGetErrorString(err)));
+    }
+    
+    err = cudaMalloc(&d_network_stats_, sizeof(NetworkStats));
+    if (err != cudaSuccess) {
+        throw std::runtime_error("Failed to allocate network stats: " + std::string(cudaGetErrorString(err)));
+    }
+    
+    // Calculate allocated memory
+    size_t total_bytes = num_neurons_ * sizeof(GPUNeuronState) +
+                        num_synapses_ * sizeof(GPUSynapse) +
+                        num_neurons_ * sizeof(float) +
+                        sizeof(int) + sizeof(NetworkStats);
+    allocated_memory_mb_ = total_bytes / (1024.0f * 1024.0f);
+    
+    std::cout << "💾 GPU memory allocated: " << allocated_memory_mb_ << " MB" << std::endl;
+}
+
+void NetworkCUDA::initialize_gpu_state() {
+    // Initialize neurons
+    cudaMemset(d_neurons_, 0, num_neurons_ * sizeof(GPUNeuronState));
+    
+    // Initialize synapses
+    cudaMemset(d_synapses_, 0, num_synapses_ * sizeof(GPUSynapse));
+    
+    // Initialize auxiliary arrays
+    cudaMemset(d_input_currents_, 0, num_neurons_ * sizeof(float));
+    cudaMemset(d_spike_count_, 0, sizeof(int));
+    cudaMemset(d_network_stats_, 0, sizeof(NetworkStats));
+    
+    std::cout << "🔧 GPU state initialized" << std::endl;
+}
+
+void NetworkCUDA::cleanup_resources() {
+    if (d_neurons_) cudaFree(d_neurons_);
+    if (d_synapses_) cudaFree(d_synapses_);
+    if (d_input_currents_) cudaFree(d_input_currents_);
+    if (d_spike_count_) cudaFree(d_spike_count_);
+    if (d_network_stats_) cudaFree(d_network_stats_);
+    
+    d_neurons_ = nullptr;
+    d_synapses_ = nullptr;
+    d_input_currents_ = nullptr;
+    d_spike_count_ = nullptr;
+    d_network_stats_ = nullptr;
+}
+
+void NetworkCUDA::copy_to_gpu(const std::vector<GPUNeuronState>& neurons, 
+                             const std::vector<GPUSynapse>& synapses) {
+    if (!system_initialized_) return;
+    
+    // Copy neurons
+    size_t neurons_to_copy = std::min(static_cast<size_t>(num_neurons_), neurons.size());
+    if (neurons_to_copy > 0) {
+        cudaMemcpy(d_neurons_, neurons.data(), 
+                  neurons_to_copy * sizeof(GPUNeuronState), 
+                  cudaMemcpyHostToDevice);
+    }
+    
+    // Copy synapses
+    size_t synapses_to_copy = std::min(static_cast<size_t>(num_synapses_), synapses.size());
+    if (synapses_to_copy > 0) {
+        cudaMemcpy(d_synapses_, synapses.data(), 
+                  synapses_to_copy * sizeof(GPUSynapse), 
+                  cudaMemcpyHostToDevice);
+    }
+}
+
+void NetworkCUDA::copy_from_gpu(std::vector<GPUNeuronState>& neurons, 
+                               std::vector<GPUSynapse>& synapses) {
+    if (!system_initialized_) return;
+    
+    // Resize vectors
+    neurons.resize(num_neurons_);
+    synapses.resize(num_synapses_);
+    
+    // Copy from GPU
+    cudaMemcpy(neurons.data(), d_neurons_, 
+              num_neurons_ * sizeof(GPUNeuronState), 
+              cudaMemcpyDeviceToHost);
+    
+    cudaMemcpy(synapses.data(), d_synapses_, 
+              num_synapses_ * sizeof(GPUSynapse), 
+              cudaMemcpyDeviceToHost);
+}
+
+void NetworkCUDA::simulate_step(float current_time, float dt, float reward, 
+                               const std::vector<float>& inputs) {
+    if (!system_initialized_) return;
+    
+    current_simulation_time_ = current_time;
+    simulation_step_count_++;
+    
+    // Copy inputs to GPU if provided
+    if (!inputs.empty()) {
+        size_t input_size = std::min(static_cast<size_t>(num_neurons_), inputs.size());
+        cudaMemcpy(d_input_currents_, inputs.data(), 
+                  input_size * sizeof(float), cudaMemcpyHostToDevice);
+    }
+    
+    // Execute simulation step (placeholder - would call actual kernels)
+    // This would launch the neural update kernels
+    std::cout << "🧠 Simulation step " << simulation_step_count_ << " at t=" << current_time << "ms" << std::endl;
+}
+
+void NetworkCUDA::get_stats(NetworkStats& stats) const {
+    if (!system_initialized_) {
+        stats.reset();
+        return;
+    }
+    
+    // Copy stats from GPU
+    cudaMemcpy(&stats, d_network_stats_, sizeof(NetworkStats), cudaMemcpyDeviceToHost);
+    
+    // Fill in basic information
+    stats.active_neuron_count = num_neurons_;
+    stats.active_synapses = num_synapses_;
+    stats.simulation_steps = simulation_step_count_;
+    stats.current_time_ms = current_simulation_time_;
+}
+
+// ============================================================================
+// MISSING UTILITY FUNCTIONS IMPLEMENTATION
+// ============================================================================
+
+extern "C" {
+
+bool extract_cpu_network_data(void* cpu_network_ptr, CPUNetworkAdapter* adapter) {
+    if (!cpu_network_ptr || !adapter) return false;
+    
+    // This is a placeholder implementation
+    // In a real implementation, this would cast cpu_network_ptr to Network*
+    // and extract the actual neural data
+    
+    adapter->neurons.clear();
+    adapter->synapses.clear();
+    adapter->active_neuron_count = 0;
+    adapter->active_synapse_count = 0;
+    adapter->is_valid = true;
+    
+    // For now, return success with empty data
+    // Real implementation would access Network class members
+    std::cout << "📤 Extracting CPU network data (placeholder)" << std::endl;
+    return true;
+}
+
+bool update_cpu_network_data(void* cpu_network_ptr, const CPUNetworkAdapter* adapter) {
+    if (!cpu_network_ptr || !adapter) return false;
+    
+    // This is a placeholder implementation
+    // In a real implementation, this would cast cpu_network_ptr to Network*
+    // and update the CPU network state with GPU data
+    
+    std::cout << "📥 Updating CPU network data (placeholder)" << std::endl;
+    return true;
+}
+
+bool get_cpu_neuron_data(void* cpu_network_ptr, size_t neuron_id, CPUNeuronAdapter* adapter) {
+    if (!cpu_network_ptr || !adapter) return false;
+    
+    // Placeholder implementation
+    adapter->potential = 0.0f;
+    adapter->recovery_variable = 0.0f;
+    adapter->last_spike_time = -1000.0f;
+    adapter->firing_rate = 0.0f;
+    adapter->neuron_id = neuron_id;
+    adapter->is_valid = true;
+    
+    return true;
+}
+
+bool get_cpu_outgoing_synapses(void* cpu_network_ptr, size_t neuron_id, 
+                              CPUSynapseAdapter* synapses, size_t max_synapses, size_t* actual_count) {
+    if (!cpu_network_ptr || !synapses || !actual_count) return false;
+    
+    // Placeholder implementation
+    *actual_count = 0;
+    return true;
+}
+
+} // extern "C"
+
+// ============================================================================
 // ADDITIONAL HELPER METHODS FOR SEAMLESS INTEGRATION
 // ============================================================================
 
