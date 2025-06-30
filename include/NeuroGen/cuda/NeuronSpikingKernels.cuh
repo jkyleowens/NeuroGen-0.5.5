@@ -20,7 +20,8 @@ struct GPUSpikeEvent;
 __global__ void resetSpikeFlags(GPUNeuronState* neurons, int num_neurons);
 
 __global__ void countSpikesKernel(const GPUNeuronState* neurons,
-                                 int* spike_count, int num_neurons);
+                                 int* spike_count, int num_neurons,
+                                 float current_time);
 
 /**
  * CUDA kernel to update the spiking state of neurons
@@ -29,7 +30,8 @@ __global__ void countSpikesKernel(const GPUNeuronState* neurons,
  * @param num_neurons Total number of neurons
  */
 __global__ void updateNeuronSpikes(GPUNeuronState* neurons,
-                                  float threshold, int num_neurons);
+                                  int num_neurons, float current_time,
+                                  float dt);
 
 /**
  * CUDA kernel to detect spikes and record spike events
@@ -41,7 +43,10 @@ __global__ void updateNeuronSpikes(GPUNeuronState* neurons,
  * @param current_time Current simulation time
  */
 __global__ void detectSpikes(const GPUNeuronState* neurons,
-                            GPUSpikeEvent* spikes, float threshold,
-                            int* spike_count, int num_neurons, float current_time);
+                            GPUSpikeEvent* spikes,
+                            int* spike_count, int num_neurons,
+                            float current_time,
+                            int* module_assignments,
+                            int max_spike_events);
 
 #endif // NEURON_SPIKING_KERNELS_CUH
