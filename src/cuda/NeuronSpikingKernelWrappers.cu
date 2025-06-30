@@ -167,8 +167,9 @@ extern "C" int countActiveNeurons(const GPUNeuronState* neurons, int num_neurons
     int h_count = 0;
     cudaMemcpy(&h_count, d_count, sizeof(int), cudaMemcpyDeviceToHost);
     cudaFree(d_count);
-    
+
     return h_count;
+
 extern "C" void launchProcessModularInteractions(GPUNeuronState* neurons, int num_neurons,
                                                 int* module_assignments, float* attention_weights,
                                                 float* global_inhibition, float current_time);
