@@ -2,7 +2,7 @@
 #ifndef DYNAMIC_SYNAPTOGENESIS_FRAMEWORK_H
 #define DYNAMIC_SYNAPTOGENESIS_FRAMEWORK_H
 
-#include <NeuroGen/GPUNeuralStructures.h>
+#include <NeuroGen/cuda/GPUNeuralStructures.h>
 #include <NeuroGen/DynamicNeurogenesisFramework.h>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>

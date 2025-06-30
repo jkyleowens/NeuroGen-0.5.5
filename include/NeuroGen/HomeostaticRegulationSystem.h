@@ -2,7 +2,7 @@
 #ifndef HOMEOSTATIC_REGULATION_SYSTEM_H
 #define HOMEOSTATIC_REGULATION_SYSTEM_H
 
-#include <NeuroGen/GPUNeuralStructures.h>
+#include <NeuroGen/cuda/GPUNeuralStructures.h>
 #include <NeuroGen/NeuralPruningFramework.h>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>

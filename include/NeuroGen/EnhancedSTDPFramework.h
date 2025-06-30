@@ -2,7 +2,7 @@
 #ifndef ENHANCED_STDP_FRAMEWORK_H
 #define ENHANCED_STDP_FRAMEWORK_H
 
-#include <NeuroGen/GPUNeuralStructures.h>
+#include <NeuroGen/cuda/GPUNeuralStructures.h>
 #include <NeuroGen/IonChannelModels.h>
 #include <cuda_runtime.h>
 #include <curand_kernel.h>

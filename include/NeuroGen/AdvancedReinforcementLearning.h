@@ -2,7 +2,7 @@
 #ifndef ADVANCED_REINFORCEMENT_LEARNING_H
 #define ADVANCED_REINFORCEMENT_LEARNING_H
 
-#include "GPUNeuralStructures.h"
+#include <NeuroGen/cuda/GPUNeuralStructures.h>
 #include "EnhancedSTDPFramework.h"
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
