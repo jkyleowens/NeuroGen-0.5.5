@@ -31,7 +31,7 @@ public:
      * @brief Initialize the neural module with biological parameters
      * @return Success status of initialization
      */
-    bool initialize();
+    virtual bool initialize();
     
     /**
      * @brief Validate module configuration and state

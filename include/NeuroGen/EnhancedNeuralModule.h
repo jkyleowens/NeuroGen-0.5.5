@@ -5,6 +5,9 @@
 #include <NeuroGen/TopologyGenerator.h>
 #include <memory>
 #include <functional>
+#include <map>      // <<< FIX: Added missing include for std::map
+#include <string>   // <<< FIX: Added missing include for std::string
+#include <vector>   // <<< FIX: Added missing include for std::vector
 
 /**
  * Enhanced neural module with biological features:
