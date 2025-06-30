@@ -1,493 +1,544 @@
-#include "NeuroGen/cuda/NetworkCUDA.cuh"
-#include "NeuroGen/cuda/KernelLaunchWrappers.cuh"
-#include "NeuroGen/cuda/NeuronSpikingKernels.cuh"
-#include "NeuroGen/cuda/GPUNeuralStructures.h"
-#include "NeuroGen/NetworkStats.h"
+// ============================================================================
+// CRITICAL IMPLEMENTATION FIXES FOR NetworkCUDA.cu
+// ============================================================================
+#include <NeuroGen/cuda/NetworkCUDA.cuh>
+
+// CRITICAL: Add missing standard headers
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+#include <fstream>      // CRITICAL: For std::ofstream and std::ifstream
+#include <memory>       // For smart pointers
+
+
+struct CPUNeuronAdapter {
+    float potential;
+    float recovery_variable;
+    float last_spike_time;
+    float firing_rate;
+    size_t neuron_id;
+    bool is_valid;
+};
+
+struct CPUSynapseAdapter {
+    size_t pre_neuron_id;
+    size_t post_neuron_id;
+    float weight;
+    float delay;
+    float eligibility_trace;
+    float activity_metric;
+    bool is_valid;
+};
+
+struct CPUNetworkAdapter {
+    std::vector<CPUNeuronAdapter> neurons;
+    std::vector<CPUSynapseAdapter> synapses;
+    NetworkStats stats;
+    size_t active_neuron_count;
+    size_t active_synapse_count;
+    bool is_valid;
+};
+
+
+extern "C" {
+    // Function to extract CPU network data without direct class access
+    bool extract_cpu_network_data(void* cpu_network_ptr, CPUNetworkAdapter* adapter);
+    
+    // Function to update CPU network from GPU data
+    bool update_cpu_network_data(void* cpu_network_ptr, const CPUNetworkAdapter* adapter);
+    
+    // Function to get specific neuron data
+    bool get_cpu_neuron_data(void* cpu_network_ptr, size_t neuron_id, CPUNeuronAdapter* adapter);
+    
+    // Function to get outgoing synapses for a neuron
+    bool get_cpu_outgoing_synapses(void* cpu_network_ptr, size_t neuron_id, 
+                                  CPUSynapseAdapter* synapses, size_t max_synapses, size_t* actual_count);
+}
+
 
 // ============================================================================
-// CUDA ERROR HANDLING
+// FIXED IMPLEMENTATION: CPU-GPU BRIDGE METHODS
 // ============================================================================
 
-#define CUDA_CHECK(err) { \
-    if (err != cudaSuccess) { \
-        std::string error_msg = std::string("CUDA Error: ") + cudaGetErrorString(err) + \
-                                " at " + __FILE__ + ":" + std::to_string(__LINE__) + \
-                                " in function '" + __func__ + "'"; \
-        std::cerr << error_msg << std::endl; \
-        throw std::runtime_error(error_msg); \
-    } \
+// REPLACE the problematic method implementations with these corrected versions:
+
+// Method 1: Fixed calculateNeuronFiringRate - now uses GPU structures
+float NetworkCUDA::calculateNeuronFiringRate(const GPUNeuronState& gpu_neuron) const {
+    // Biologically-realistic firing rate calculation matching CPU Network dynamics
+    constexpr float BASELINE_RATE = 2.0f;  // Hz - cortical baseline
+    constexpr float MAX_RATE = 100.0f;     // Hz - physiological maximum
+    constexpr float THRESHOLD_VOLTAGE = -55.0f; // mV - typical spike threshold
+    
+    // Check recent spiking activity
+    float time_since_spike = current_simulation_time_ - gpu_neuron.last_spike_time;
+    bool recently_spiked = (time_since_spike < 5.0f); // Within 5ms
+    
+    if (recently_spiked) {
+        // Active neuron: rate depends on membrane potential dynamics
+        float potential_factor = std::tanh((gpu_neuron.V - THRESHOLD_VOLTAGE) / 20.0f);
+        return BASELINE_RATE + (MAX_RATE - BASELINE_RATE) * std::max(0.0f, potential_factor);
+    }
+    
+    // Subthreshold activity contributes to background rate
+    float subthreshold_factor = std::max(0.0f, (gpu_neuron.V + 70.0f) / 50.0f);
+    return BASELINE_RATE * subthreshold_factor;
+}
+
+// Method 2: Fixed updateSynapticPlasticity - now uses GPU structures
+void NetworkCUDA::updateSynapticPlasticity(GPUSynapse& gpu_synapse, float dt, float reward) {
+    // Advanced biological plasticity mechanisms for GPU acceleration
+    
+    // Get pre and post neuron states
+    if (gpu_synapse.pre_neuron_idx >= num_neurons_ || gpu_synapse.post_neuron_idx >= num_neurons_) {
+        return; // Invalid neuron indices
+    }
+    
+    // Access GPU neuron states directly
+    GPUNeuronState& pre_neuron = d_neurons_[gpu_synapse.pre_neuron_idx];
+    GPUNeuronState& post_neuron = d_neurons_[gpu_synapse.post_neuron_idx];
+    
+    // Check for recent spiking activity
+    float time_since_pre_spike = current_simulation_time_ - pre_neuron.last_spike_time;
+    float time_since_post_spike = current_simulation_time_ - post_neuron.last_spike_time;
+    
+    bool pre_spiked = (time_since_pre_spike < 2.0f);  // Within 2ms
+    bool post_spiked = (time_since_post_spike < 2.0f); // Within 2ms
+    
+    // Update activity metric with biological time constants
+    float activity_decay = 0.995f; // ~200ms time constant
+    if (pre_spiked || post_spiked) {
+        gpu_synapse.activity_metric = gpu_synapse.activity_metric * activity_decay + 0.01f;
+    } else {
+        gpu_synapse.activity_metric *= activity_decay;
+    }
+    
+    // Spike-timing dependent plasticity (STDP)
+    if (pre_spiked && post_spiked) {
+        // Calculate timing-dependent plasticity
+        float spike_time_diff = gpu_synapse.last_post_spike_time - gpu_synapse.last_pre_spike_time;
+        float stdp_window = 20.0f; // ms
+        
+        float hebbian_change = 0.001f * reward; // Reward-modulated learning
+        
+        // Apply timing-dependent modulation
+        if (std::abs(spike_time_diff) < stdp_window) {
+            if (spike_time_diff > 0) {
+                // Pre before post - potentiation
+                hebbian_change *= std::exp(-spike_time_diff / 10.0f);
+            } else {
+                // Post before pre - depression  
+                hebbian_change *= -0.5f * std::exp(spike_time_diff / 10.0f);
+            }
+        }
+        
+        gpu_synapse.weight += hebbian_change;
+        
+        // Biological weight bounds with type-safe clamping
+        float min_weight = static_cast<float>(config_.min_weight);
+        float max_weight = static_cast<float>(config_.max_weight);
+        gpu_synapse.weight = std::max(min_weight, std::min(max_weight, gpu_synapse.weight));
+        
+        // Update eligibility trace for delayed reward learning
+        gpu_synapse.eligibility_trace = std::min(1.0f, gpu_synapse.eligibility_trace + 0.1f);
+        
+        // Record spike times for future STDP calculations
+        gpu_synapse.last_pre_spike_time = pre_neuron.last_spike_time;
+        gpu_synapse.last_post_spike_time = post_neuron.last_spike_time;
+    }
+    
+    // Eligibility trace decay
+    gpu_synapse.eligibility_trace *= 0.99f; // ~100ms time constant
+    
+    // Update plasticity modulation based on recent activity
+    gpu_synapse.plasticity_modulation = 1.0f + 0.5f * gpu_synapse.activity_metric;
+}
+
+// Method 3: Fixed getIncomingSynapses - now returns GPU-optimized indices
+std::vector<size_t> NetworkCUDA::getIncomingSynapses(size_t neuron_id) const {
+    std::vector<size_t> incoming_indices;
+    
+    if (neuron_id >= static_cast<size_t>(num_neurons_)) {
+        return incoming_indices; // Invalid neuron ID
+    }
+    
+    // Search through all synapses for connections to this neuron
+    // Note: In production, this would use optimized GPU-side connection maps
+    for (int syn_idx = 0; syn_idx < num_synapses_; ++syn_idx) {
+        GPUSynapse synapse;
+        
+        // Copy synapse from GPU to check connectivity
+        cudaError_t err = cudaMemcpy(&synapse, &d_synapses_[syn_idx], 
+                                   sizeof(GPUSynapse), cudaMemcpyDeviceToHost);
+        
+        if (err == cudaSuccess && 
+            static_cast<size_t>(synapse.post_neuron_idx) == neuron_id && 
+            synapse.active) {
+            incoming_indices.push_back(syn_idx);
+        }
+    }
+    
+    return incoming_indices;
 }
 
 // ============================================================================
-// CONSTRUCTOR & DESTRUCTOR
+// NEW IMPLEMENTATION: CPU-GPU BRIDGE INTERFACE
 // ============================================================================
 
-NetworkCUDA::NetworkCUDA(const NetworkConfig& config)
-    : config_(config),
-      num_neurons_(config.hidden_size),
-      num_synapses_(config.totalSynapses),
-      current_simulation_time_(0.0f),
-      simulation_step_count_(0),
-      system_initialized_(false)
-{
-    std::cout << "🧠 Initializing CUDA Neural Network..." << std::endl;
-    std::cout << "📊 Network Configuration:" << std::endl;
-    std::cout << "   • Neurons: " << num_neurons_ << std::endl;
-    std::cout << "   • Synapses: " << num_synapses_ << std::endl;
-    std::cout << "   • Input Size: " << config.input_size << std::endl;
-    std::cout << "   • Output Size: " << config.output_size << std::endl;
+// Add these new methods to NetworkCUDA class for seamless CPU integration:
+
+void NetworkCUDA::synchronize_with_cpu_network(void* cpu_network_ptr, const std::string& sync_direction) {
+    std::cout << "🔄 Synchronizing CPU-GPU neural states: " << sync_direction << std::endl;
+    
+    if (sync_direction == "cpu_to_gpu" || sync_direction == "bidirectional") {
+        std::cout << "📥 Transferring CPU neural states to GPU..." << std::endl;
+        
+        // Use adapter structure instead of direct CPU class access
+        CPUNetworkAdapter cpu_adapter;
+        
+        if (!extract_cpu_network_data(cpu_network_ptr, &cpu_adapter)) {
+            std::cerr << "❌ Failed to extract CPU network data" << std::endl;
+            return;
+        }
+        
+        std::cout << "   • CPU neurons: " << cpu_adapter.active_neuron_count << std::endl;
+        std::cout << "   • CPU synapses: " << cpu_adapter.active_synapse_count << std::endl;
+        
+        // Convert adapter data to GPU format
+        std::vector<GPUNeuronState> gpu_neurons(num_neurons_);
+        std::vector<GPUSynapse> gpu_synapses(num_synapses_);
+        
+        // Convert CPU neurons to GPU format using adapter
+        size_t neurons_to_copy = std::min(static_cast<size_t>(num_neurons_), cpu_adapter.neurons.size());
+        for (size_t i = 0; i < neurons_to_copy; ++i) {
+            if (cpu_adapter.neurons[i].is_valid) {
+                gpu_neurons[i].V = cpu_adapter.neurons[i].potential;
+                gpu_neurons[i].u = cpu_adapter.neurons[i].recovery_variable;
+                gpu_neurons[i].last_spike_time = cpu_adapter.neurons[i].last_spike_time;
+                gpu_neurons[i].average_firing_rate = cpu_adapter.neurons[i].firing_rate;
+                gpu_neurons[i].excitability = 1.0f;
+                gpu_neurons[i].synaptic_scaling_factor = 1.0f;
+                
+                // Initialize synaptic input arrays
+                for (int comp = 0; comp < 4; ++comp) {
+                    gpu_neurons[i].I_syn[comp] = 0.0f;
+                    gpu_neurons[i].ca_conc[comp] = 0.1f;
+                }
+            }
+        }
+        
+        // Convert CPU synapses to GPU format using adapter
+        size_t synapses_to_copy = std::min(static_cast<size_t>(num_synapses_), cpu_adapter.synapses.size());
+        for (size_t i = 0; i < synapses_to_copy; ++i) {
+            if (cpu_adapter.synapses[i].is_valid) {
+                gpu_synapses[i].pre_neuron_idx = static_cast<int>(cpu_adapter.synapses[i].pre_neuron_id);
+                gpu_synapses[i].post_neuron_idx = static_cast<int>(cpu_adapter.synapses[i].post_neuron_id);
+                gpu_synapses[i].weight = cpu_adapter.synapses[i].weight;
+                gpu_synapses[i].delay = cpu_adapter.synapses[i].delay;
+                gpu_synapses[i].active = 1;
+                gpu_synapses[i].eligibility_trace = cpu_adapter.synapses[i].eligibility_trace;
+                gpu_synapses[i].activity_metric = cpu_adapter.synapses[i].activity_metric;
+                gpu_synapses[i].plasticity_modulation = 1.0f;
+                gpu_synapses[i].effective_weight = cpu_adapter.synapses[i].weight;
+                gpu_synapses[i].last_pre_spike_time = -1000.0f;
+                gpu_synapses[i].last_post_spike_time = -1000.0f;
+                gpu_synapses[i].last_active_time = 0.0f;
+                gpu_synapses[i].max_weight = static_cast<float>(config_.max_weight);
+                gpu_synapses[i].min_weight = static_cast<float>(config_.min_weight);
+                gpu_synapses[i].dopamine_sensitivity = 1.0f;
+                gpu_synapses[i].acetylcholine_sensitivity = 1.0f;
+                gpu_synapses[i].post_compartment = 0;
+            }
+        }
+        
+        // Copy converted states to GPU
+        copy_to_gpu(gpu_neurons, gpu_synapses);
+        std::cout << "✅ CPU to GPU synchronization completed" << std::endl;
+    }
+    
+    if (sync_direction == "gpu_to_cpu" || sync_direction == "bidirectional") {
+        std::cout << "📤 Transferring GPU neural states to CPU..." << std::endl;
+        
+        // Create adapter with GPU data
+        CPUNetworkAdapter gpu_to_cpu_adapter;
+        
+        std::vector<GPUNeuronState> gpu_neurons(num_neurons_);
+        std::vector<GPUSynapse> gpu_synapses(num_synapses_);
+        
+        copy_from_gpu(gpu_neurons, gpu_synapses);
+        
+        // Convert GPU data to adapter format
+        gpu_to_cpu_adapter.neurons.resize(num_neurons_);
+        for (int i = 0; i < num_neurons_; ++i) {
+            gpu_to_cpu_adapter.neurons[i].potential = gpu_neurons[i].V;
+            gpu_to_cpu_adapter.neurons[i].recovery_variable = gpu_neurons[i].u;
+            gpu_to_cpu_adapter.neurons[i].last_spike_time = gpu_neurons[i].last_spike_time;
+            gpu_to_cpu_adapter.neurons[i].firing_rate = gpu_neurons[i].average_firing_rate;
+            gpu_to_cpu_adapter.neurons[i].neuron_id = i;
+            gpu_to_cpu_adapter.neurons[i].is_valid = true;
+        }
+        
+        gpu_to_cpu_adapter.synapses.resize(num_synapses_);
+        for (int i = 0; i < num_synapses_; ++i) {
+            if (gpu_synapses[i].active) {
+                gpu_to_cpu_adapter.synapses[i].pre_neuron_id = gpu_synapses[i].pre_neuron_idx;
+                gpu_to_cpu_adapter.synapses[i].post_neuron_id = gpu_synapses[i].post_neuron_idx;
+                gpu_to_cpu_adapter.synapses[i].weight = gpu_synapses[i].weight;
+                gpu_to_cpu_adapter.synapses[i].delay = gpu_synapses[i].delay;
+                gpu_to_cpu_adapter.synapses[i].eligibility_trace = gpu_synapses[i].eligibility_trace;
+                gpu_to_cpu_adapter.synapses[i].activity_metric = gpu_synapses[i].activity_metric;
+                gpu_to_cpu_adapter.synapses[i].is_valid = true;
+            }
+        }
+        
+        // Update CPU network using adapter
+        if (!update_cpu_network_data(cpu_network_ptr, &gpu_to_cpu_adapter)) {
+            std::cerr << "❌ Failed to update CPU network data" << std::endl;
+            return;
+        }
+        
+        std::cout << "✅ GPU to CPU synchronization completed" << std::endl;
+    }
+}
+
+std::vector<float> NetworkCUDA::get_output() const {
+    std::vector<float> outputs;
+    
+    if (!system_initialized_ || num_neurons_ == 0) {
+        return outputs;
+    }
+    
+    // Extract output from GPU neurons (typically last neurons in network)
+    size_t output_start = std::max(0, num_neurons_ - config_.output_size);
+    outputs.reserve(config_.output_size);
+    
+    // Copy GPU neuron states to get output
+    std::vector<GPUNeuronState> gpu_neurons(num_neurons_);
+    cudaError_t err = cudaMemcpy(gpu_neurons.data(), d_neurons_, 
+                                num_neurons_ * sizeof(GPUNeuronState), 
+                                cudaMemcpyDeviceToHost);
+    
+    if (err == cudaSuccess) {
+        for (size_t i = output_start; i < static_cast<size_t>(num_neurons_); i++) {
+            // Use GPU-compatible firing rate calculation
+            float firing_rate = calculateNeuronFiringRate(gpu_neurons[i]);
+            outputs.push_back(firing_rate);
+        }
+    }
+    
+    return outputs;
+}
+
+// ============================================================================
+// ADDITIONAL HELPER METHODS FOR SEAMLESS INTEGRATION
+// ============================================================================
+
+bool NetworkCUDA::synapseExists(size_t pre_id, size_t post_id) const {
+    if (pre_id >= static_cast<size_t>(num_neurons_) || 
+        post_id >= static_cast<size_t>(num_neurons_)) {
+        return false;
+    }
+    
+    // Search GPU synapses for connection
+    for (int syn_idx = 0; syn_idx < num_synapses_; ++syn_idx) {
+        GPUSynapse synapse;
+        cudaError_t err = cudaMemcpy(&synapse, &d_synapses_[syn_idx], 
+                                   sizeof(GPUSynapse), cudaMemcpyDeviceToHost);
+        
+        if (err == cudaSuccess && 
+            static_cast<size_t>(synapse.pre_neuron_idx) == pre_id &&
+            static_cast<size_t>(synapse.post_neuron_idx) == post_id &&
+            synapse.active) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+bool NetworkCUDA::isNeuronActive(size_t neuron_id) const {
+    if (neuron_id >= static_cast<size_t>(num_neurons_)) {
+        return false;
+    }
+    
+    // Copy single neuron state from GPU
+    GPUNeuronState neuron;
+    cudaError_t err = cudaMemcpy(&neuron, &d_neurons_[neuron_id], 
+                                sizeof(GPUNeuronState), cudaMemcpyDeviceToHost);
+    
+    if (err != cudaSuccess) {
+        return false;
+    }
+    
+    // Define activity based on firing rate and membrane potential
+    float firing_rate = calculateNeuronFiringRate(neuron);
+    bool above_threshold = neuron.V > -60.0f; // mV
+    
+    return firing_rate > 1.0f || above_threshold;
+}
+
+// ============================================================================
+// PERFORMANCE OPTIMIZATION METHODS
+// ============================================================================
+
+NetworkCUDA::PerformanceMetrics NetworkCUDA::get_performance_metrics() const {
+    PerformanceMetrics metrics;
+    
+    // Calculate simulation performance
+    static auto last_time = std::chrono::high_resolution_clock::now();
+    auto current_time = std::chrono::high_resolution_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(current_time - last_time);
+    
+    if (elapsed.count() > 0) {
+        metrics.simulation_fps = 1000000.0f / elapsed.count(); // FPS
+        metrics.biological_time_factor = (config_.dt * 1000.0f) / elapsed.count(); // Real-time factor
+    } else {
+        metrics.simulation_fps = 0.0f;
+        metrics.biological_time_factor = 0.0f;
+    }
+    
+    // Estimate kernel execution time (simplified)
+    metrics.kernel_execution_time_ms = elapsed.count() / 1000.0f;
+    
+    // Estimate memory bandwidth (simplified)
+    size_t data_transferred = (num_neurons_ * sizeof(GPUNeuronState) + 
+                              num_synapses_ * sizeof(GPUSynapse)) * 2; // Read + Write
+    metrics.memory_bandwidth_gbps = (data_transferred * metrics.simulation_fps) / (1024.0f * 1024.0f * 1024.0f);
+    
+    // GPU utilization (estimated based on compute intensity)
+    metrics.gpu_utilization_percent = std::min(95.0f, 
+        (num_neurons_ + num_synapses_) / 10000.0f * 100.0f);
+    
+    return metrics;
+}
+
+void NetworkCUDA::synchronize_configurations(const NetworkConfig& cpu_config, NetworkConfig& gpu_config) {
+    // Copy base configuration
+    gpu_config = cpu_config;
+    
+    // GPU-specific optimizations (store in separate variables since NetworkConfig doesn't have these)
+    // Instead of accessing non-existent members, store GPU config separately
+    
+    std::cout << "🔧 CPU-GPU configuration synchronized" << std::endl;
+    std::cout << "   • Neurons: " << gpu_config.hidden_size << std::endl;
+    std::cout << "   • Synapses: " << gpu_config.totalSynapses << std::endl;
+    std::cout << "   • Memory allocated: " << allocated_memory_mb_ << " MB" << std::endl;
+}
+
+// ============================================================================
+// STATE PERSISTENCE WITH CPU COMPATIBILITY
+// ============================================================================
+
+bool NetworkCUDA::save_gpu_state(const std::string& filename) const {
+    std::string gpu_filename = filename + "_gpu_state.bin";
+    
+    // Use fstream which is now properly included
+    std::ofstream file(gpu_filename, std::ios::binary);
+    
+    if (!file.is_open()) {
+        std::cerr << "❌ Cannot open GPU state file: " << gpu_filename << std::endl;
+        return false;
+    }
     
     try {
-        // Initialize CUDA stream for async operations
-        CUDA_CHECK(cudaStreamCreate(&stream_));
+        // Write GPU-specific header
+        const char* header = "NEUROGENALPHA_GPU";
+        file.write(header, 17);
         
-        // Allocate GPU memory
-        allocate_gpu_memory();
+        // Write version and metadata
+        uint32_t version = 1;
+        file.write(reinterpret_cast<const char*>(&version), sizeof(version));
+        file.write(reinterpret_cast<const char*>(&num_neurons_), sizeof(num_neurons_));
+        file.write(reinterpret_cast<const char*>(&num_synapses_), sizeof(num_synapses_));
+        file.write(reinterpret_cast<const char*>(&current_simulation_time_), sizeof(current_simulation_time_));
         
-        // Initialize neural states
-        initialize_gpu_state();
+        // Copy GPU states to host and save
+        std::vector<GPUNeuronState> neurons(num_neurons_);
+        std::vector<GPUSynapse> synapses(num_synapses_);
         
-        // Validate initialization
-        validate_initialization();
+        // Note: const_cast is needed here but should be encapsulated properly
+        const_cast<NetworkCUDA*>(this)->copy_from_gpu(neurons, synapses);
         
-        system_initialized_ = true;
+        // Write neuron states
+        file.write(reinterpret_cast<const char*>(neurons.data()), 
+                  num_neurons_ * sizeof(GPUNeuronState));
         
-        std::cout << "✅ CUDA Neural Network initialized successfully!" << std::endl;
+        // Write synapse states
+        file.write(reinterpret_cast<const char*>(synapses.data()), 
+                  num_synapses_ * sizeof(GPUSynapse));
+        
+        file.close();
+        std::cout << "✅ GPU state saved: " << gpu_filename << std::endl;
+        return true;
         
     } catch (const std::exception& e) {
-        std::cerr << "❌ Error initializing neural network: " << e.what() << std::endl;
-        cleanup_resources();
-        throw;
+        std::cerr << "❌ Error saving GPU state: " << e.what() << std::endl;
+        file.close();
+        return false;
     }
 }
 
-NetworkCUDA::~NetworkCUDA() {
-    std::cout << "🔄 Shutting down CUDA Neural Network..." << std::endl;
-    cleanup_resources();
-    std::cout << "✅ Network shutdown completed." << std::endl;
-}
-
-// ============================================================================
-// CORE SIMULATION STEP
-// ============================================================================
-
-void NetworkCUDA::simulate_step(float current_time, float dt, float reward, const std::vector<float>& inputs) {
-    if (!system_initialized_) {
-        throw std::runtime_error("Network not properly initialized");
-    }
+bool NetworkCUDA::load_gpu_state(const std::string& filename) {
+    std::string gpu_filename = filename + "_gpu_state.bin";
     
-    current_simulation_time_ = current_time;
-    simulation_step_count_++;
+    // Use fstream which is now properly included
+    std::ifstream file(gpu_filename, std::ios::binary);
+    
+    if (!file.is_open()) {
+        std::cerr << "❌ Cannot open GPU state file: " << gpu_filename << std::endl;
+        return false;
+    }
     
     try {
-        // 1. PROCESS EXTERNAL INPUTS
-        if (!inputs.empty()) {
-            process_external_inputs(inputs);
+        // Verify header
+        char header[18] = {0};
+        file.read(header, 17);
+        if (std::string(header) != "NEUROGENALPHA_GPU") {
+            std::cerr << "❌ Invalid GPU state file format" << std::endl;
+            file.close();
+            return false;
         }
         
-        // 2. UPDATE NEURAL DYNAMICS
-        update_neural_dynamics(current_time, dt);
+        // Read metadata
+        uint32_t version;
+        int file_neurons, file_synapses;
+        file.read(reinterpret_cast<char*>(&version), sizeof(version));
+        file.read(reinterpret_cast<char*>(&file_neurons), sizeof(file_neurons));
+        file.read(reinterpret_cast<char*>(&file_synapses), sizeof(file_synapses));
+        file.read(reinterpret_cast<char*>(&current_simulation_time_), sizeof(current_simulation_time_));
         
-        // 3. PROCESS SYNAPTIC PLASTICITY
-        update_synaptic_plasticity(current_time, dt, reward);
+        // Validate compatibility
+        if (file_neurons != num_neurons_ || file_synapses != num_synapses_) {
+            std::cerr << "❌ GPU state size mismatch: expected " << num_neurons_ 
+                      << "/" << num_synapses_ << ", got " << file_neurons 
+                      << "/" << file_synapses << std::endl;
+            file.close();
+            return false;
+        }
         
-        // 4. APPLY HOMEOSTATIC MECHANISMS
-        apply_homeostatic_regulation(current_time, dt);
+        // Load states
+        std::vector<GPUNeuronState> neurons(num_neurons_);
+        std::vector<GPUSynapse> synapses(num_synapses_);
         
-        // 5. DETECT AND PROCESS SPIKES
-        process_spike_detection(current_time);
+        file.read(reinterpret_cast<char*>(neurons.data()), 
+                 num_neurons_ * sizeof(GPUNeuronState));
+        file.read(reinterpret_cast<char*>(synapses.data()), 
+                 num_synapses_ * sizeof(GPUSynapse));
         
-        // Synchronize GPU operations
-        CUDA_CHECK(cudaStreamSynchronize(stream_));
+        file.close();
+        
+        // Copy to GPU
+        copy_to_gpu(neurons, synapses);
+        
+        std::cout << "✅ GPU state loaded: " << gpu_filename << std::endl;
+        return true;
         
     } catch (const std::exception& e) {
-        std::cerr << "⚠️  Error in simulation step " << simulation_step_count_ << ": " << e.what() << std::endl;
-        throw;
-    }
-}
-
-// ============================================================================
-// NEURAL DYNAMICS PROCESSING
-// ============================================================================
-
-void NetworkCUDA::update_neural_dynamics(float current_time, float dt) {
-    // Update neuron states using existing kernel wrappers
-    KernelLaunchWrappers::update_neuron_states(d_neurons_, current_time, dt, num_neurons_);
-    
-    // Update calcium dynamics for plasticity
-    KernelLaunchWrappers::update_calcium_dynamics(d_neurons_, current_time, dt, num_neurons_);
-    
-    // Apply external currents if available
-    if (d_input_currents_) {
-        apply_input_currents_kernel<<<get_grid_size(num_neurons_), 256, 0, stream_>>>(
-            d_neurons_, d_input_currents_, num_neurons_, dt);
-        CUDA_CHECK(cudaGetLastError());
-    }
-}
-
-void NetworkCUDA::update_synaptic_plasticity(float current_time, float dt, float reward) {
-    // Run STDP and calculate eligibility traces
-    KernelLaunchWrappers::run_stdp_and_eligibility(d_synapses_, d_neurons_, 
-                                                   current_time, dt, num_synapses_);
-    
-    // Apply reward modulation to synaptic weights
-    KernelLaunchWrappers::apply_reward_and_adaptation(d_synapses_, d_neurons_, 
-                                                      reward, current_time, dt, num_synapses_);
-}
-
-void NetworkCUDA::apply_homeostatic_regulation(float current_time, float dt) {
-    // Apply homeostatic mechanisms to maintain network stability
-    KernelLaunchWrappers::run_homeostatic_mechanisms(d_neurons_, d_synapses_, 
-                                                     current_time, num_neurons_, num_synapses_);
-}
-
-// ============================================================================
-// SPIKE PROCESSING & DETECTION
-// ============================================================================
-
-void NetworkCUDA::process_spike_detection(float current_time) {
-    // Reset spike counter
-    CUDA_CHECK(cudaMemsetAsync(d_spike_count_, 0, sizeof(int), stream_));
-    
-    // Update neuron spike states and detect spikes (using correct signature)
-    updateNeuronSpikes<<<get_grid_size(num_neurons_), 256, 0, stream_>>>(
-        d_neurons_, config_.spike_threshold, num_neurons_);
-    CUDA_CHECK(cudaGetLastError());
-    
-    // Count total spikes for statistics (using correct signature)
-    countSpikesKernel<<<get_grid_size(num_neurons_), 256, 0, stream_>>>(
-        d_neurons_, d_spike_count_, num_neurons_);
-    CUDA_CHECK(cudaGetLastError());
-}
-
-// ============================================================================
-// INPUT PROCESSING
-// ============================================================================
-
-void NetworkCUDA::process_external_inputs(const std::vector<float>& inputs) {
-    // Ensure input size doesn't exceed buffer capacity
-    size_t copy_size = std::min(inputs.size(), static_cast<size_t>(config_.input_size));
-    
-    // Copy inputs to GPU asynchronously
-    CUDA_CHECK(cudaMemcpyAsync(d_input_currents_, inputs.data(), 
-                               copy_size * sizeof(float), 
-                               cudaMemcpyHostToDevice, stream_));
-    
-    // Clear remaining input buffer if needed
-    if (copy_size < static_cast<size_t>(config_.input_size)) {
-        CUDA_CHECK(cudaMemsetAsync(d_input_currents_ + copy_size, 0, 
-                                   (config_.input_size - copy_size) * sizeof(float), stream_));
-    }
-}
-
-// ============================================================================
-// MEMORY MANAGEMENT
-// ============================================================================
-
-void NetworkCUDA::allocate_gpu_memory() {
-    std::cout << "💾 Allocating GPU memory..." << std::endl;
-    
-    size_t total_memory = 0;
-    
-    // Allocate neuron state array
-    CUDA_CHECK(cudaMalloc(&d_neurons_, num_neurons_ * sizeof(GPUNeuronState)));
-    total_memory += num_neurons_ * sizeof(GPUNeuronState);
-    
-    // Allocate synapse array
-    CUDA_CHECK(cudaMalloc(&d_synapses_, num_synapses_ * sizeof(GPUSynapse)));
-    total_memory += num_synapses_ * sizeof(GPUSynapse);
-    
-    // Allocate input current buffer
-    CUDA_CHECK(cudaMalloc(&d_input_currents_, config_.input_size * sizeof(float)));
-    total_memory += config_.input_size * sizeof(float);
-    
-    // Allocate spike counting buffer
-    CUDA_CHECK(cudaMalloc(&d_spike_count_, sizeof(int)));
-    total_memory += sizeof(int);
-    
-    // Allocate network statistics buffer
-    CUDA_CHECK(cudaMalloc(&d_network_stats_, sizeof(NetworkStats)));
-    total_memory += sizeof(NetworkStats);
-    
-    // Initialize all memory to zero
-    CUDA_CHECK(cudaMemset(d_neurons_, 0, num_neurons_ * sizeof(GPUNeuronState)));
-    CUDA_CHECK(cudaMemset(d_synapses_, 0, num_synapses_ * sizeof(GPUSynapse)));
-    CUDA_CHECK(cudaMemset(d_input_currents_, 0, config_.input_size * sizeof(float)));
-    CUDA_CHECK(cudaMemset(d_spike_count_, 0, sizeof(int)));
-    CUDA_CHECK(cudaMemset(d_network_stats_, 0, sizeof(NetworkStats)));
-    
-    allocated_memory_mb_ = total_memory / (1024.0f * 1024.0f);
-    std::cout << "✅ Allocated " << allocated_memory_mb_ << " MB of GPU memory" << std::endl;
-}
-
-void NetworkCUDA::cleanup_resources() {
-    // Free GPU memory
-    if (d_neurons_) { cudaFree(d_neurons_); d_neurons_ = nullptr; }
-    if (d_synapses_) { cudaFree(d_synapses_); d_synapses_ = nullptr; }
-    if (d_input_currents_) { cudaFree(d_input_currents_); d_input_currents_ = nullptr; }
-    if (d_spike_count_) { cudaFree(d_spike_count_); d_spike_count_ = nullptr; }
-    if (d_network_stats_) { cudaFree(d_network_stats_); d_network_stats_ = nullptr; }
-    
-    // Destroy CUDA stream
-    if (stream_) {
-        cudaStreamDestroy(stream_);
-        stream_ = 0;
-    }
-}
-
-// ============================================================================
-// INITIALIZATION & VALIDATION
-// ============================================================================
-
-void NetworkCUDA::initialize_gpu_state() {
-    std::cout << "🔧 Initializing neural states..." << std::endl;
-    
-    // Initialize ion channels and neural parameters
-    KernelLaunchWrappers::initialize_ion_channels(d_neurons_, num_neurons_);
-    
-    // Initialize synaptic connections with proper parameters
-    initialize_synapses_kernel<<<get_grid_size(num_synapses_), 256>>>(
-        d_synapses_, num_synapses_, config_.min_weight, config_.max_weight,
-        config_.weight_init_std, time(nullptr));
-    CUDA_CHECK(cudaDeviceSynchronize());
-    CUDA_CHECK(cudaGetLastError());
-    
-    std::cout << "✅ Neural states initialized" << std::endl;
-}
-
-void NetworkCUDA::validate_initialization() {
-    // Check that GPU memory allocations were successful
-    if (!d_neurons_ || !d_synapses_ || !d_input_currents_ || !d_spike_count_ || !d_network_stats_) {
-        throw std::runtime_error("GPU memory allocation failed");
-    }
-    
-    // Validate neuron count and synapse count
-    if (num_neurons_ <= 0 || num_synapses_ <= 0) {
-        throw std::runtime_error("Invalid network size");
-    }
-    
-    // Test basic CUDA operations
-    int test_value = 42;
-    int* d_test;
-    CUDA_CHECK(cudaMalloc(&d_test, sizeof(int)));
-    CUDA_CHECK(cudaMemcpy(d_test, &test_value, sizeof(int), cudaMemcpyHostToDevice));
-    
-    int result;
-    CUDA_CHECK(cudaMemcpy(&result, d_test, sizeof(int), cudaMemcpyDeviceToHost));
-    cudaFree(d_test);
-    
-    if (result != test_value) {
-        throw std::runtime_error("Basic CUDA operations failed");
-    }
-    
-    std::cout << "✅ System validation passed" << std::endl;
-}
-
-// ============================================================================
-// DATA TRANSFER & SYNCHRONIZATION
-// ============================================================================
-
-void NetworkCUDA::copy_to_gpu(const std::vector<GPUNeuronState>& neurons, 
-                             const std::vector<GPUSynapse>& synapses) {
-    if (neurons.size() != static_cast<size_t>(num_neurons_)) {
-        throw std::runtime_error("Neuron count mismatch in copy_to_gpu");
-    }
-    if (synapses.size() != static_cast<size_t>(num_synapses_)) {
-        throw std::runtime_error("Synapse count mismatch in copy_to_gpu");
-    }
-    
-    CUDA_CHECK(cudaMemcpyAsync(d_neurons_, neurons.data(), 
-                               num_neurons_ * sizeof(GPUNeuronState),
-                               cudaMemcpyHostToDevice, stream_));
-    
-    CUDA_CHECK(cudaMemcpyAsync(d_synapses_, synapses.data(),
-                               num_synapses_ * sizeof(GPUSynapse),
-                               cudaMemcpyHostToDevice, stream_));
-    
-    CUDA_CHECK(cudaStreamSynchronize(stream_));
-}
-
-void NetworkCUDA::copy_from_gpu(std::vector<GPUNeuronState>& neurons, 
-                               std::vector<GPUSynapse>& synapses) {
-    neurons.resize(num_neurons_);
-    synapses.resize(num_synapses_);
-    
-    CUDA_CHECK(cudaMemcpyAsync(neurons.data(), d_neurons_,
-                               num_neurons_ * sizeof(GPUNeuronState),
-                               cudaMemcpyDeviceToHost, stream_));
-    
-    CUDA_CHECK(cudaMemcpyAsync(synapses.data(), d_synapses_,
-                               num_synapses_ * sizeof(GPUSynapse),
-                               cudaMemcpyDeviceToHost, stream_));
-    
-    CUDA_CHECK(cudaStreamSynchronize(stream_));
-}
-
-// ============================================================================
-// STATISTICS & MONITORING
-// ============================================================================
-
-void NetworkCUDA::get_stats(NetworkStats& stats) const {
-    // Compute basic statistics on GPU
-    compute_network_statistics<<<1, 256, 0, stream_>>>(
-        d_neurons_, d_synapses_, d_network_stats_, 
-        num_neurons_, num_synapses_, current_simulation_time_);
-    
-    // Copy statistics to host
-    CUDA_CHECK(cudaMemcpy(&stats, d_network_stats_, sizeof(NetworkStats), cudaMemcpyDeviceToHost));
-    
-    // Fill in additional statistics that exist in NetworkStats
-    stats.simulation_steps = simulation_step_count_;  // Note: steps not step
-    stats.computation_time_us = allocated_memory_mb_ * 1000.0f; // Approximate timing
-    
-    // Get current spike count
-    int current_spikes;
-    CUDA_CHECK(cudaMemcpy(&current_spikes, d_spike_count_, sizeof(int), cudaMemcpyDeviceToHost));
-    
-    // Update network activity metrics using existing fields
-    stats.mean_firing_rate = static_cast<float>(current_spikes) / num_neurons_;
-    stats.neuron_activity_ratio = (current_spikes > 0) ? (static_cast<float>(current_spikes) / num_neurons_) : 0.0f;
-}
-
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
-
-dim3 NetworkCUDA::get_grid_size(int num_elements, int block_size) const {
-    return dim3((num_elements + block_size - 1) / block_size);
-}
-
-float NetworkCUDA::get_allocated_memory_mb() const {
-    return allocated_memory_mb_;
-}
-
-int NetworkCUDA::get_simulation_step_count() const {
-    return simulation_step_count_;
-}
-
-float NetworkCUDA::get_current_simulation_time() const {
-    return current_simulation_time_;
-}
-
-// ============================================================================
-// CUDA KERNEL IMPLEMENTATIONS
-// ============================================================================
-
-__global__ void apply_input_currents_kernel(GPUNeuronState* neurons, 
-                                           const float* input_currents,
-                                           int num_neurons, float dt) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= num_neurons) return;
-    
-    GPUNeuronState& neuron = neurons[idx];
-    
-    // Apply input current to first synaptic compartment
-    if (input_currents && idx < num_neurons) {
-        neuron.I_syn[0] += input_currents[idx % num_neurons] * dt;
-    }
-}
-
-__global__ void initialize_synapses_kernel(GPUSynapse* synapses, int num_synapses,
-                                          float min_weight, float max_weight,
-                                          float weight_std, unsigned long seed) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= num_synapses) return;
-    
-    // Initialize random state for this thread
-    curandState local_state;
-    curand_init(seed, idx, 0, &local_state);
-    
-    GPUSynapse& synapse = synapses[idx];
-    
-    // Initialize basic synapse properties
-    synapse.pre_neuron_idx = idx % num_synapses;  // Simple initialization
-    synapse.post_neuron_idx = (idx + 1) % num_synapses;
-    synapse.post_compartment = idx % 4;  // Distribute across compartments
-    synapse.active = 1;
-    
-    // Initialize weight with normal distribution
-    float weight = curand_normal(&local_state) * weight_std + (min_weight + max_weight) / 2.0f;
-    synapse.weight = fmaxf(min_weight, fminf(max_weight, weight));
-    
-    // Initialize delay with small random component
-    synapse.delay = 1.0f + curand_uniform(&local_state) * 2.0f;
-    
-    // Initialize plasticity parameters
-    synapse.eligibility_trace = 0.0f;
-    synapse.plasticity_modulation = 1.0f;
-    synapse.effective_weight = synapse.weight;
-    synapse.last_pre_spike_time = -1e6f;
-    synapse.last_post_spike_time = -1e6f;
-    synapse.last_active_time = 0.0f;
-    synapse.activity_metric = 0.0f;
-    synapse.max_weight = max_weight;
-    synapse.min_weight = min_weight;
-    synapse.dopamine_sensitivity = 0.1f;
-    synapse.acetylcholine_sensitivity = 0.05f;
-}
-
-__global__ void compute_network_statistics(const GPUNeuronState* neurons,
-                                          const GPUSynapse* synapses,
-                                          NetworkStats* stats,
-                                          int num_neurons, int num_synapses,
-                                          float current_time) {
-    int idx = threadIdx.x;
-    int num_threads = blockDim.x;
-    
-    // Shared memory for reduction
-    __shared__ float shared_firing_rate[256];
-    __shared__ float shared_activity_ratio[256];
-    __shared__ int shared_active_synapses[256];
-    
-    // Initialize shared memory
-    shared_firing_rate[idx] = 0.0f;
-    shared_activity_ratio[idx] = 0.0f;
-    shared_active_synapses[idx] = 0;
-    
-    // Compute partial sums using available GPUNeuronState fields
-    for (int i = idx; i < num_neurons; i += num_threads) {
-        shared_firing_rate[idx] += neurons[i].average_firing_rate;
-        shared_activity_ratio[idx] += neurons[i].average_activity;
-    }
-    
-    for (int i = idx; i < num_synapses; i += num_threads) {
-        if (synapses[i].active) {
-            shared_active_synapses[idx]++;
-        }
-    }
-    
-    __syncthreads();
-    
-    // Reduction
-    for (int stride = num_threads / 2; stride > 0; stride >>= 1) {
-        if (idx < stride) {
-            shared_firing_rate[idx] += shared_firing_rate[idx + stride];
-            shared_activity_ratio[idx] += shared_activity_ratio[idx + stride];
-            shared_active_synapses[idx] += shared_active_synapses[idx + stride];
-        }
-        __syncthreads();
-    }
-    
-    // Thread 0 writes final results using only existing NetworkStats fields
-    if (idx == 0) {
-        stats->active_neuron_count = num_neurons;
-        stats->active_synapses = shared_active_synapses[0];
-        stats->total_synapses = num_synapses;
-        stats->mean_firing_rate = shared_firing_rate[0] / num_neurons;
-        stats->neuron_activity_ratio = shared_activity_ratio[0] / num_neurons;
-        
-        // Calculate network entropy based on activity ratio
-        float p = stats->neuron_activity_ratio;
-        if (p > 0.0f && p < 1.0f) {
-            stats->network_entropy = -(p * __logf(p) + (1.0f - p) * __logf(1.0f - p));
-        } else {
-            stats->network_entropy = 0.0f;
-        }
+        std::cerr << "❌ Error loading GPU state: " << e.what() << std::endl;
+        file.close();
+        return false;
     }
 }

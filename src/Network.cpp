@@ -1,5 +1,5 @@
-#include "NeuroGen/Network.h"
-#include "NeuroGen/NeuralModule.h"
+#include <NeuroGen/Network.h>
+#include <NeuroGen/NeuralModule.h>
 #include <iostream>
 #include <numeric>
 #include <algorithm>
@@ -172,22 +172,13 @@ Synapse* Network::createSynapse(size_t source_neuron_id, size_t target_neuron_id
 // NETWORK ACCESS INTERFACE
 // ============================================================================
 
-Neuron* Network::get_neuron(size_t neuron_id) const {
-    auto it = neuron_map_.find(neuron_id);
-    return (it != neuron_map_.end()) ? it->second : nullptr;
-}
 
-Synapse* Network::get_synapse(size_t synapse_id) const {
-    auto it = synapse_map_.find(synapse_id);
-    return (it != synapse_map_.end()) ? it->second : nullptr;
-}
-
-std::vector<Synapse*> Network::getOutgoingSynapses(size_t neuron_id) {
+std::vector<Synapse*> Network::getOutgoingSynapses(size_t neuron_id) const {
     auto it = outgoing_synapse_map_.find(neuron_id);
     return (it != outgoing_synapse_map_.end()) ? it->second : std::vector<Synapse*>();
 }
 
-std::vector<Synapse*> Network::getIncomingSynapses(size_t neuron_id) {
+std::vector<Synapse*> Network::getIncomingSynapses(size_t neuron_id) const {
     auto it = incoming_synapse_map_.find(neuron_id);
     return (it != incoming_synapse_map_.end()) ? it->second : std::vector<Synapse*>();
 }
@@ -463,22 +454,13 @@ void Network::updateSynapticPlasticity(Synapse& synapse, float dt, float reward)
         // Simple STDP rule
         if (pre_spiked && post_spiked) {
             synapse.weight += 0.01f * reward; // Reward-modulated plasticity
-            synapse.weight = std::max(config_.min_weight, 
-                           std::min(config_.max_weight, synapse.weight));
-        }
-    }
-}
+            float min_weight = static_cast<float>(config_.min_weight);
+            float max_weight = static_cast<float>(config_.max_weight);  
+            float current_weight = static_cast<float>(synapse.weight);
 
-bool Network::synapseExists(size_t pre_id, size_t post_id) const {
-    auto outgoing = outgoing_synapse_map_.find(pre_id);
-    if (outgoing != outgoing_synapse_map_.end()) {
-        for (const auto& synapse : outgoing->second) {
-            if (synapse && synapse->post_neuron_id == post_id) {
-                return true;
-            }
+            synapse.weight = std::max(min_weight, std::min(max_weight, current_weight));
         }
     }
-    return false;
 }
 
 bool Network::isNeuronActive(size_t neuron_id) const {
