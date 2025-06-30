@@ -169,10 +169,7 @@ extern "C" int countActiveNeurons(const GPUNeuronState* neurons, int num_neurons
     cudaFree(d_count);
 
     return h_count;
-}
 
-// Forward declaration of advanced modular interaction helper implemented in
-// NeuronSpikingKernels.cu
 extern "C" void launchProcessModularInteractions(GPUNeuronState* neurons, int num_neurons,
                                                 int* module_assignments, float* attention_weights,
                                                 float* global_inhibition, float current_time);
