@@ -12,6 +12,14 @@
 #include <chrono>
 
 // ============================================================================
+// FORWARD DECLARATIONS
+// ============================================================================
+
+extern "C" void launchProcessModularInteractions(GPUNeuronState* neurons, int num_neurons,
+                                                int* module_assignments, float* attention_weights,
+                                                float* global_inhibition, float current_time);
+
+// ============================================================================
 // EXTERNAL LINKAGE WRAPPER FUNCTIONS
 // ============================================================================
 
@@ -169,10 +177,19 @@ extern "C" int countActiveNeurons(const GPUNeuronState* neurons, int num_neurons
     cudaFree(d_count);
 
     return h_count;
+}
 
-extern "C" void launchProcessModularInteractions(GPUNeuronState* neurons, int num_neurons,
-                                                int* module_assignments, float* attention_weights,
-                                                float* global_inhibition, float current_time);
+// ============================================================================
+// MODULAR PROCESSING FUNCTION DEFINITIONS
+// ============================================================================
+
+/**
+ * @brief Process modular interactions with attention mechanisms
+ * 
+ * This function implements inter-modular communication and attention-based
+ * modulation for the modular neural architecture.
+ * NOTE: Implementation is in NeuronSpikingKernels.cu to avoid duplicate definitions
+ */
 
 // ============================================================================
 // PERFORMANCE MONITORING FUNCTIONS
@@ -182,8 +199,8 @@ extern "C" void launchProcessModularInteractions(GPUNeuronState* neurons, int nu
  * @brief Monitor spike processing performance for optimization
  */
 extern "C" float benchmarkSpikeProcessing(GPUNeuronState* neurons, int num_neurons,
-                                         int iterations = 100) {
-    if (!neurons || num_neurons <= 0) return 0.0f;
+                                         int iterations) {
+    if (!neurons || num_neurons <= 0 || iterations <= 0) return 0.0f;
     
     int* d_spike_count;
     cudaMalloc(&d_spike_count, sizeof(int));
@@ -208,6 +225,13 @@ extern "C" float benchmarkSpikeProcessing(GPUNeuronState* neurons, int num_neuro
     cudaFree(d_spike_count);
     
     return static_cast<float>(duration.count()) / iterations; // microseconds per iteration
+}
+
+/**
+ * @brief Overloaded version with default iterations for convenience
+ */
+float benchmarkSpikeProcessingDefault(GPUNeuronState* neurons, int num_neurons) {
+    return benchmarkSpikeProcessing(neurons, num_neurons, 100);
 }
 
 /**

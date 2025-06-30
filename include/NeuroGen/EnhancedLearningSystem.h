@@ -2,13 +2,13 @@
 #define ENHANCED_LEARNING_SYSTEM_H
 
 // Core NeuroGen includes with proper paths
-#include <NeuroGen/GPUNeuralStructures.h>
+#include <NeuroGen/cuda/GPUNeuralStructures.h>
 #include <NeuroGen/cuda/GridBlockUtils.cuh>
 
 // Enhanced learning rule components
 #include <NeuroGen/LearningRuleConstants.h>
-#include <NeuroGen/cuda/STDPKernel.cuh>
-#include <NeuroGen/cuda/EligibilityTraceKernel.cuh>
+#include <NeuroGen/cuda/EnhancedSTDPKernel.cuh>
+#include <NeuroGen/cuda/EligibilityAndRewardKernels.cuh>
 #include <NeuroGen/cuda/RewardModulationKernel.cuh>
 #include <NeuroGen/cuda/HebbianLearningKernel.cuh>
 #include <NeuroGen/cuda/HomeostaticMechanismsKernel.cuh>
@@ -16,6 +16,12 @@
 #include <cuda_runtime.h>
 #include <vector>
 #include <memory>
+
+// Enhanced learning system constants
+#define BASELINE_DOPAMINE 0.4f
+#define UPDATE_FREQUENCY 50.0f    // ms
+#define TARGET_ACTIVITY_LEVEL 0.1f
+#define PROTEIN_SYNTHESIS_THRESHOLD 0.8f
 
 /**
  * Enhanced Learning System Manager
@@ -88,9 +94,7 @@ public:
     /**
      * Destructor cleans up GPU memory
      */
-    ~EnhancedLearningSystem() {
-        cleanupGPUMemory();
-    }
+    ~EnhancedLearningSystem();
     
     /**
      * Main update function coordinating all learning mechanisms
@@ -100,80 +104,7 @@ public:
                        GPUNeuronState* neurons,
                        float current_time, 
                        float dt,
-                       float external_reward = 0.0f) {
-        
-        // Store device pointers
-        d_synapses_ = synapses;
-        d_neurons_ = neurons;
-        
-        // Update timing
-        float time_since_last_update = current_time - last_update_time_;
-        
-        // ========================================
-        // PHASE 1: ELIGIBILITY TRACE UPDATES (High Frequency)
-        // ========================================
-        if (time_since_last_update >= trace_update_interval_) {
-            updateEligibilityTraces(current_time, dt);
-        }
-        
-        // ========================================
-        // PHASE 2: CORE PLASTICITY MECHANISMS (Medium Frequency)
-        // ========================================
-        if (time_since_last_update >= plasticity_update_interval_) {
-            
-            // Update STDP with enhanced mechanisms
-            updateEnhancedSTDP(current_time, dt);
-            
-            // Update Hebbian learning
-            updateHebbianLearning(current_time, dt);
-            
-            // Update reward prediction and modulation
-            updateRewardModulation(current_time, dt, external_reward);
-            
-            // Update metaplasticity
-            updateMetaplasticity(current_time, dt);
-        }
-        
-        // ========================================
-        // PHASE 3: HOMEOSTATIC MECHANISMS (Low Frequency)
-        // ========================================
-        if (time_since_last_update >= homeostatic_update_interval_) {
-            
-            // Synaptic scaling
-            updateSynapticScaling(current_time, dt);
-            
-            // Weight normalization
-            updateWeightNormalization();
-            
-            // Activity regulation
-            updateActivityRegulation(current_time, dt);
-            
-            // Network monitoring
-            updateNetworkMonitoring();
-        }
-        
-        // ========================================
-        // PHASE 4: LATE-PHASE PLASTICITY (Conditional)
-        // ========================================
-        if (protein_synthesis_signal_ > PROTEIN_SYNTHESIS_THRESHOLD) {
-            updateLatePhrasePlasticity(current_time, dt);
-        }
-        
-        // ========================================
-        // PHASE 5: EMERGENCY STABILIZATION (As Needed)
-        // ========================================
-        checkNetworkStability(current_time);
-        
-        // Update timing and statistics
-        last_update_time_ = current_time;
-        plasticity_updates_count_++;
-        
-        // Synchronize GPU execution
-        cudaDeviceSynchronize();
-        
-        // Check for CUDA errors
-        checkCudaErrors();
-    }
+                       float external_reward = 0.0f);
     
     /**
      * Set external reward signal for the network
@@ -187,8 +118,7 @@ public:
      */
     void triggerProteinSynthesis(float strength = 1.0f) {
         protein_synthesis_signal_ = strength;
-    }
-    
+        
     /**
      * Get learning system statistics
      */
@@ -201,48 +131,18 @@ public:
         int plasticity_updates;
     };
     
-    LearningStats getStatistics() const {
-        LearningStats stats;
-        stats.total_weight_change = total_weight_change_;
-        stats.average_trace_activity = average_trace_activity_;
-        stats.current_dopamine_level = current_dopamine_level_;
-        stats.prediction_error = prediction_error_;
-        stats.plasticity_updates = plasticity_updates_count_;
-        
-        // Get network activity from GPU
-        float network_stats[4] = {0};
-        cudaMemcpy(network_stats, d_network_stats_, 4 * sizeof(float), cudaMemcpyDeviceToHost);
-        stats.network_activity = network_stats[0];
-        
-        return stats;
-    }
+    LearningStats getStatistics() const;
     
     /**
      * Reset learning system state (for episodic learning)
      */
-    void resetEpisode(bool reset_traces = true, bool reset_rewards = true) {
-        if (reset_traces) {
-            eligibilityTraceResetKernel<<<synapse_grid_, synapse_block_>>>(
-                d_synapses_, num_synapses_, true, true, false);
-        }
-        
-        if (reset_rewards) {
-            current_reward_signal_ = 0.0f;
-            predicted_reward_ = 0.0f;
-            prediction_error_ = 0.0f;
-            network_reward_trace_ = 0.0f;
-        }
-        
-        cudaDeviceSynchronize();
-    }
+    void resetEpisode(bool reset_traces = true, bool reset_rewards = true);
 
 private:
     /**
      * Initialize GPU memory for learning system
      */
-    void initializeGPUMemory() {
-        // Allocate network statistics arrays
-        cudaMalloc(&d_network_stats_, 4 * sizeof(float));
+    void initializeGPUMemory();
         cudaMalloc(&d_trace_stats_, 4 * sizeof(float));
         
         // Allocate correlation matrix

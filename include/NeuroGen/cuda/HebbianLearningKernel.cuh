@@ -4,7 +4,24 @@
 #include <NeuroGen/LearningRuleConstants.h>
 #include <NeuroGen/cuda/GPUNeuralStructures.h>
 #include <cuda_runtime.h>
+#include <device_launch_parameters.h>
 #include <math.h>
+
+// Hebbian learning constants
+#define HEBBIAN_LEARNING_RATE 0.001f
+#define MIN_ACTIVITY_THRESHOLD 0.1f
+#define CORRELATION_THRESHOLD 0.05f
+#define MAX_WEIGHT 1.0f
+#define MIN_WEIGHT 0.0f
+#define COMPARTMENT_SOMA 0
+#define COMPARTMENT_BASAL 1
+#define COMPARTMENT_APICAL 2
+#define RECEPTOR_AMPA 0
+#define RECEPTOR_NMDA 1
+#define ACTIVITY_SCALING_FACTOR 1.0f
+#define META_THRESHOLD_HIGH 2.0f
+#define META_THRESHOLD_LOW 0.5f
+#define EPSILON 1e-6f
 
 /**
  * Core Hebbian learning kernel implementing "cells that fire together, wire together"
@@ -34,8 +51,9 @@ __global__ void hebbianLearningKernel(GPUSynapse* synapses,
     // EXTRACT NEURAL ACTIVITIES
     // ========================================
     
-    float pre_activity = neurons[pre_idx].activity_level;
-    float post_activity = neurons[post_idx].activity_level;
+    // Use average_activity instead of activity_level (which doesn't exist)
+    float pre_activity = neurons[pre_idx].average_activity;
+    float post_activity = neurons[post_idx].average_activity;
     
     // Skip if either neuron is below minimum activity threshold
     if (pre_activity < MIN_ACTIVITY_THRESHOLD || post_activity < MIN_ACTIVITY_THRESHOLD) {
@@ -124,25 +142,19 @@ __global__ void hebbianLearningKernel(GPUSynapse* synapses,
     // RECEPTOR-TYPE MODULATION
     // ========================================
     
+    // Since receptor_index doesn't exist in GPUSynapse, we'll use a simplified approach
+    // based on the synapse compartment and weight sign
     float receptor_factor = 1.0f;
-    switch (synapse.receptor_index) {
-        case RECEPTOR_AMPA:
-            // AMPA: fast, strong Hebbian plasticity
-            receptor_factor = 1.0f;
-            break;
-        case RECEPTOR_NMDA:
-            // NMDA: voltage-dependent Hebbian plasticity (simplified)
-            // In reality, this would depend on postsynaptic voltage
+    if (synapse.weight > 0.0f) {
+        // Excitatory synapse (assume AMPA-like)
+        receptor_factor = 1.0f;
+        if (compartment == 0) {
+            // Somatic excitatory synapses might have NMDA-like properties
             receptor_factor = 1.3f;
-            break;
-        case RECEPTOR_GABA_A:
-            // GABA-A: anti-Hebbian plasticity for inhibitory balance
-            receptor_factor = -0.5f;
-            break;
-        case RECEPTOR_GABA_B:
-            // GABA-B: slower, modulatory anti-Hebbian plasticity
-            receptor_factor = -0.3f;
-            break;
+        }
+    } else {
+        // Inhibitory synapse (GABA-like)
+        receptor_factor = 0.8f;
     }
     
     hebbian_rate *= receptor_factor;
@@ -172,14 +184,14 @@ __global__ void hebbianLearningKernel(GPUSynapse* synapses,
     // METAPLASTIC MODULATION
     // ========================================
     
-    // Recent synaptic activity affects Hebbian plasticity
+    // Use activity_metric as a proxy for recent activity since recent_activity doesn't exist
     float meta_factor = 1.0f;
-    if (synapse.recent_activity > META_THRESHOLD_HIGH) {
+    if (synapse.activity_metric > META_THRESHOLD_HIGH) {
         // High recent activity: reduce Hebbian plasticity (saturation)
-        meta_factor = 1.0f / (1.0f + (synapse.recent_activity - META_THRESHOLD_HIGH));
-    } else if (synapse.recent_activity < META_THRESHOLD_LOW) {
+        meta_factor = 1.0f / (1.0f + (synapse.activity_metric - META_THRESHOLD_HIGH));
+    } else if (synapse.activity_metric < META_THRESHOLD_LOW) {
         // Low recent activity: enhance Hebbian plasticity (homeostatic upscaling)
-        meta_factor = 1.0f + (META_THRESHOLD_LOW - synapse.recent_activity) * 0.5f;
+        meta_factor = 1.0f + (META_THRESHOLD_LOW - synapse.activity_metric) * 0.5f;
     }
     
     total_dw *= meta_factor;
@@ -197,7 +209,7 @@ __global__ void hebbianLearningKernel(GPUSynapse* synapses,
     
     // If this synapse is very active relative to others on the same postsynaptic neuron,
     // reduce its Hebbian plasticity to allow others to compete
-    float relative_activity = synapse.activity_metric / (neurons[post_idx].activity_level + EPSILON);
+    float relative_activity = synapse.activity_metric / (neurons[post_idx].average_activity + EPSILON);
     if (relative_activity > 2.0f) {
         competition_factor = 1.0f / relative_activity;
     }
@@ -208,8 +220,8 @@ __global__ void hebbianLearningKernel(GPUSynapse* synapses,
     // APPLY WEIGHT CHANGES WITH CONSTRAINTS
     // ========================================
     
-    // Apply Hebbian weight change
-    synapse.weight += total_dw * synapse.plasticity_rate;
+    // Apply Hebbian weight change (use plasticity_modulation as learning rate)
+    synapse.weight += total_dw * synapse.plasticity_modulation;
     
     // Enforce hard bounds
     if (synapse.weight > MAX_WEIGHT) {
@@ -232,12 +244,9 @@ __global__ void hebbianLearningKernel(GPUSynapse* synapses,
     // Update activity metric
     synapse.activity_metric += fabsf(total_dw) * 0.1f;
     
-    // Update recent activity
-    synapse.recent_activity += fabsf(total_dw) * 0.05f;
-    
     // Update last active time if significant change occurred
     if (fabsf(total_dw) > MIN_ACTIVITY_THRESHOLD) {
-        synapse.last_active = current_time;
+        synapse.last_active_time = current_time;
     }
 }
 
@@ -267,8 +276,8 @@ __global__ void ojasLearningKernel(GPUSynapse* synapses,
     // EXTRACT ACTIVITIES
     // ========================================
     
-    float x_pre = neurons[pre_idx].activity_level;
-    float y_post = neurons[post_idx].activity_level;
+    float x_pre = neurons[pre_idx].average_activity;
+    float y_post = neurons[post_idx].average_activity;
     
     // Skip if insufficient activity
     if (x_pre < MIN_ACTIVITY_THRESHOLD || y_post < MIN_ACTIVITY_THRESHOLD) {
@@ -291,7 +300,7 @@ __global__ void ojasLearningKernel(GPUSynapse* synapses,
     // APPLY UPDATE WITH CONSTRAINTS
     // ========================================
     
-    synapse.weight += dw_oja * synapse.plasticity_rate;
+    synapse.weight += dw_oja * synapse.plasticity_modulation;
     
     // Oja's rule naturally bounds weights, but add safety constraints
     if (synapse.weight > MAX_WEIGHT) {
@@ -330,16 +339,16 @@ __global__ void bcmLearningKernel(GPUSynapse* synapses,
     // BCM PLASTICITY FUNCTION
     // ========================================
     
-    float x_pre = neurons[pre_idx].activity_level;
-    float y_post = neurons[post_idx].activity_level;
+    float x_pre = neurons[pre_idx].average_activity;
+    float y_post = neurons[post_idx].average_activity;
     
-    // BCM threshold (stored in neuron state)
-    float theta = neurons[post_idx].plasticity_threshold;
+    // BCM threshold (use excitability as a proxy since plasticity_threshold doesn't exist)
+    float theta = neurons[post_idx].excitability;
     
     // Update sliding threshold based on postsynaptic activity history
     float theta_decay = expf(-dt / 10000.0f);  // 10-second time constant
-    neurons[post_idx].plasticity_threshold *= theta_decay;
-    neurons[post_idx].plasticity_threshold += y_post * y_post * (1.0f - theta_decay);
+    neurons[post_idx].excitability *= theta_decay;
+    neurons[post_idx].excitability += y_post * y_post * (1.0f - theta_decay);
     
     // BCM plasticity function: φ(y) = y(y - θ)
     float phi_y = y_post * (y_post - theta);
@@ -351,7 +360,7 @@ __global__ void bcmLearningKernel(GPUSynapse* synapses,
     // APPLY BCM UPDATE
     // ========================================
     
-    synapse.weight += dw_bcm * synapse.plasticity_rate;
+    synapse.weight += dw_bcm * synapse.plasticity_modulation;
     
     // Apply constraints
     if (synapse.weight > MAX_WEIGHT) {
@@ -393,8 +402,8 @@ __global__ void correlationLearningKernel(GPUSynapse* synapses,
     // UPDATE CORRELATION MATRIX
     // ========================================
     
-    float pre_activity = neurons[pre_idx].activity_level;
-    float post_activity = neurons[post_idx].activity_level;
+    float pre_activity = neurons[pre_idx].average_activity;
+    float post_activity = neurons[post_idx].average_activity;
     
     // Update running correlation estimate
     int correlation_idx = pre_idx * matrix_size + post_idx;
@@ -417,7 +426,7 @@ __global__ void correlationLearningKernel(GPUSynapse* synapses,
     float dw_corr = learning_rate * correlation_strength * dt;
     
     // Apply update
-    synapse.weight += dw_corr * synapse.plasticity_rate;
+    synapse.weight += dw_corr * synapse.plasticity_modulation;
     
     // Apply constraints
     if (synapse.weight > MAX_WEIGHT) {
