@@ -6,6 +6,7 @@
 #include <string>
 #include <mutex>
 #include <atomic>
+#include <NeuroGen/NetworkStats.h>
 #include <NeuroGen/NetworkConfig.h>
 #include <NeuroGen/NeuralConstants.h>
 
@@ -346,20 +347,5 @@ private:
     bool validateNetworkIntegrity() const;
 };
 
-/**
- * @brief System state structure for monitoring
- */
-struct SystemState {
-    int current_neuron_count;
-    int current_synapse_count;
-    float network_density;
-    float global_activity_level;
-    float learning_progress_rate;
-    float network_efficiency;
-    float adaptation_rate;
-    bool homeostatic_stable;
-    bool learning_active;
-    bool structural_changes_active;
-};
 
 #endif // DYNAMIC_NEURAL_NETWORK_H

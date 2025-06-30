@@ -118,6 +118,10 @@ struct NetworkConfig {
     // Spike threshold
     double spike_threshold = 30.0;           // mV
     
+    //Pruning threshold
+    float pruning_threshold = 0.1f;
+
+    
     void print() const {
         std::cout << "=== Network Configuration ===" << std::endl;
         std::cout << "Input Size: " << input_size << std::endl;
