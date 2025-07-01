@@ -1,64 +1,150 @@
 #ifndef MODULAR_NEURAL_NETWORK_H
 #define MODULAR_NEURAL_NETWORK_H
 
-#include <string>
 #include <vector>
 #include <memory>
-#include <unordered_map>
-#include "NeuroGen/NeuralModule.h"
+#include <string>
+#include <map>
+
+// Forward declarations
+class NeuralModule;
+struct NetworkConfig;  // FIX: Use struct to match NetworkConfig.h
 
 /**
- * @class ModularNeuralNetwork
- * @brief Manages a collection of interconnected NeuralModules to form a large-scale network.
- *
- * This class serves as the main orchestrator, responsible for holding the modules,
- * establishing connections between them, and running the simulation for the entire system.
+ * @brief Modular neural network container for managing multiple neural modules
+ * 
+ * This class serves as a container and coordinator for multiple neural modules,
+ * allowing them to work together as a cohesive modular neural network system.
+ * It provides module registration, update coordination, and inter-module communication.
  */
 class ModularNeuralNetwork {
 public:
+    // ========================================================================
+    // CONSTRUCTION AND INITIALIZATION
+    // ========================================================================
+    
     /**
-     * @brief Default constructor.
+     * @brief Default constructor
      */
-    ModularNeuralNetwork() = default;
-
+    ModularNeuralNetwork();
+    
     /**
-     * @brief Adds a neural module to the network. The ModularNeuralNetwork takes ownership.
-     * @param module A unique_ptr to the NeuralModule to be added.
+     * @brief Destructor
+     */
+    virtual ~ModularNeuralNetwork();
+    
+    /**
+     * @brief Initialize the modular network
+     * @return Success status of initialization
+     */
+    bool initialize();
+    
+    /**
+     * @brief Shutdown the modular network
+     */
+    void shutdown();
+    
+    // ========================================================================
+    // MODULE MANAGEMENT
+    // ========================================================================
+    
+    /**
+     * @brief Add a neural module to the network
+     * @param module Unique pointer to the neural module
      */
     void add_module(std::unique_ptr<NeuralModule> module);
-
+    
     /**
-     * @brief Retrieves a pointer to a module by its name.
-     * @param name The unique identifier of the module.
-     * @return A raw pointer to the NeuralModule, or nullptr if not found.
+     * @brief Remove a module by name
+     * @param module_name Name of the module to remove
+     * @return Success status of removal
      */
-    NeuralModule* get_module(const std::string& name) const;
-
+    bool remove_module(const std::string& module_name);
+    
     /**
-     * @brief Connects an output port of one module to an input port of another.
-     * @param source_module_name The name of the module providing the output.
-     * @param source_port_name The name of the output port on the source module.
-     * @param target_module_name The name of the module receiving the input.
-     * @param target_port_name The name of the input port on the target module.
+     * @brief Get a module by name
+     * @param module_name Name of the module
+     * @return Pointer to the module, or nullptr if not found
      */
-    void connect(const std::string& source_module_name, const std::string& source_port_name,
-                 const std::string& target_module_name, const std::string& target_port_name);
-
+    NeuralModule* get_module(const std::string& module_name) const;
+    
     /**
-     * @brief Runs the simulation for the entire modular network.
-     * @param duration The total simulation time in milliseconds.
-     * @param dt The time step for the simulation in milliseconds.
+     * @brief Get all module names
+     * @return Vector of module names
      */
-    void run(float duration, float dt);
-
+    std::vector<std::string> get_module_names() const;
+    
     /**
-     * @brief Initializes the network. Placeholder for future initialization logic.
+     * @brief Get number of registered modules
+     * @return Number of modules
      */
-    void initialize();
+    size_t get_module_count() const;
+    
+    // ========================================================================
+    // NETWORK OPERATIONS
+    // ========================================================================
+    
+    /**
+     * @brief Update all modules in the network
+     * @param dt Time step for the update
+     */
+    void update(float dt);
+    
+    /**
+     * @brief Update a specific module
+     * @param module_name Name of the module to update
+     * @param dt Time step for the update
+     */
+    void update_module(const std::string& module_name, float dt);
+    
+    /**
+     * @brief Process inter-module communications
+     */
+    void process_inter_module_communication();
+    
+    /**
+     * @brief Reset all modules to initial state
+     */
+    void reset();
+    
+    // ========================================================================
+    // PERFORMANCE MONITORING
+    // ========================================================================
+    
+    /**
+     * @brief Get performance metrics for all modules
+     * @return Map of module names to their performance metrics
+     */
+    std::map<std::string, std::map<std::string, float>> getPerformanceMetrics() const;
+    
+    /**
+     * @brief Get total network activity
+     * @return Average activity across all modules
+     */
+    float get_total_activity() const;
+    
+    /**
+     * @brief Check if network is stable
+     * @return True if all modules are operating within normal parameters
+     */
+    bool is_stable() const;
 
 private:
-    // A map to hold all the modules, with the module name as the key.
-    std::unordered_map<std::string, std::unique_ptr<NeuralModule>> modules_;
+    // Module storage
+    std::vector<std::unique_ptr<NeuralModule>> modules_;
+    std::map<std::string, NeuralModule*> module_map_;
+    
+    // Network state
+    bool is_initialized_;
+    bool is_shutdown_;
+    
+    // Performance tracking
+    float total_activity_;
+    size_t update_count_;
+    
+    // Helper methods
+    void update_performance_metrics();
+    void validate_modules();
 };
 
 #endif // MODULAR_NEURAL_NETWORK_H

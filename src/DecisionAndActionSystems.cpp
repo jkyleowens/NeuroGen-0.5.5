@@ -3,6 +3,7 @@
 // File: src/DecisionAndActionSystems.cpp
 // ============================================================================
 
+#include <NeuroGen/SpecializedModule.h>
 #include <NeuroGen/AutonomousLearningAgent.h>
 #include <iostream>
 #include <algorithm>

@@ -1,6 +1,7 @@
-#include "TaskAutomationModules.h"
-#include "NeuralModule.h" // For ModuleUtils
+#include <NeuroGen/CentralController.h>
+#include <NeuroGen/ScreenElement.h>
 #include <iostream>
+#include <vector>
 
 int main() {
     std::cout << "--- ANIMA-Based Task Automation Simulation ---" << std::endl;
@@ -15,8 +16,8 @@ int main() {
 
     // Simulate an initial screen state with a login button and a textbox.
     std::vector<ScreenElement> screen1;
-    screen1.push_back({1, "button", 100, 200, 80, 30, "Login", true});
-    screen1.push_back({2, "textbox", 100, 150, 150, 25, "", false});
+    screen1.push_back(ScreenElement(1, "button", 100, 200, 80, 30, "Login", true));
+    screen1.push_back(ScreenElement(2, "textbox", 100, 150, 150, 25, "", false));
     controller.simulateNewScreenData(screen1);
 
     // Run the controller's cognitive cycle.
@@ -28,8 +29,8 @@ int main() {
 
     // Simulate a different screen state, perhaps after a successful login.
     std::vector<ScreenElement> screen2;
-    screen2.push_back({10, "image", 50, 50, 400, 300, "", false});
-    screen2.push_back({11, "button", 200, 400, 100, 40, "Submit", true});
+    screen2.push_back(ScreenElement(10, "image", 50, 50, 400, 300, "", false));
+    screen2.push_back(ScreenElement(11, "button", 200, 400, 100, 40, "Submit", true));
     controller.simulateNewScreenData(screen2);
 
     // Run the controller for another cycle.

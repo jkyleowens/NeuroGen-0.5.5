@@ -4,11 +4,20 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <unordered_map> // Include for std::unordered_map
+#include <mutex>
+#include <unordered_map>
+#include <map>
 #include <NeuroGen/Network.h>
 #include <NeuroGen/NetworkConfig.h>
 #include <NeuroGen/NetworkStats.h>
 
+/**
+ * @brief Base Neural Module for Modular Neural Network Architecture
+ * 
+ * Self-contained neural network module with independent state management,
+ * CUDA integration, and inter-module communication capabilities.
+ * Designed for biological brain-like modular neural networks.
+ */
 class NeuralModule {
 public:
     // ========================================================================
@@ -34,6 +43,14 @@ public:
     virtual bool initialize();
     
     /**
+     * @brief Update module with time step, inputs, and reward signal
+     * @param dt Time step in seconds
+     * @param inputs Input vector to process (optional)
+     * @param reward Reward signal for learning (optional)
+     */
+    virtual void update(float dt, const std::vector<float>& inputs = {}, float reward = 0.0f);
+    
+    /**
      * @brief Validate module configuration and state
      * @return Validation success status
      */
@@ -51,138 +68,120 @@ public:
     virtual std::vector<float> process(const std::vector<float>& input);
     
     /**
-     * @brief Update internal state with temporal dynamics
-     * @param dt Time step for integration
+     * @brief Get current module output
+     * @return Current output activation values
      */
-    virtual void update_state(float dt);
+    virtual std::vector<float> get_output() const;
     
     /**
-     * @brief Apply learning rules based on activity patterns
-     * @param target_output Target output for supervised learning
-     * @param learning_signal Learning modulation signal
+     * @brief Get specific neuron potentials
+     * @param neuron_ids Vector of neuron IDs to query
+     * @return Vector of membrane potentials
      */
-    virtual void apply_learning(const std::vector<float>& target_output, 
-                               float learning_signal = 1.0f);
+    std::vector<float> get_neuron_potentials(const std::vector<size_t>& neuron_ids) const;
     
     // ========================================================================
-    // BIOLOGICAL PARAMETER CONTROL
-    // ========================================================================
-    
-    /**
-     * @brief Set learning rate for synaptic plasticity
-     * @param rate Learning rate value [0.0, 1.0]
-     */
-    void set_learning_rate(float rate);
-    
-    /**
-     * @brief Enable or disable synaptic plasticity
-     * @param enable Plasticity enable flag
-     */
-    void enable_plasticity(bool enable);
-    
-    /**
-     * @brief Set homeostatic target activity level
-     * @param target Target activity level (Hz)
-     */
-    void set_homeostatic_target(float target);
-    
-    /**
-     * @brief Set intrinsic excitability level
-     * @param excitability Excitability parameter [0.0, 2.0]
-     */
-    void set_excitability(float excitability);
-    
-    /**
-     * @brief Configure noise parameters for biological realism
-     * @param noise_amplitude Amplitude of background noise
-     */
-    void set_background_noise(float noise_amplitude);
-    
-    /**
-     * @brief Set refractory period for spike generation
-     * @param period Refractory period in milliseconds
-     */
-    void set_refractory_period(float period);
-    
-    // ========================================================================
-    // STATE ACCESS AND MONITORING
+    // MODULE STATE AND CONTROL
     // ========================================================================
     
     /**
-     * @brief Get current internal state vector
-     * @return Copy of internal state
+     * @brief Set module active state
+     * @param active Activity state to set
      */
-    std::vector<float> get_internal_state() const;
+    virtual void set_active(bool active);
     
     /**
-     * @brief Get module name identifier
-     * @return Module name string
+     * @brief Check if module is active
+     * @return Current activity state
+     */
+    virtual bool is_active() const;
+    
+    /**
+     * @brief Get module name
+     * @return Module identifier string
      */
     const std::string& get_name() const;
     
     /**
-     * @brief Get current average activity level
-     * @return Average activity over recent time window
+     * @brief Get internal network reference
+     * @return Pointer to internal network
      */
-    float get_average_activity() const;
+    Network* get_network();
     
     /**
-     * @brief Get current firing rate
-     * @return Instantaneous firing rate (Hz)
+     * @brief Get module statistics
+     * @return Current network statistics
      */
-    float get_firing_rate() const;
-    
-    /**
-     * @brief Get learning rate parameter
-     * @return Current learning rate
-     */
-    float get_learning_rate() const;
-    
-    /**
-     * @brief Check if plasticity is enabled
-     * @return Plasticity enable status
-     */
-    bool is_plasticity_enabled() const;
-    
-    /**
-     * @brief Get detailed module statistics
-     * @param stats Output vector for statistics
-     */
-    void get_module_statistics(std::vector<float>& stats) const;
+    NetworkStats get_stats() const;
     
     // ========================================================================
-    // ADVANCED FEATURES
+    // INTER-MODULE COMMUNICATION
     // ========================================================================
     
     /**
-     * @brief Apply neuromodulation (dopamine, acetylcholine, etc.)
-     * @param dopamine_level Dopamine concentration
-     * @param acetylcholine_level Acetylcholine concentration
-     * @param serotonin_level Serotonin concentration
+     * @brief Register neuron port for inter-module connections
+     * @param port_name Name of the port
+     * @param neuron_ids Vector of neuron IDs in this port
      */
-    void apply_neuromodulation(float dopamine_level, float acetylcholine_level, 
-                              float serotonin_level);
+    void register_neuron_port(const std::string& port_name, const std::vector<size_t>& neuron_ids);
     
     /**
-     * @brief Execute homeostatic regulation
-     * @param dt Time step for regulation
+     * @brief Get neuron population for a port
+     * @param port_name Name of the port
+     * @return Vector of neuron IDs
      */
-    void apply_homeostatic_regulation(float dt);
+    const std::vector<size_t>& get_neuron_population(const std::string& port_name) const;
     
     /**
-     * @brief Implement structural plasticity (connection growth/pruning)
-     * @param growth_factor Growth signal strength
-     * @param pruning_threshold Threshold for connection removal
+     * @brief Send signal to another module
+     * @param signal Vector of signal values
+     * @param target_module Target module name
+     * @param target_port Target port name
      */
-    void apply_structural_plasticity(float growth_factor, float pruning_threshold);
+    virtual void send_signal(const std::vector<float>& signal, 
+                           const std::string& target_module,
+                           const std::string& target_port);
     
     /**
-     * @brief Reset module to baseline state
+     * @brief Receive signal from another module
+     * @param signal Vector of signal values
+     * @param source_module Source module name
+     * @param source_port Source port name
      */
-    virtual void reset_to_baseline();
+    virtual void receive_signal(const std::vector<float>& signal,
+                              const std::string& source_module,
+                              const std::string& source_port);
+    
+    /**
+     * @brief Apply neuromodulation to the module
+     * @param modulator_type Type of neuromodulator (dopamine, serotonin, etc.)
+     * @param level Modulation level
+     */
+    virtual void applyNeuromodulation(const std::string& modulator_type, float level);
     
     // ========================================================================
-    // STATE PERSISTENCE
+    // PERFORMANCE MONITORING
+    // ========================================================================
+    
+    /**
+     * @brief Get performance metrics
+     * @return Map of performance metric names to values
+     */
+    virtual std::map<std::string, float> getPerformanceMetrics() const;
+    
+    /**
+     * @brief Reset performance counters
+     */
+    void reset_performance_metrics();
+    
+    /**
+     * @brief Update performance tracking
+     * @param dt Time step for this update
+     */
+    void update_performance_metrics(float dt);
+    
+    // ========================================================================
+    // STATE SERIALIZATION
     // ========================================================================
     
     /**
@@ -190,19 +189,53 @@ public:
      * @param filename Output filename
      * @return Success status
      */
-    bool save_state(const std::string& filename) const;
+    virtual bool save_state(const std::string& filename) const;
     
     /**
      * @brief Load module state from file
      * @param filename Input filename
      * @return Success status
      */
-    bool load_state(const std::string& filename);
+    virtual bool load_state(const std::string& filename);
+    
+    // ========================================================================
+    // CUDA INTEGRATION
+    // ========================================================================
+    
+    /**
+     * @brief Initialize CUDA resources for this module
+     * @return Success status
+     */
+    bool initialize_cuda_resources();
+    
+    /**
+     * @brief Clean up CUDA resources
+     */
+    void cleanup_cuda_resources();
+    
+    /**
+     * @brief Check if CUDA is available and initialized
+     * @return CUDA availability status
+     */
+    bool is_cuda_available() const;
 
 private:
     // Core module properties
     std::string module_name_;
     NetworkConfig config_;
+    
+    // Neural network instance
+    std::unique_ptr<Network> internal_network_;
+    
+    // Module state
+    bool active_;
+    bool is_initialized_;
+    bool cuda_initialized_;
+    
+    // Inter-module communication
+    std::unordered_map<std::string, std::vector<size_t>> neuron_ports_;
+    std::vector<float> outgoing_signals_;
+    std::vector<float> incoming_signals_;
     
     // Neural state management
     std::vector<float> internal_state_;
@@ -227,12 +260,11 @@ private:
     float firing_rate_;
     float connection_strength_;
     float plasticity_events_;
+    float last_update_time_;
+    size_t update_count_;
     
     // Thread safety
     mutable std::mutex module_mutex_;
-    
-    // Initialization state
-    bool is_initialized_;
 
 protected:
     // ========================================================================
@@ -278,6 +310,11 @@ protected:
      * @return Noisy signal
      */
     virtual float apply_biological_noise(float signal) const;
+    
+    /**
+     * @brief Update internal performance counters
+     */
+    void update_internal_metrics();
 };
 
 #endif // NEURAL_MODULE_H
