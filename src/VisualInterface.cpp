@@ -3,7 +3,8 @@
 // File: src/VisualInterface.cpp
 // ============================================================================
 
-#include <NeuroGen/AutonomousLearningAgent.h>
+#include <NeuroGen/VisualInterface.h>
+#include <NeuroGen/SpecializedModule.h>
 #include <iostream>
 #include <algorithm>
 #include <cmath>
@@ -348,7 +349,11 @@ void VisualInterface::send_to_visual_cortex(SpecializedModule* visual_cortex) {
     }
     
     // Process through visual cortex
-    visual_cortex->process(attended_features, 1.0f);
+    auto visual_output = visual_cortex->process(attended_features);
+    
+    std::cout << "Visual Interface: Sent " << attended_features.size() 
+              << " features to visual cortex, received " << visual_output.size() 
+              << " outputs" << std::endl;
 }
 
 VisualInterface::ScreenElement VisualInterface::find_element_by_type(const std::string& type) const {
@@ -580,29 +585,17 @@ MemorySystem::MemorySystem(size_t episodic_capacity, size_t working_capacity)
     working_memory_.resize(working_memory_size_, 0.0f);
 }
 
-void MemorySystem::store_episode(const std::vector<float>& state, const std::vector<float>& action, 
-                                float reward, float importance) {
-    MemoryTrace new_trace;
-    new_trace.state_vector = state;
-    new_trace.action_vector = action;
-    new_trace.reward = reward;
-    new_trace.importance_weight = importance;
-    new_trace.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-    new_trace.access_count = 0;
-    
-    // Add to episodic memory
+void MemorySystem::store_episode(const MemoryTrace& trace) {
+    // Store the trace directly
     if (episodic_memory_.size() >= max_episodic_capacity_) {
-        // Remove oldest or least important memories
-        auto min_it = std::min_element(episodic_memory_.begin(), episodic_memory_.end(),
-            [](const MemoryTrace& a, const MemoryTrace& b) {
-                return (a.importance_weight * std::exp(-(a.access_count * 0.1f))) <
-                       (b.importance_weight * std::exp(-(b.access_count * 0.1f)));
-            });
-        *min_it = new_trace;
-    } else {
-        episodic_memory_.push_back(new_trace);
+        // Remove oldest episode
+        episodic_memory_.erase(episodic_memory_.begin());
     }
+    
+    episodic_memory_.push_back(trace);
+    
+    std::cout << "Memory System: Stored new episode (total: " 
+              << episodic_memory_.size() << "/" << max_episodic_capacity_ << ")" << std::endl;
     
     static int episode_count = 0;
     if (++episode_count % 1000 == 0) {
@@ -623,7 +616,7 @@ void MemorySystem::update_working_memory(const std::vector<float>& new_informati
 }
 
 std::vector<MemorySystem::MemoryTrace> MemorySystem::retrieve_similar_episodes(
-    const std::vector<float>& query_state, int num_episodes) const {
+    const std::vector<float>& query_state, size_t max_results) const {
     
     if (episodic_memory_.empty() || query_state.empty()) {
         return {};
@@ -635,33 +628,30 @@ std::vector<MemorySystem::MemoryTrace> MemorySystem::retrieve_similar_episodes(
     
     for (size_t i = 0; i < episodic_memory_.size(); ++i) {
         const auto& trace = episodic_memory_[i];
-        float similarity = compute_cosine_similarity(query_state, trace.state_vector);
+        float similarity = compute_cosine_similarity(query_state, trace.state_features);
         
-        // Weight by importance and recency
-        float recency_weight = std::exp(-memory_decay_rate_ * 
-            (std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count() - trace.timestamp));
+        // Weight by importance and recency 
+        auto now = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - trace.timestamp);
+        float recency_weight = std::exp(-memory_decay_rate_ * duration.count());
         
-        float weighted_similarity = similarity * trace.importance_weight * recency_weight;
+        float weighted_similarity = similarity * trace.confidence_level * recency_weight;
         similarities.emplace_back(weighted_similarity, i);
     }
     
     // Sort by similarity (highest first)
     std::partial_sort(similarities.begin(), 
-                     similarities.begin() + std::min(size_t(num_episodes), similarities.size()),
+                     similarities.begin() + std::min(max_results, similarities.size()),
                      similarities.end(),
                      [](const auto& a, const auto& b) { return a.first > b.first; });
     
     // Return top episodes
     std::vector<MemoryTrace> result;
-    result.reserve(num_episodes);
+    result.reserve(max_results);
     
-    for (int i = 0; i < num_episodes && i < static_cast<int>(similarities.size()); ++i) {
+    for (size_t i = 0; i < max_results && i < similarities.size(); ++i) {
         size_t idx = similarities[i].second;
         result.push_back(episodic_memory_[idx]);
-        
-        // Update access count (non-const operation would need mutable)
-        // episodic_memory_[idx].access_count++;
     }
     
     return result;
@@ -692,20 +682,24 @@ std::vector<float> MemorySystem::get_working_memory() const {
 void MemorySystem::consolidate_memories() {
     if (episodic_memory_.empty()) return;
     
-    // Simple consolidation: boost importance of frequently accessed memories
+    // Simple consolidation: boost confidence of important memories
     for (auto& trace : episodic_memory_) {
-        if (trace.access_count > 5) {
-            trace.importance_weight = std::min(2.0f, trace.importance_weight * 1.05f);
-        }
+        // Decay confidence based on age 
+        auto now = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - trace.timestamp);
         
-        // Decay importance of old, unaccessed memories
-        float age = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count() - trace.timestamp;
-        
-        if (age > 300000 && trace.access_count == 0) { // 5 minutes old and never accessed
-            trace.importance_weight *= 0.95f;
+        if (duration.count() > 300000) { // 5 minutes old
+            trace.confidence_level *= 0.95f;
         }
     }
     
     std::cout << "Memory System: Consolidated " << episodic_memory_.size() << " memory traces" << std::endl;
+}
+
+size_t MemorySystem::get_episodic_memory_size() const {
+    return episodic_memory_.size();
+}
+
+float MemorySystem::get_memory_utilization() const {
+    return static_cast<float>(episodic_memory_.size()) / static_cast<float>(max_episodic_capacity_);
 }

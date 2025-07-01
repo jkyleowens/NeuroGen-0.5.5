@@ -1,148 +1,162 @@
-#include "NeuroGen/EnhancedNeuralModule.h"
-#include "NeuroGen/cuda/NetworkCUDA.cuh"
-#include <fstream>
+// ============================================================================
+// ENHANCED NEURAL MODULE IMPLEMENTATION
+// File: src/EnhancedNeuralModule.cpp
+// ============================================================================
+
+#include <NeuroGen/EnhancedNeuralModule.h>
 #include <iostream>
+#include <fstream>
 #include <algorithm>
 #include <cmath>
 #include <random>
 
 // ============================================================================
-// CORE MODULE INTERFACE IMPLEMENTATION
+// CORE LIFECYCLE METHODS
 // ============================================================================
 
-void EnhancedNeuralModule::update(double dt) {
-    if (!isActive()) {
+bool EnhancedNeuralModule::initialize() {
+    std::cout << "🧠 Initializing Enhanced Neural Module: " << module_name_ << std::endl;
+    
+    // Call parent initialization first
+    if (!NeuralModule::initialize()) {
+        std::cerr << "❌ Failed to initialize base neural module" << std::endl;
+        return false;
+    }
+    
+    // Initialize enhanced features
+    attention_weight_ = 1.0f;
+    is_active_ = true;
+    developmental_stage_ = 0;
+    feedback_strength_ = 0.5f;
+    last_feedback_update_ = std::chrono::steady_clock::now();
+    
+    // Initialize neuromodulator levels
+    neuromodulator_levels_["dopamine"] = 0.5f;
+    neuromodulator_levels_["serotonin"] = 0.5f;
+    neuromodulator_levels_["norepinephrine"] = 0.5f;
+    neuromodulator_levels_["acetylcholine"] = 0.5f;
+    
+    // Initialize feedback state
+    feedback_state_.resize(config_.num_neurons, 0.0f);
+    
+    std::cout << "✅ Enhanced Neural Module initialized successfully" << std::endl;
+    return true;
+}
+
+void EnhancedNeuralModule::update(float dt, const std::vector<float>& inputs, float reward) {
+    if (!is_active_) {
         return;
     }
     
-    std::lock_guard<std::mutex> lock(state_mutex_);
+    // Call parent update first
+    NeuralModule::update(dt, inputs, reward);
     
-    // Update base neural module
-    NeuralModule::update(static_cast<float>(dt), {}, 0.0f);
+    // Update enhanced biological processes
+    updateBiologicalProcesses(dt);
     
-    // Update enhanced features
-    updateFeedbackLoops(dt);
-    processInterModuleCommunication(dt);
-    processDelayedSignals();
-    updateNeuromodulators(dt);
-    applyHomeostaticRegulation(dt);
-    updatePerformanceMetrics(dt);
+    // Process feedback loops
+    processFeedbackLoops(dt);
     
-    // Synchronize with CUDA if available
-    if (cuda_network_) {
-        synchronizeWithCUDA();
-    }
-}
-
-std::vector<float> EnhancedNeuralModule::process(const std::vector<float>& input) {
-    if (!isActive()) {
-        return std::vector<float>(input.size(), 0.0f);
-    }
+    // Update developmental state
+    updateDevelopmentalState(dt);
     
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    // Apply attention modulation to input
-    std::vector<float> modulated_input = applyAttentionToInput(input);
-    
-    // Process through base neural module
-    std::vector<float> base_output = NeuralModule::process(modulated_input);
-    
-    // Add feedback signals
-    std::vector<float> feedback_signals = computeFeedbackSignals();
-    
-    // Combine base output with feedback
-    std::vector<float> enhanced_output = base_output;
-    if (feedback_signals.size() == enhanced_output.size()) {
-        for (size_t i = 0; i < enhanced_output.size(); ++i) {
-            enhanced_output[i] += feedback_signals[i] * feedback_modulation_;
-        }
-    }
-    
-    // Apply final attention weighting
-    for (float& output : enhanced_output) {
-        output *= attention_weight_;
-    }
-    
-    return enhanced_output;
+    // Process inter-module communication
+    processInterModuleCommunication();
 }
 
 std::map<std::string, float> EnhancedNeuralModule::getPerformanceMetrics() const {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    return performance_metrics_;
+    // Get base metrics from parent class
+    auto metrics = NeuralModule::getPerformanceMetrics();
+    
+    // Add enhanced metrics
+    metrics["attention_weight"] = attention_weight_;
+    metrics["developmental_stage"] = static_cast<float>(developmental_stage_);
+    metrics["feedback_strength"] = feedback_strength_;
+    metrics["is_active"] = is_active_ ? 1.0f : 0.0f;
+    
+    // Add neuromodulator levels
+    for (const auto& [modulator, level] : neuromodulator_levels_) {
+        metrics["neuromodulator_" + modulator] = level;
+    }
+    
+    // Compute enhanced connectivity metrics
+    float connection_diversity = static_cast<float>(connections_.size());
+    metrics["inter_module_connections"] = connection_diversity;
+    
+    return metrics;
+}
+
+std::vector<float> EnhancedNeuralModule::getOutputs() const {
+    return applyAttentionWeighting(neuron_outputs_);
 }
 
 // ============================================================================
-// STATE MANAGEMENT AND PERSISTENCE
+// STATE MANAGEMENT
 // ============================================================================
 
 EnhancedNeuralModule::ModuleState EnhancedNeuralModule::saveState() const {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
     ModuleState state;
-    state.module_name = get_name();
+    state.module_name = module_name_;
     state.module_attention_weight = attention_weight_;
     state.developmental_stage = developmental_stage_;
-    state.performance_metrics = performance_metrics_;
-    state.last_update = std::chrono::system_clock::now();
-    state.is_active = is_active_.load();
+    state.is_active = is_active_;
+    state.timestamp = std::chrono::steady_clock::now();
+    
+    // Save neuron states
+    state.neuron_states = neuron_outputs_;
+    
+    // Save synapse weights
+    state.synapse_weights = synaptic_weights_;
     
     // Save neuromodulator levels
-    for (const auto& [name, level] : neuromodulator_levels_) {
+    state.neuromodulator_levels.clear();
+    for (const auto& [modulator, level] : neuromodulator_levels_) {
         state.neuromodulator_levels.push_back(level);
     }
     
-    // Get neural state from base module
-    if (auto network = get_network()) {
-        auto stats = network->get_stats();
-        state.neuron_states.reserve(stats.num_neurons);
-        state.synapse_weights.reserve(stats.num_synapses);
-        
-        // Extract neuron states and synapse weights
-        // This would interface with the actual network implementation
-        for (size_t i = 0; i < stats.num_neurons; ++i) {
-            if (auto neuron = network->get_neuron(i)) {
-                state.neuron_states.push_back(neuron->get_potential());
-            }
-        }
-    }
+    // Save performance metrics
+    state.performance_metrics = getPerformanceMetrics();
     
     return state;
 }
 
 void EnhancedNeuralModule::loadState(const ModuleState& state) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
+    module_name_ = state.module_name;
     attention_weight_ = state.module_attention_weight;
     developmental_stage_ = state.developmental_stage;
-    performance_metrics_ = state.performance_metrics;
-    is_active_.store(state.is_active);
+    is_active_ = state.is_active;
     
-    // Restore neuromodulator levels
-    size_t mod_index = 0;
-    for (auto& [name, level] : neuromodulator_levels_) {
-        if (mod_index < state.neuromodulator_levels.size()) {
-            level = state.neuromodulator_levels[mod_index++];
+    // Load neuron states
+    if (!state.neuron_states.empty()) {
+        neuron_outputs_ = state.neuron_states;
+    }
+    
+    // Load synapse weights
+    if (!state.synapse_weights.empty()) {
+        synaptic_weights_ = state.synapse_weights;
+    }
+    
+    // Load neuromodulator levels
+    if (state.neuromodulator_levels.size() >= 4) {
+        auto it = neuromodulator_levels_.begin();
+        for (size_t i = 0; i < state.neuromodulator_levels.size() && it != neuromodulator_levels_.end(); ++i, ++it) {
+            it->second = state.neuromodulator_levels[i];
         }
     }
     
-    // Restore neural network state
-    if (auto network = get_network() && !state.neuron_states.empty()) {
-        for (size_t i = 0; i < state.neuron_states.size(); ++i) {
-            if (auto neuron = network->get_neuron(i)) {
-                neuron->set_potential(state.neuron_states[i]);
-            }
-        }
-    }
+    std::cout << "✅ Module state loaded for: " << module_name_ << std::endl;
 }
 
-bool EnhancedNeuralModule::saveStateToFile(const std::string& filename) const {
+bool EnhancedNeuralModule::save_state(const std::string& filename) const {
     try {
-        ModuleState state = saveState();
-        
         std::ofstream file(filename, std::ios::binary);
         if (!file.is_open()) {
+            std::cerr << "❌ Cannot open file for writing: " << filename << std::endl;
             return false;
         }
+        
+        // Save enhanced state
+        ModuleState state = saveState();
         
         // Write state data (simplified binary format)
         file.write(reinterpret_cast<const char*>(&state.module_attention_weight), sizeof(float));
@@ -164,17 +178,25 @@ bool EnhancedNeuralModule::saveStateToFile(const std::string& filename) const {
                       synapse_count * sizeof(float));
         }
         
+        size_t neuromod_count = state.neuromodulator_levels.size();
+        file.write(reinterpret_cast<const char*>(&neuromod_count), sizeof(size_t));
+        if (neuromod_count > 0) {
+            file.write(reinterpret_cast<const char*>(state.neuromodulator_levels.data()),
+                      neuromod_count * sizeof(float));
+        }
+        
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "Error saving module state: " << e.what() << std::endl;
+        std::cerr << "❌ Error saving module state: " << e.what() << std::endl;
         return false;
     }
 }
 
-bool EnhancedNeuralModule::loadStateFromFile(const std::string& filename) {
+bool EnhancedNeuralModule::load_state(const std::string& filename) {
     try {
         std::ifstream file(filename, std::ios::binary);
         if (!file.is_open()) {
+            std::cerr << "❌ Cannot open file for reading: " << filename << std::endl;
             return false;
         }
         
@@ -202,465 +224,206 @@ bool EnhancedNeuralModule::loadStateFromFile(const std::string& filename) {
                      synapse_count * sizeof(float));
         }
         
+        size_t neuromod_count;
+        file.read(reinterpret_cast<char*>(&neuromod_count), sizeof(size_t));
+        if (neuromod_count > 0) {
+            state.neuromodulator_levels.resize(neuromod_count);
+            file.read(reinterpret_cast<char*>(state.neuromodulator_levels.data()),
+                     neuromod_count * sizeof(float));
+        }
+        
+        // Load the state
         loadState(state);
+        
         return true;
     } catch (const std::exception& e) {
-        std::cerr << "Error loading module state: " << e.what() << std::endl;
+        std::cerr << "❌ Error loading module state: " << e.what() << std::endl;
         return false;
     }
 }
 
 // ============================================================================
-// ATTENTION MECHANISM IMPLEMENTATION
+// ATTENTION MECHANISM
 // ============================================================================
 
-void EnhancedNeuralModule::setPortAttention(const std::string& port_name, float weight) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    attention_state_.port_attention_weights[port_name] = std::clamp(weight, 0.0f, 2.0f);
-}
-
-void EnhancedNeuralModule::applySpatialAttention(const std::vector<float>& attention_map) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    attention_state_.spatial_attention_map = attention_map;
-}
-
-void EnhancedNeuralModule::updateAttentionState(const std::vector<float>& context_signals) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    if (!attention_state_.attention_focus_enabled) {
+void EnhancedNeuralModule::updateAttention(const std::vector<float>& context_vector) {
+    if (context_vector.empty()) {
         return;
     }
     
-    // Compute attention based on context
-    float context_strength = 0.0f;
-    for (float signal : context_signals) {
-        context_strength += std::abs(signal);
-    }
-    context_strength /= context_signals.size();
+    // Simple attention computation based on context similarity
+    float context_match = 0.0f;
+    float norm_context = 0.0f;
+    float norm_internal = 0.0f;
     
-    // Update global attention weight based on context
-    float target_attention = 1.0f + context_strength * 0.5f;
-    attention_state_.global_attention_weight = 
-        attention_state_.global_attention_weight * attention_state_.attention_decay_rate +
-        target_attention * (1.0f - attention_state_.attention_decay_rate);
+    // Use current neuron outputs as internal state representation
+    size_t min_size = std::min(context_vector.size(), neuron_outputs_.size());
     
-    attention_weight_ = attention_state_.global_attention_weight;
-}
-
-std::vector<float> EnhancedNeuralModule::applyAttentionToInput(const std::vector<float>& input) {
-    std::vector<float> attended_input = input;
-    
-    // Apply global attention weight
-    for (float& value : attended_input) {
-        value *= attention_weight_;
+    for (size_t i = 0; i < min_size; ++i) {
+        context_match += context_vector[i] * neuron_outputs_[i];
+        norm_context += context_vector[i] * context_vector[i];
+        norm_internal += neuron_outputs_[i] * neuron_outputs_[i];
     }
     
-    // Apply spatial attention if available
-    if (!attention_state_.spatial_attention_map.empty() && 
-        attention_state_.spatial_attention_map.size() == input.size()) {
-        for (size_t i = 0; i < attended_input.size(); ++i) {
-            attended_input[i] *= attention_state_.spatial_attention_map[i];
-        }
-    }
-    
-    return attended_input;
-}
-
-// ============================================================================
-// FEEDBACK LOOP MANAGEMENT
-// ============================================================================
-
-void EnhancedNeuralModule::addFeedbackLoop(const std::string& source_layer,
-                                          const std::string& target_layer,
-                                          float feedback_strength) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    InterModuleConnection feedback;
-    feedback.source_port = source_layer;
-    feedback.target_port = target_layer;
-    feedback.connection_strength = feedback_strength;
-    feedback.is_feedback = true;
-    feedback.is_inhibitory = false;
-    feedback.delay_ms = 5.0f;  // Typical cortical feedback delay
-    
-    feedback_connections_.push_back(feedback);
-}
-
-void EnhancedNeuralModule::updateFeedbackLoops(double dt) {
-    auto now = std::chrono::steady_clock::now();
-    
-    for (auto& connection : feedback_connections_) {
-        auto time_since_last = std::chrono::duration_cast<std::chrono::milliseconds>(
-            now - connection.last_activation).count();
+    if (norm_context > 0 && norm_internal > 0) {
+        float similarity = context_match / (std::sqrt(norm_context) * std::sqrt(norm_internal));
         
-        if (time_since_last >= connection.delay_ms) {
-            // Process feedback with appropriate timing
-            connection.last_activation = now;
-        }
-    }
-    
-    last_feedback_update_ = now;
-}
-
-std::vector<float> EnhancedNeuralModule::computeFeedbackSignals() {
-    std::vector<float> feedback_signals;
-    
-    // Compute feedback based on current state and connections
-    if (auto network = get_network()) {
-        auto stats = network->get_stats();
-        feedback_signals.resize(stats.num_neurons, 0.0f);
-        
-        // Simple feedback computation based on network activity
-        float avg_activity = stats.average_potential;
-        float feedback_magnitude = (avg_activity - 0.5f) * feedback_modulation_;
-        
-        for (float& signal : feedback_signals) {
-            signal = feedback_magnitude * 0.1f;  // Scaled feedback
-        }
-    }
-    
-    return feedback_signals;
-}
-
-// ============================================================================
-// INTER-MODULE COMMUNICATION
-// ============================================================================
-
-void EnhancedNeuralModule::processInterModuleCommunication(double dt) {
-    processDelayedSignals();
-    
-    // Update connection strengths based on usage
-    for (auto& connection : inter_module_connections_) {
-        if (connection.is_feedback) {
-            // Apply synaptic decay for unused connections
-            connection.connection_strength *= 0.999f;
-            connection.connection_strength = std::max(connection.connection_strength, 0.01f);
-        }
-    }
-}
-
-void EnhancedNeuralModule::addInterModuleConnection(const InterModuleConnection& connection) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    inter_module_connections_.push_back(connection);
-}
-
-void EnhancedNeuralModule::sendSignalToModule(const std::string& target_module,
-                                             const std::string& target_port,
-                                             const std::vector<float>& signal_data,
-                                             float delay_ms) {
-    DelayedSignal signal;
-    signal.signal_data = signal_data;
-    signal.target_port = target_port;
-    signal.signal_strength = 1.0f;
-    signal.is_neuromodulatory = false;
-    
-    auto now = std::chrono::steady_clock::now();
-    signal.delivery_time = now + std::chrono::milliseconds(static_cast<int>(delay_ms));
-    
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    delayed_signals_.push(signal);
-}
-
-void EnhancedNeuralModule::receiveSignalFromModule(const std::string& source_module,
-                                                  const std::string& source_port,
-                                                  const std::vector<float>& signal_data) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    // Store received signal in appropriate input port
-    auto it = input_ports_.find(source_port);
-    if (it != input_ports_.end()) {
-        // Accumulate signals
-        if (it->second.size() == signal_data.size()) {
-            for (size_t i = 0; i < signal_data.size(); ++i) {
-                it->second[i] += signal_data[i];
-            }
-        }
-    } else {
-        // Create new input port if needed
-        input_ports_[source_port] = signal_data;
-    }
-}
-
-void EnhancedNeuralModule::processDelayedSignals() {
-    auto now = std::chrono::steady_clock::now();
-    
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    while (!delayed_signals_.empty()) {
-        const auto& signal = delayed_signals_.front();
-        
-        if (now >= signal.delivery_time) {
-            // Process the delayed signal
-            receiveSignalFromModule("delayed", signal.target_port, signal.signal_data);
-            delayed_signals_.pop();
-        } else {
-            break;  // Signals are ordered by delivery time
-        }
+        // Update attention weight based on similarity
+        float target_attention = std::max(0.1f, std::min(1.0f, similarity + 0.5f));
+        attention_weight_ = 0.9f * attention_weight_ + 0.1f * target_attention;
     }
 }
 
 // ============================================================================
-// CUDA INTEGRATION
+// BIOLOGICAL FEATURES
 // ============================================================================
 
-void EnhancedNeuralModule::setCUDANetwork(std::shared_ptr<NetworkCUDA> cuda_network) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    cuda_network_ = cuda_network;
-}
-
-void EnhancedNeuralModule::synchronizeWithCUDA() {
-    if (!cuda_network_) {
-        return;
-    }
+void EnhancedNeuralModule::applyNeuromodulation(const std::string& modulator_type, float level) {
+    // Call parent implementation first
+    NeuralModule::applyNeuromodulation(modulator_type, level);
     
-    // Bidirectional synchronization with CUDA network
-    transferStateToGPU();
-    
-    // Let CUDA network process
-    // (This would call CUDA kernels)
-    
-    transferStateFromGPU();
-}
-
-bool EnhancedNeuralModule::transferStateToGPU() {
-    if (!cuda_network_) {
-        return false;
-    }
-    
-    try {
-        // Transfer current neural state to GPU
-        // This would interface with the actual CUDA implementation
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Error transferring state to GPU: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-bool EnhancedNeuralModule::transferStateFromGPU() {
-    if (!cuda_network_) {
-        return false;
-    }
-    
-    try {
-        // Retrieve updated state from GPU
-        // This would interface with the actual CUDA implementation
-        return true;
-    } catch (const std::exception& e) {
-        std::cerr << "Error transferring state from GPU: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-// ============================================================================
-// LEARNING AND ADAPTATION
-// ============================================================================
-
-void EnhancedNeuralModule::applyReinforcementLearning(float reward_signal, double dt) {
-    if (!isActive()) {
-        return;
-    }
-    
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    // Update learning rate based on reward
-    float current_lr = performance_metrics_["learning_rate"];
-    float reward_modulation = std::tanh(reward_signal * 0.1f);  // Bounded modulation
-    
-    performance_metrics_["learning_rate"] = current_lr * (1.0f + reward_modulation * 0.1f);
-    performance_metrics_["learning_rate"] = std::clamp(performance_metrics_["learning_rate"], 
-                                                       0.001f, 0.1f);
-    
-    // Apply reward-based modulation to attention
-    attention_weight_ *= (1.0f + reward_modulation * 0.05f);
-    attention_weight_ = std::clamp(attention_weight_, 0.1f, 2.0f);
-}
-
-void EnhancedNeuralModule::updateSynapticPlasticity(double dt) {
-    // Implement STDP and other plasticity mechanisms
-    if (auto network = get_network()) {
-        // This would interface with the network's plasticity mechanisms
-        float learning_rate = performance_metrics_["learning_rate"];
-        // Apply learning rate to network plasticity
-    }
-}
-
-void EnhancedNeuralModule::applyHomeostaticRegulation(double dt) {
-    if (auto network = get_network()) {
-        auto stats = network->get_stats();
-        
-        // Homeostatic regulation of activity
-        float target_activity = 0.1f;  // Target firing rate
-        float current_activity = stats.average_potential;
-        float homeostatic_error = target_activity - current_activity;
-        
-        // Adjust excitability
-        float adjustment = homeostatic_error * 0.001f * dt;
-        // Apply adjustment to network (this would interface with actual implementation)
-    }
-}
-
-void EnhancedNeuralModule::applyStructuralPlasticity(double dt) {
-    // Implement connection pruning and growth
-    static double structural_timer = 0.0;
-    structural_timer += dt;
-    
-    if (structural_timer >= 1.0) {  // Every second
-        structural_timer = 0.0;
-        
-        // Prune weak connections and strengthen strong ones
-        for (auto& connection : inter_module_connections_) {
-            if (connection.connection_strength < 0.05f) {
-                connection.connection_strength *= 0.9f;  // Weaken further
-            } else if (connection.connection_strength > 0.8f) {
-                connection.connection_strength = std::min(connection.connection_strength * 1.001f, 1.0f);
-            }
-        }
-    }
-}
-
-// ============================================================================
-// NEUROMODULATION
-// ============================================================================
-
-void EnhancedNeuralModule::applyNeuromodulator(const std::string& modulator_type, 
-                                              float concentration) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    neuromodulator_levels_[modulator_type] = std::clamp(concentration, 0.0f, 2.0f);
+    // Update neuromodulator levels
+    neuromodulator_levels_[modulator_type] = std::max(0.0f, std::min(1.0f, level));
     
     // Apply modulator-specific effects
     if (modulator_type == "dopamine") {
-        // Dopamine enhances learning and attention
-        performance_metrics_["learning_rate"] *= (1.0f + concentration * 0.1f);
-        attention_weight_ *= (1.0f + concentration * 0.05f);
+        // Dopamine enhances learning and exploration
+        for (auto& weight : synaptic_weights_) {
+            weight *= (1.0f + 0.1f * level);
+        }
     } else if (modulator_type == "serotonin") {
-        // Serotonin modulates plasticity
-        performance_metrics_["adaptation_speed"] *= (1.0f + concentration * 0.05f);
+        // Serotonin affects mood and attention
+        attention_weight_ *= (1.0f + 0.05f * level);
+        attention_weight_ = std::min(1.0f, attention_weight_);
     } else if (modulator_type == "acetylcholine") {
-        // Acetylcholine enhances attention and reduces noise
-        attention_weight_ *= (1.0f + concentration * 0.1f);
+        // Acetylcholine enhances attention and learning
+        attention_weight_ *= (1.0f + 0.1f * level);
+        attention_weight_ = std::min(1.0f, attention_weight_);
     }
 }
 
-void EnhancedNeuralModule::updateNeuromodulators(double dt) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
+void EnhancedNeuralModule::processFeedbackLoops(float dt) {
+    auto current_time = std::chrono::steady_clock::now();
+    auto time_since_last = std::chrono::duration<float>(current_time - last_feedback_update_).count();
     
-    // Natural decay of neuromodulator levels
-    for (auto& [type, level] : neuromodulator_levels_) {
-        level *= std::exp(-dt * 0.1f);  // Exponential decay
-        level = std::max(level, 0.01f);  // Minimum baseline level
+    if (time_since_last < 0.01f) { // Update at most every 10ms
+        return;
+    }
+    
+    // Update feedback state based on current outputs
+    for (size_t i = 0; i < feedback_state_.size() && i < neuron_outputs_.size(); ++i) {
+        float feedback_input = feedback_strength_ * neuron_outputs_[i];
+        feedback_state_[i] = 0.9f * feedback_state_[i] + 0.1f * feedback_input;
+    }
+    
+    // Apply feedback to modify current processing
+    for (size_t i = 0; i < neuron_outputs_.size() && i < feedback_state_.size(); ++i) {
+        neuron_outputs_[i] = std::tanh(neuron_outputs_[i] + 0.1f * feedback_state_[i]);
+    }
+    
+    last_feedback_update_ = current_time;
+}
+
+void EnhancedNeuralModule::addInterModuleConnection(const InterModuleConnection& connection) {
+    connections_.push_back(connection);
+    
+    // Initialize input buffer for this connection if needed
+    if (input_buffers_.find(connection.source_port) == input_buffers_.end()) {
+        input_buffers_[connection.source_port] = std::queue<std::vector<float>>();
     }
 }
 
-std::map<std::string, float> EnhancedNeuralModule::getNeuromodulatorLevels() const {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    return neuromodulator_levels_;
+void EnhancedNeuralModule::sendInterModuleSignal(const std::vector<float>& signal_data, 
+                                                 const std::string& target_port) {
+    // Store in output buffer (simplified implementation)
+    output_buffers_[target_port] = signal_data;
 }
 
-// ============================================================================
-// PERFORMANCE MONITORING
-// ============================================================================
-
-void EnhancedNeuralModule::updatePerformanceMetrics(double dt) {
-    updateInternalMetrics(dt);
-    
-    // Compute specialization index based on activity patterns
-    if (auto network = get_network()) {
-        auto stats = network->get_stats();
+void EnhancedNeuralModule::receiveInterModuleSignal(const std::vector<float>& signal_data,
+                                                   const std::string& source_port) {
+    // Add to input buffer
+    if (input_buffers_.find(source_port) != input_buffers_.end()) {
+        input_buffers_[source_port].push(signal_data);
         
-        // Simple specialization metric based on activity variance
-        float activity_variance = 0.0f;  // This would be computed from actual neuron data
-        performance_metrics_["specialization_index"] = activity_variance;
-        
-        // Processing efficiency based on network utilization
-        float efficiency = stats.average_potential / (stats.average_potential + 0.1f);
-        performance_metrics_["processing_efficiency"] = efficiency;
+        // Limit buffer size
+        while (input_buffers_[source_port].size() > 10) {
+            input_buffers_[source_port].pop();
+        }
     }
 }
 
-void EnhancedNeuralModule::updateInternalMetrics(double dt) {
-    // Update adaptation speed based on recent changes
-    static float last_attention = attention_weight_;
-    float attention_change = std::abs(attention_weight_ - last_attention);
-    performance_metrics_["adaptation_speed"] = attention_change / dt;
-    last_attention = attention_weight_;
-}
-
 // ============================================================================
-// PORT MANAGEMENT
+// PROTECTED HELPER METHODS
 // ============================================================================
 
-void EnhancedNeuralModule::registerInputPort(const std::string& port_name, size_t expected_size) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    input_ports_[port_name] = std::vector<float>(expected_size, 0.0f);
-}
-
-void EnhancedNeuralModule::registerOutputPort(const std::string& port_name, size_t output_size) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    output_ports_[port_name] = std::vector<float>(output_size, 0.0f);
-}
-
-void EnhancedNeuralModule::setInput(const std::string& port_name, 
-                                   const std::vector<float>& input_data) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
+void EnhancedNeuralModule::updateBiologicalProcesses(float dt) {
+    // Update neuromodulator decay
+    for (auto& [modulator, level] : neuromodulator_levels_) {
+        level *= (1.0f - 0.01f * dt); // Slow decay
+        level = std::max(0.1f, level); // Maintain baseline level
+    }
     
-    auto it = input_ports_.find(port_name);
-    if (it != input_ports_.end()) {
-        it->second = input_data;
+    // Update feedback strength based on activity
+    float avg_activity = 0.0f;
+    for (float output : neuron_outputs_) {
+        avg_activity += std::abs(output);
+    }
+    avg_activity /= neuron_outputs_.size();
+    
+    // Adapt feedback strength to maintain optimal activity
+    float target_activity = 0.3f;
+    if (avg_activity > target_activity) {
+        feedback_strength_ *= 0.99f; // Reduce feedback if too active
     } else {
-        input_ports_[port_name] = input_data;
+        feedback_strength_ *= 1.01f; // Increase feedback if too quiet
+    }
+    feedback_strength_ = std::max(0.1f, std::min(1.0f, feedback_strength_));
+}
+
+std::vector<float> EnhancedNeuralModule::applyAttentionWeighting(const std::vector<float>& raw_output) const {
+    std::vector<float> weighted_output = raw_output;
+    
+    // Apply attention weight to all outputs
+    for (float& output : weighted_output) {
+        output *= attention_weight_;
+    }
+    
+    return weighted_output;
+}
+
+void EnhancedNeuralModule::updateDevelopmentalState(float dt) {
+    // Simple developmental progression based on activity and time
+    static float accumulated_time = 0.0f;
+    accumulated_time += dt;
+    
+    float avg_activity = 0.0f;
+    for (float output : neuron_outputs_) {
+        avg_activity += std::abs(output);
+    }
+    avg_activity /= neuron_outputs_.size();
+    
+    // Progress development based on activity and time
+    float development_rate = 0.001f * avg_activity;
+    if (accumulated_time > 10.0f && developmental_stage_ < 5) { // Every 10 seconds of simulation
+        developmental_stage_++;
+        accumulated_time = 0.0f;
+        std::cout << "🌱 Module " << module_name_ << " progressed to developmental stage " 
+                  << developmental_stage_ << std::endl;
     }
 }
 
-std::vector<float> EnhancedNeuralModule::getOutput(const std::string& port_name) const {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    auto it = output_ports_.find(port_name);
-    if (it != output_ports_.end()) {
-        return it->second;
-    }
-    
-    return {};
-}
-
-std::vector<std::string> EnhancedNeuralModule::getAvailablePorts() const {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    std::vector<std::string> ports;
-    for (const auto& [name, _] : input_ports_) {
-        ports.push_back("input:" + name);
-    }
-    for (const auto& [name, _] : output_ports_) {
-        ports.push_back("output:" + name);
-    }
-    
-    return ports;
-}
-
-// ============================================================================
-// VALIDATION
-// ============================================================================
-
-bool EnhancedNeuralModule::validateState() const {
-    // Validate attention weights
-    if (attention_weight_ < 0.0f || attention_weight_ > 2.0f) {
-        return false;
-    }
-    
-    // Validate performance metrics
-    for (const auto& [metric, value] : performance_metrics_) {
-        if (std::isnan(value) || std::isinf(value)) {
-            return false;
+void EnhancedNeuralModule::processInterModuleCommunication() {
+    // Process incoming signals from input buffers
+    for (auto& [source_port, buffer] : input_buffers_) {
+        if (!buffer.empty()) {
+            auto signal = buffer.front();
+            buffer.pop();
+            
+            // Simple integration: add signal to current outputs
+            for (size_t i = 0; i < signal.size() && i < neuron_outputs_.size(); ++i) {
+                neuron_outputs_[i] += 0.1f * signal[i];
+                neuron_outputs_[i] = std::tanh(neuron_outputs_[i]); // Keep bounded
+            }
         }
     }
-    
-    // Validate neuromodulator levels
-    for (const auto& [type, level] : neuromodulator_levels_) {
-        if (level < 0.0f || level > 2.0f) {
-            return false;
-        }
-    }
-    
-    return true;
 }

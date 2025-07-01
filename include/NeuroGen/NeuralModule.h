@@ -219,7 +219,7 @@ public:
      */
     bool is_cuda_available() const;
 
-private:
+protected:
     // Core module properties
     std::string module_name_;
     NetworkConfig config_;
@@ -242,7 +242,8 @@ private:
     std::vector<float> activation_history_;
     std::vector<float> synaptic_weights_;
     std::vector<float> neuron_outputs_;
-    
+
+private:
     // Learning and plasticity
     float learning_rate_;
     float plasticity_strength_;

@@ -3,6 +3,7 @@
 // File: src/CentralController.cpp
 // ============================================================================
 
+#include <NeuroGen/VisualInterface.h>
 #include <NeuroGen/CentralController.h>
 #include <NeuroGen/ControllerModule.h>
 #include <NeuroGen/TaskAutomationModules.h>
