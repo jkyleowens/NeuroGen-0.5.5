@@ -88,6 +88,9 @@ public:
     /** Number of neurons that spiked */
     uint32_t active_neuron_count = 0;
     
+    /** Total number of neurons in network */
+    uint32_t total_neurons = 0;
+    
     /** Population vector magnitude (activity coherence) */
     float population_vector_strength = 0.0f;
     

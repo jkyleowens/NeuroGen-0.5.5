@@ -1,1007 +1,841 @@
-#include <NeuroGen/ControllerModule.h>
-#include <iostream>
+// ============================================================================
+// NEUROMODULATORY CONTROLLER MODULE IMPLEMENTATION
+// File: src/ControllerModule.cpp
+// ============================================================================
+
+#include "NeuroGen/ControllerModule.h"
 #include <algorithm>
-#include <random>
-#include <fstream>
-#include <chrono>
-#include <thread>
 #include <cmath>
+#include <iostream>
+#include <iomanip>
+#include <sstream>
+#include <string>
+#include <fstream>
 
 // ============================================================================
-// NEUROMODULATOR CONTROLLER IMPLEMENTATION
+// NEUROMODULATOR STATE IMPLEMENTATION
 // ============================================================================
 
-NeuromodulatorController::NeuromodulatorController(const NetworkConfig& config)
-    : global_arousal_(0.5f), cognitive_load_(0.0f) {
+void NeuromodulatorState::reset_to_defaults() {
+    concentration = 0.3f;
+    baseline_level = 0.3f;
+    production_rate = 0.1f;
+    degradation_rate = 0.05f;
+    half_life = 10.0f;
+    target_modules_sensitivity = 1.0f;
+    peak_concentration = 0.3f;
+    time_since_peak = 0.0f;
+    concentration_history.clear();
+    concentration_history.resize(100, baseline_level); // 100-step history
     
-    // Initialize neuromodulator baseline states
-    modulators_[DOPAMINE] = {0.4f, 0.1f, 0.05f, 0.4f, 0.1f, {}, {}};
-    modulators_[SEROTONIN] = {0.6f, 0.08f, 0.04f, 0.6f, 0.12f, {}, {}};
-    modulators_[NOREPINEPHRINE] = {0.3f, 0.15f, 0.08f, 0.3f, 0.15f, {}, {}};
-    modulators_[ACETYLCHOLINE] = {0.5f, 0.12f, 0.06f, 0.5f, 0.1f, {}, {}};
-    modulators_[GABA] = {0.7f, 0.05f, 0.02f, 0.7f, 0.05f, {}, {}};
-    
-    // Create specialized controller network
-    NetworkConfig controller_config = config;
-    controller_config.hidden_size = 128;  // Smaller controller network
-    controller_config.num_layers = 3;
-    controller_network_ = std::make_unique<Network>(controller_config);
-}
-
-void NeuromodulatorController::initialize() {
-    if (controller_network_) {
-        controller_network_->initialize();
-        std::cout << "NeuromodulatorController: Initialized controller network with " 
-                  << controller_network_->getNeuronCount() << " neurons" << std::endl;
+    // Set type-specific defaults
+    switch (type) {
+        case NeuromodulatorType::DOPAMINE:
+            baseline_level = 0.25f;
+            production_rate = 0.15f;
+            half_life = 8.0f;
+            break;
+        case NeuromodulatorType::SEROTONIN:
+            baseline_level = 0.4f;
+            production_rate = 0.08f;
+            half_life = 12.0f;
+            break;
+        case NeuromodulatorType::NOREPINEPHRINE:
+            baseline_level = 0.2f;
+            production_rate = 0.2f;
+            half_life = 5.0f;
+            break;
+        case NeuromodulatorType::ACETYLCHOLINE:
+            baseline_level = 0.3f;
+            production_rate = 0.12f;
+            half_life = 6.0f;
+            break;
+        case NeuromodulatorType::GABA:
+            baseline_level = 0.5f;
+            production_rate = 0.1f;
+            half_life = 15.0f;
+            break;
+        case NeuromodulatorType::GLUTAMATE:
+            baseline_level = 0.4f;
+            production_rate = 0.14f;
+            half_life = 7.0f;
+            break;
+        default:
+            // Keep defaults
+            break;
     }
     
-    // Initialize attention weights
-    attention_weights_.resize(32, 1.0f);  // Equal initial attention
+    concentration = baseline_level;
+    peak_concentration = baseline_level;
 }
 
-void NeuromodulatorController::update(float dt) {
-    // Update neuromodulator dynamics
-    for (int i = 0; i < NUM_MODULATORS; ++i) {
-        ModulatorState& mod = modulators_[i];
-        
-        // Decay towards baseline
-        float decay_force = (mod.baseline_level - mod.concentration) * mod.decay_constant * dt;
-        
-        // Release and reuptake dynamics
-        float net_change = (mod.release_rate - mod.reuptake_rate) * dt + decay_force;
-        mod.concentration += net_change;
-        
-        // Clamp to physiological range
-        mod.concentration = std::clamp(mod.concentration, 0.0f, 2.0f);
+void NeuromodulatorState::update_dynamics(float dt) {
+    // Update concentration history
+    concentration_history.push_back(concentration);
+    if (concentration_history.size() > 100) {
+        concentration_history.erase(concentration_history.begin());
     }
     
-    // Update controller network
-    if (controller_network_) {
-        controller_network_->update(dt);
-    }
+    // Natural degradation
+    float degradation = concentration * degradation_rate * dt;
     
-    // Update global states
-    global_arousal_ = (modulators_[NOREPINEPHRINE].concentration + 
-                       modulators_[DOPAMINE].concentration) * 0.5f;
-    cognitive_load_ = std::min(1.0f, cognitive_load_ * 0.99f);  // Decay cognitive load
-}
-
-void NeuromodulatorController::setTargetModulation(ModulatorType type, float target_level) {
-    if (type >= 0 && type < NUM_MODULATORS) {
-        modulators_[type].release_rate = std::max(0.0f, target_level - modulators_[type].concentration) * 0.5f;
+    // Homeostatic production (stronger when below baseline)
+    float homeostatic_drive = std::max(0.0f, baseline_level - concentration);
+    float production = production_rate * (1.0f + homeostatic_drive * 2.0f) * dt;
+    
+    // Update concentration
+    concentration = std::max(0.0f, std::min(1.0f, concentration - degradation + production));
+    
+    // Track peaks
+    if (concentration > peak_concentration) {
+        peak_concentration = concentration;
+        time_since_peak = 0.0f;
+    } else {
+        time_since_peak += dt;
     }
 }
 
-float NeuromodulatorController::getModulatorLevel(ModulatorType type) const {
-    if (type >= 0 && type < NUM_MODULATORS) {
-        return modulators_[type].concentration;
-    }
-    return 0.0f;
-}
-
-void NeuromodulatorController::setModuleActivation(const std::string& module_name, float activation) {
-    module_activation_levels_[module_name] = std::clamp(activation, 0.0f, 1.0f);
-}
-
-float NeuromodulatorController::getModuleActivation(const std::string& module_name) const {
-    auto it = module_activation_levels_.find(module_name);
-    return (it != module_activation_levels_.end()) ? it->second : 0.0f;
-}
-
-void NeuromodulatorController::updateAttentionWeights(const std::vector<float>& context_input) {
-    if (context_input.size() <= attention_weights_.size()) {
-        // Simple attention mechanism based on context salience
-        for (size_t i = 0; i < context_input.size(); ++i) {
-            float salience = std::abs(context_input[i]);
-            float modulation = getModulatorLevel(ACETYLCHOLINE);  // ACh modulates attention
-            attention_weights_[i] = attention_weights_[i] * 0.9f + (salience * modulation) * 0.1f;
-        }
-    }
-}
-
-std::vector<float> NeuromodulatorController::generateModulationOutput() const {
-    std::vector<float> output(NUM_MODULATORS);
-    for (int i = 0; i < NUM_MODULATORS; ++i) {
-        output[i] = modulators_[i].concentration;
-    }
-    return output;
+void NeuromodulatorState::apply_stimulus(float intensity, float duration) {
+    // Immediate concentration increase
+    float boost = intensity * target_modules_sensitivity;
+    concentration = std::min(1.0f, concentration + boost);
+    
+    // Temporary increase in production rate
+    production_rate = std::min(1.0f, production_rate + intensity * 0.1f);
 }
 
 // ============================================================================
 // CONTROLLER MODULE IMPLEMENTATION
 // ============================================================================
 
-ControllerModule::ControllerModule(const std::string& name, const NetworkConfig& config)
-    : EnhancedNeuralModule(name, config),
-      cognitive_load_threshold_(0.8f),
-      adaptive_processing_enabled_(true),
-      is_processing_(false),
-      shutdown_requested_(false) {
+ControllerModule::ControllerModule(const ControllerConfig& config)
+    : config_(config)
+    , simulation_time_(0.0f)
+    , global_performance_trend_(0.0f)
+    , system_coherence_level_(0.5f)
+    , is_running_(false)
+    , detailed_logging_enabled_(false) {
     
-    // Initialize performance metrics
-    performance_metrics_ = {};
-    performance_metrics_.last_update = std::chrono::steady_clock::now();
+    initialize_neuromodulators();
+    last_update_time_ = std::chrono::high_resolution_clock::now();
     
-    // Initialize memory system
-    memory_system_ = std::make_unique<ContextualMemory>();
-    memory_system_->working_memory_capacity = 7;  // Miller's magic number
-    
-    std::cout << "ControllerModule: Created with name '" << name << "'" << std::endl;
+    if (detailed_logging_enabled_) {
+        log_action("ControllerModule initialized");
+    }
 }
 
 ControllerModule::~ControllerModule() {
-    shutdown();
+    emergency_stop();
 }
 
-void ControllerModule::initialize() {
-    std::lock_guard<std::mutex> lock(state_mutex_);
+void ControllerModule::initialize_neuromodulators() {
+    // Create all neuromodulator states
+    neuromodulators_[NeuromodulatorType::DOPAMINE] = 
+        std::make_unique<NeuromodulatorState>(NeuromodulatorType::DOPAMINE);
+    neuromodulators_[NeuromodulatorType::SEROTONIN] = 
+        std::make_unique<NeuromodulatorState>(NeuromodulatorType::SEROTONIN);
+    neuromodulators_[NeuromodulatorType::NOREPINEPHRINE] = 
+        std::make_unique<NeuromodulatorState>(NeuromodulatorType::NOREPINEPHRINE);
+    neuromodulators_[NeuromodulatorType::ACETYLCHOLINE] = 
+        std::make_unique<NeuromodulatorState>(NeuromodulatorType::ACETYLCHOLINE);
+    neuromodulators_[NeuromodulatorType::GABA] = 
+        std::make_unique<NeuromodulatorState>(NeuromodulatorType::GABA);
+    neuromodulators_[NeuromodulatorType::GLUTAMATE] = 
+        std::make_unique<NeuromodulatorState>(NeuromodulatorType::GLUTAMATE);
     
-    // Initialize base neural module
-    EnhancedNeuralModule::initialize();
-    
-    // Initialize core components
-    initializeNeuromodulatorController();
-    initializeModularNetwork();
-    initializeMemorySystem();
-    setupDefaultModuleConnections();
-    
-    std::cout << "ControllerModule: Initialization complete" << std::endl;
-}
-
-void ControllerModule::update(double dt) {
-    if (shutdown_requested_.load()) {
-        return;
-    }
-    
-    is_processing_.store(true);
-    
-    try {
-        // Update base neural module
-        EnhancedNeuralModule::update(dt);
-        
-        // Update core controller components
-        processModuleUpdates(dt);
-        processAttentionAllocation();
-        processNeuromodulation();
-        processInterModuleCommunication();
-        processMemoryConsolidation();
-        
-        // Update performance metrics
-        updatePerformanceMetrics();
-        
-        // Perform periodic system health checks
-        static int health_check_counter = 0;
-        if (++health_check_counter % 100 == 0) {
-            performSystemHealthCheck();
-        }
-        
-    } catch (const std::exception& e) {
-        std::cerr << "ControllerModule::update error: " << e.what() << std::endl;
-    }
-    
-    is_processing_.store(false);
-}
-
-void ControllerModule::shutdown() {
-    shutdown_requested_.store(true);
-    
-    // Wait for current processing to complete
-    while (is_processing_.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    // Cleanup resources
-    registered_modules_.clear();
-    module_states_.clear();
-    inter_module_signals_.clear();
-    
-    std::cout << "ControllerModule: Shutdown complete" << std::endl;
+    // Set initial concentrations from config
+    neuromodulators_[NeuromodulatorType::DOPAMINE]->concentration = config_.initial_dopamine_level;
+    neuromodulators_[NeuromodulatorType::SEROTONIN]->concentration = config_.initial_serotonin_level;
+    neuromodulators_[NeuromodulatorType::NOREPINEPHRINE]->concentration = config_.initial_norepinephrine_level;
+    neuromodulators_[NeuromodulatorType::ACETYLCHOLINE]->concentration = config_.initial_acetylcholine_level;
+    neuromodulators_[NeuromodulatorType::GABA]->concentration = config_.initial_gaba_level;
+    neuromodulators_[NeuromodulatorType::GLUTAMATE]->concentration = config_.initial_glutamate_level;
 }
 
 // ============================================================================
-// MODULE MANAGEMENT AND ORCHESTRATION
+// MODULE MANAGEMENT
 // ============================================================================
 
-void ControllerModule::registerModule(std::unique_ptr<NeuralModule> module) {
-    if (!module) {
-        std::cerr << "ControllerModule: Cannot register null module" << std::endl;
-        return;
-    }
+void ControllerModule::register_module(const std::string& name, std::shared_ptr<NeuralModule> module) {
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    registered_modules_[name] = module;
+    module_performance_history_[name] = 0.5f; // Start with neutral performance
     
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    const std::string module_name = module->get_name();
-    
-    // Initialize module state
-    ModuleState state;
-    state.module_name = module_name;
-    state.is_active = false;
-    state.activation_level = 0.0f;
-    state.attention_weight = 1.0f;
-    state.processing_load = 0.0f;
-    state.specialization_index = 0.0f;
-    
-    module_states_[module_name] = state;
-    registered_modules_[module_name] = std::move(module);
-    
-    // Register with modular network if available
-    if (modular_network_) {
-        modular_network_->add_module(std::make_unique<NeuralModule>(*registered_modules_[module_name]));
-    }
-    
-    std::cout << "ControllerModule: Registered module '" << module_name << "'" << std::endl;
-}
-
-void ControllerModule::activateModule(const std::string& module_name, float activation_level) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    auto it = module_states_.find(module_name);
-    if (it != module_states_.end()) {
-        it->second.is_active = true;
-        it->second.activation_level = std::clamp(activation_level, 0.0f, 1.0f);
-        
-        // Update neuromodulator controller
-        if (neuromodulator_controller_) {
-            neuromodulator_controller_->setModuleActivation(module_name, activation_level);
-        }
-        
-        std::cout << "ControllerModule: Activated module '" << module_name 
-                  << "' with level " << activation_level << std::endl;
+    if (detailed_logging_enabled_) {
+        log_action("Registered module: " + name);
     }
 }
 
-std::vector<float> ControllerModule::collect_inter_module_signals(const std::string& target_module) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
+void ControllerModule::unregister_module(const std::string& name) {
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    registered_modules_.erase(name);
+    module_performance_history_.erase(name);
     
-    std::vector<float> collected_signals;
-    collected_signals.reserve(64);  // Reserve space for efficiency
-    
-    // Collect signals directed to target module
-    for (const auto& signal : inter_module_signals_) {
-        if (signal.target_module == target_module || signal.target_module == "broadcast") {
-            // Weight signals by strength and priority
-            float signal_weight = signal.strength * (1.0f + 0.1f * signal.priority);
-            
-            for (float value : signal.data) {
-                collected_signals.push_back(value * signal_weight);
-            }
-        }
+    if (detailed_logging_enabled_) {
+        log_action("Unregistered module: " + name);
     }
-    
-    // If no signals found, return baseline activation
-    if (collected_signals.empty()) {
-        collected_signals.resize(32, 0.1f);  // Baseline activation
-    }
-    
-    return collected_signals;
 }
 
-void ControllerModule::distribute_module_output(const std::string& source_module, 
-                                               const std::vector<float>& output_data) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    // Update module state
-    auto it = module_states_.find(source_module);
-    if (it != module_states_.end()) {
-        it->second.output_signals = output_data;
+std::shared_ptr<NeuralModule> ControllerModule::get_module(const std::string& name) const {
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    auto it = registered_modules_.find(name);
+    return (it != registered_modules_.end()) ? it->second : nullptr;
+}
+
+std::vector<std::string> ControllerModule::get_registered_modules() const {
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    std::vector<std::string> names;
+    for (const auto& pair : registered_modules_) {
+        names.push_back(pair.first);
     }
-    
-    // Create inter-module signals for connected modules
-    for (const auto& [module_name, state] : module_states_) {
-        if (module_name != source_module && state.is_active) {
-            InterModuleSignal signal;
-            signal.source_module = source_module;
-            signal.target_module = module_name;
-            signal.signal_type = "activation";
-            signal.data = output_data;
-            signal.timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
-            signal.strength = state.attention_weight;
-            signal.priority = 1;
-            
-            inter_module_signals_.push_back(signal);
-        }
-    }
+    return names;
 }
 
 // ============================================================================
-// DECISION AND ACTION SYSTEMS
+// CORE CONTROL FUNCTIONS
 // ============================================================================
 
-std::vector<ControllerModule::BrowsingAction> ControllerModule::generate_action_candidates() {
-    std::vector<BrowsingAction> candidates;
-    candidates.reserve(10);
-    
-    // Generate click actions
-    for (int i = 0; i < 3; ++i) {
-        BrowsingAction action;
-        action.type = BrowsingAction::CLICK;
-        action.parameters.x = 100 + i * 50;
-        action.parameters.y = 200 + i * 30;
-        action.confidence = 0.7f + (i * 0.1f);
-        action.expected_reward = 0.5f;
-        action.element_id = i + 1;
-        action.reasoning = "Click candidate " + std::to_string(i);
-        candidates.push_back(action);
+void ControllerModule::update(float dt) {
+    if (!is_running_) {
+        is_running_ = true;
     }
     
-    // Generate scroll actions
-    BrowsingAction scroll_action;
-    scroll_action.type = BrowsingAction::SCROLL;
-    scroll_action.parameters.scroll_amount = 100.0f;
-    scroll_action.confidence = 0.6f;
-    scroll_action.expected_reward = 0.2f;
-    scroll_action.reasoning = "Scroll to explore more content";
-    candidates.push_back(scroll_action);
+    simulation_time_ += dt;
     
-    // Generate wait action
-    BrowsingAction wait_action;
-    wait_action.type = BrowsingAction::WAIT;
-    wait_action.parameters.wait_duration = 1.0f;
-    wait_action.confidence = 0.8f;
-    wait_action.expected_reward = 0.1f;
-    wait_action.reasoning = "Wait for page to load";
-    candidates.push_back(wait_action);
+    // Update neuromodulator dynamics
+    update_neuromodulator_dynamics(dt);
     
-    return candidates;
-}
-
-std::vector<float> ControllerModule::evaluate_action_candidates(
-    const std::vector<BrowsingAction>& candidates,
-    const std::vector<MemoryTrace>& similar_episodes) {
+    // Process pending rewards and commands
+    process_pending_rewards();
+    execute_pending_commands();
     
-    std::vector<float> action_values;
-    action_values.reserve(candidates.size());
+    // Assess current system state
+    assess_system_state();
     
-    for (const auto& action : candidates) {
-        float base_value = action.expected_reward * action.confidence;
-        
-        // Adjust based on similar episodes
-        float episodic_bonus = 0.0f;
-        for (const auto& episode : similar_episodes) {
-            if (episode.action_taken.type == action.type) {
-                episodic_bonus += episode.reward_received * 0.1f;
-            }
-        }
-        
-        // Apply exploration bonus
-        float exploration_bonus = 0.0f;
-        if (neuromodulator_controller_) {
-            float dopamine_level = neuromodulator_controller_->getModulatorLevel(
-                NeuromodulatorController::DOPAMINE);
-            exploration_bonus = dopamine_level * 0.2f;
-        }
-        
-        float total_value = base_value + episodic_bonus + exploration_bonus;
-        action_values.push_back(total_value);
-    }
-    
-    return action_values;
-}
-
-ControllerModule::BrowsingAction ControllerModule::select_action_with_exploration(
-    const std::vector<BrowsingAction>& candidates,
-    const std::vector<float>& action_values) {
-    
-    if (candidates.empty()) {
-        // Return default wait action
-        BrowsingAction default_action;
-        default_action.type = BrowsingAction::WAIT;
-        default_action.parameters.wait_duration = 0.5f;
-        default_action.confidence = 0.5f;
-        default_action.reasoning = "Default fallback action";
-        return default_action;
-    }
-    
-    // Softmax selection with temperature based on exploration level
-    float temperature = 1.0f;
-    if (neuromodulator_controller_) {
-        float norepinephrine = neuromodulator_controller_->getModulatorLevel(
-            NeuromodulatorController::NOREPINEPHRINE);
-        temperature = 0.5f + norepinephrine;  // Higher NE = more focused (lower temp)
-    }
-    
-    std::vector<float> probabilities(action_values.size());
-    float sum_exp = 0.0f;
-    
-    // Compute softmax probabilities
-    for (size_t i = 0; i < action_values.size(); ++i) {
-        probabilities[i] = std::exp(action_values[i] / temperature);
-        sum_exp += probabilities[i];
-    }
-    
-    // Normalize probabilities
-    for (float& prob : probabilities) {
-        prob /= sum_exp;
-    }
-    
-    // Sample from distribution
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> dis(0.0f, 1.0f);
-    
-    float random_value = dis(gen);
-    float cumulative_prob = 0.0f;
-    
-    for (size_t i = 0; i < probabilities.size(); ++i) {
-        cumulative_prob += probabilities[i];
-        if (random_value <= cumulative_prob) {
-            return candidates[i];
-        }
-    }
-    
-    // Fallback to last candidate
-    return candidates.back();
-}
-
-void ControllerModule::execute_action() {
-    switch (selected_action_.type) {
-        case BrowsingAction::CLICK:
-            execute_click_action();
-            break;
-        case BrowsingAction::SCROLL:
-            execute_scroll_action();
-            break;
-        case BrowsingAction::TYPE:
-            execute_type_action();
-            break;
-        case BrowsingAction::NAVIGATE:
-            execute_navigate_action();
-            break;
-        case BrowsingAction::WAIT:
-            execute_wait_action();
-            break;
-        default:
-            std::cerr << "ControllerModule: Unknown action type" << std::endl;
-            break;
-    }
-    
-    // Convert action to motor command and send
-    std::vector<float> motor_command = convert_action_to_motor_command(selected_action_);
-    sendMotorCommand(motor_command);
+    // Generate automatic responses
+    generate_automatic_responses();
     
     // Update performance metrics
-    performance_metrics_.total_actions++;
+    update_performance_metrics();
+    
+    // Specialized neuromodulator functions
+    dopamine_reward_prediction_update(RewardSignal{});
+    serotonin_mood_regulation();
+    norepinephrine_attention_modulation();
+    acetylcholine_learning_enhancement();
+    gaba_inhibitory_balance();
+    glutamate_excitatory_drive();
+    
+    last_update_time_ = std::chrono::high_resolution_clock::now();
 }
 
-void ControllerModule::execute_click_action() {
-    std::cout << "Executing CLICK action at (" << selected_action_.parameters.x 
-              << ", " << selected_action_.parameters.y << ")" << std::endl;
+void ControllerModule::reset() {
+    simulation_time_ = 0.0f;
+    global_performance_trend_ = 0.0f;
+    system_coherence_level_ = 0.5f;
     
-    // Simulate click execution with motor module
-    if (auto motor_module = getModule("motor")) {
-        std::vector<float> click_input = {
-            static_cast<float>(selected_action_.parameters.x),
-            static_cast<float>(selected_action_.parameters.y),
-            1.0f  // Click signal
-        };
-        motor_module->setInput("click_command", click_input);
+    // Reset all neuromodulators
+    for (auto& pair : neuromodulators_) {
+        pair.second->reset_to_defaults();
     }
+    
+    // Clear queues
+    while (!pending_rewards_.empty()) pending_rewards_.pop();
+    while (!pending_commands_.empty()) pending_commands_.pop();
+    
+    action_history_.clear();
+    
+    log_action("ControllerModule reset");
 }
 
-void ControllerModule::execute_scroll_action() {
-    std::cout << "Executing SCROLL action with amount " 
-              << selected_action_.parameters.scroll_amount << std::endl;
+void ControllerModule::emergency_stop() {
+    is_running_ = false;
     
-    if (auto motor_module = getModule("motor")) {
-        std::vector<float> scroll_input = {
-            0.0f,  // x position
-            selected_action_.parameters.scroll_amount,
-            2.0f   // Scroll signal
-        };
-        motor_module->setInput("scroll_command", scroll_input);
-    }
-}
-
-void ControllerModule::execute_type_action() {
-    std::cout << "Executing TYPE action: '" << selected_action_.parameters.text << "'" << std::endl;
+    // Apply immediate global inhibition
+    apply_global_inhibition(0.9f);
     
-    if (auto motor_module = getModule("motor")) {
-        // Convert text to motor commands (simplified)
-        std::vector<float> type_input;
-        for (char c : selected_action_.parameters.text) {
-            type_input.push_back(static_cast<float>(c));
-        }
-        motor_module->setInput("type_command", type_input);
-    }
-}
-
-void ControllerModule::execute_navigate_action() {
-    std::cout << "Executing NAVIGATE action to: " << selected_action_.parameters.url << std::endl;
-    
-    if (auto perception_module = getModule("perception")) {
-        std::vector<float> nav_input = {4.0f};  // Navigation signal
-        perception_module->setInput("navigation_command", nav_input);
-    }
-}
-
-void ControllerModule::execute_wait_action() {
-    std::cout << "Executing WAIT action for " << selected_action_.parameters.wait_duration 
-              << " seconds" << std::endl;
-    
-    // Implement wait by reducing system activity
-    if (neuromodulator_controller_) {
-        neuromodulator_controller_->setTargetModulation(
-            NeuromodulatorController::GABA, 0.8f);  // Increase inhibition
-    }
-}
-
-std::vector<float> ControllerModule::convert_action_to_motor_command(const BrowsingAction& action) {
-    std::vector<float> motor_command;
-    motor_command.reserve(8);
-    
-    // Encode action type
-    motor_command.push_back(static_cast<float>(action.type));
-    
-    // Encode parameters based on action type
-    switch (action.type) {
-        case BrowsingAction::CLICK:
-            motor_command.push_back(static_cast<float>(action.parameters.x));
-            motor_command.push_back(static_cast<float>(action.parameters.y));
-            motor_command.push_back(1.0f);  // Click force
-            break;
-            
-        case BrowsingAction::SCROLL:
-            motor_command.push_back(0.0f);  // x component
-            motor_command.push_back(action.parameters.scroll_amount);
-            motor_command.push_back(0.5f);  // Scroll speed
-            break;
-            
-        case BrowsingAction::WAIT:
-            motor_command.push_back(action.parameters.wait_duration);
-            motor_command.push_back(0.0f);
-            motor_command.push_back(0.0f);
-            break;
-            
-        default:
-            motor_command.resize(4, 0.0f);
-            break;
+    // Set all neuromodulators to safe baseline levels
+    for (auto& pair : neuromodulators_) {
+        pair.second->concentration = pair.second->baseline_level;
     }
     
-    // Add confidence and expected reward
-    motor_command.push_back(action.confidence);
-    motor_command.push_back(action.expected_reward);
-    
-    return motor_command;
+    log_action("Emergency stop executed");
 }
 
 // ============================================================================
-// ATTENTION AND CONTROL MECHANISMS
+// NEUROMODULATOR MANAGEMENT
 // ============================================================================
 
-void ControllerModule::updateAttentionMechanism(const std::vector<float>& sensory_input) {
-    if (neuromodulator_controller_) {
-        neuromodulator_controller_->updateAttentionWeights(sensory_input);
-    }
-    
-    // Update attention allocation based on module activity
-    attention_allocation_.resize(module_states_.size());
-    size_t idx = 0;
-    
-    for (const auto& [module_name, state] : module_states_) {
-        float attention_demand = state.processing_load * state.activation_level;
-        attention_allocation_[idx] = attention_demand;
-        ++idx;
-    }
-    
-    // Normalize attention weights
-    float total_attention = std::accumulate(attention_allocation_.begin(), 
-                                          attention_allocation_.end(), 0.0f);
-    if (total_attention > 0.0f) {
-        for (float& weight : attention_allocation_) {
-            weight /= total_attention;
-        }
-    }
-}
-
-void ControllerModule::allocateAttention(const std::map<std::string, float>& attention_demands) {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    float total_demand = 0.0f;
-    for (const auto& [module_name, demand] : attention_demands) {
-        total_demand += demand;
-    }
-    
-    // Normalize and apply attention weights
-    for (const auto& [module_name, demand] : attention_demands) {
-        auto it = module_states_.find(module_name);
-        if (it != module_states_.end()) {
-            float normalized_attention = (total_demand > 0.0f) ? (demand / total_demand) : 0.0f;
-            it->second.attention_weight = normalized_attention;
-        }
-    }
-}
-
-// ============================================================================
-// LEARNING AND MEMORY SYSTEMS
-// ============================================================================
-
-void ControllerModule::updateWorkingMemory(const MemoryTrace& trace) {
-    if (!memory_system_) return;
-    
-    // Add to working memory
-    memory_system_->working_memory.push(trace);
-    
-    // Maintain capacity limit
-    while (memory_system_->working_memory.size() > memory_system_->working_memory_capacity) {
-        memory_system_->working_memory.pop();
-    }
-}
-
-std::vector<ControllerModule::MemoryTrace> ControllerModule::retrieveSimilarEpisodes(
-    const std::vector<float>& current_state) {
-    
-    std::vector<MemoryTrace> similar_episodes;
-    
-    if (!memory_system_) return similar_episodes;
-    
-    // Simple similarity search in episodic memory
-    for (const auto& [context, episodes] : memory_system_->episodic_memories) {
-        for (const auto& episode : episodes) {
-            // Compute similarity based on state vector distance
-            float similarity = 0.0f;
-            if (episode.state_vector.size() == current_state.size()) {
-                float distance = 0.0f;
-                for (size_t i = 0; i < current_state.size(); ++i) {
-                    float diff = current_state[i] - episode.state_vector[i];
-                    distance += diff * diff;
-                }
-                similarity = 1.0f / (1.0f + std::sqrt(distance));
-            }
-            
-            // Include if similarity is above threshold
-            if (similarity > 0.7f) {
-                similar_episodes.push_back(episode);
-            }
-        }
-    }
-    
-    // Sort by similarity (importance weight) and limit results
-    std::sort(similar_episodes.begin(), similar_episodes.end(),
-              [](const MemoryTrace& a, const MemoryTrace& b) {
-                  return a.importance_weight > b.importance_weight;
-              });
-    
-    if (similar_episodes.size() > 10) {
-        similar_episodes.resize(10);
-    }
-    
-    return similar_episodes;
-}
-
-void ControllerModule::updateActionValues(const BrowsingAction& action, float reward) {
-    std::string action_key = std::to_string(static_cast<int>(action.type));
-    
-    // Update action value with learning rate
-    float learning_rate = 0.1f;
-    if (neuromodulator_controller_) {
-        learning_rate *= neuromodulator_controller_->getModulatorLevel(
-            NeuromodulatorController::ACETYLCHOLINE);
-    }
-    
-    float current_value = action_values_[action_key];
-    float prediction_error = reward - current_value;
-    action_values_[action_key] = current_value + learning_rate * prediction_error;
-    
-    // Update dopamine based on prediction error
-    if (neuromodulator_controller_) {
-        float dopamine_change = std::clamp(prediction_error * 0.5f, -0.2f, 0.2f);
-        neuromodulator_controller_->setTargetModulation(
-            NeuromodulatorController::DOPAMINE, 
-            neuromodulator_controller_->getModulatorLevel(NeuromodulatorController::DOPAMINE) + dopamine_change);
-    }
-}
-
-// ============================================================================
-// INITIALIZATION HELPERS
-// ============================================================================
-
-void ControllerModule::initializeNeuromodulatorController() {
-    neuromodulator_controller_ = std::make_unique<NeuromodulatorController>(getConfig());
-    neuromodulator_controller_->initialize();
-    
-    std::cout << "ControllerModule: Initialized neuromodulator controller" << std::endl;
-}
-
-void ControllerModule::initializeModularNetwork() {
-    modular_network_ = std::make_unique<ModularNeuralNetwork>();
-    modular_network_->initialize();
-    
-    std::cout << "ControllerModule: Initialized modular network" << std::endl;
-}
-
-void ControllerModule::initializeMemorySystem() {
-    if (!memory_system_) {
-        memory_system_ = std::make_unique<ContextualMemory>();
-    }
-    
-    memory_system_->working_memory_capacity = 7;
-    
-    std::cout << "ControllerModule: Initialized memory system" << std::endl;
-}
-
-void ControllerModule::setupDefaultModuleConnections() {
-    // Setup default attention allocations
-    attention_allocation_.resize(8, 0.125f);  // Equal initial allocation
-    
-    // Initialize module specializations
-    module_specializations_["perception"] = 0.9f;
-    module_specializations_["memory"] = 0.8f;
-    module_specializations_["planning"] = 0.7f;
-    module_specializations_["motor"] = 0.85f;
-    
-    std::cout << "ControllerModule: Setup default module connections" << std::endl;
-}
-
-// ============================================================================
-// PROCESSING HELPERS
-// ============================================================================
-
-void ControllerModule::processModuleUpdates(double dt) {
-    // Update all registered modules
-    for (const auto& [module_name, module] : registered_modules_) {
-        if (module && module_states_[module_name].is_active) {
-            try {
-                module->update(dt);
-                
-                // Update module state based on activity
-                auto& state = module_states_[module_name];
-                state.processing_load = std::min(1.0f, state.processing_load + 0.1f);
-                
-            } catch (const std::exception& e) {
-                handleModuleError(module_name, e.what());
-            }
-        }
-    }
-}
-
-void ControllerModule::processAttentionAllocation() {
-    // Update attention based on current module states
-    std::map<std::string, float> attention_demands;
-    
-    for (const auto& [module_name, state] : module_states_) {
-        if (state.is_active) {
-            float demand = state.activation_level * state.processing_load;
-            attention_demands[module_name] = demand;
-        }
-    }
-    
-    allocateAttention(attention_demands);
-}
-
-void ControllerModule::processNeuromodulation() {
-    if (neuromodulator_controller_) {
-        neuromodulator_controller_->update(0.016f);  // ~60Hz update rate
+void ControllerModule::release_neuromodulator(NeuromodulatorType type, float intensity, 
+                                             const std::string& target_module) {
+    auto it = neuromodulators_.find(type);
+    if (it != neuromodulators_.end()) {
+        it->second->apply_stimulus(intensity);
         
-        // Apply neuromodulation to modules
-        auto modulation_output = neuromodulator_controller_->generateModulationOutput();
-        
-        for (const auto& [module_name, module] : registered_modules_) {
+        // Apply to specific module if specified
+        if (!target_module.empty()) {
+            auto module = get_module(target_module);
             if (module) {
-                // Apply dopamine modulation for reward learning
-                float dopamine_level = modulation_output[NeuromodulatorController::DOPAMINE];
-                module->applyNeuromodulation("dopamine", dopamine_level);
-                
-                // Apply other neuromodulators as needed
-                module->applyNeuromodulation("acetylcholine", 
-                    modulation_output[NeuromodulatorController::ACETYLCHOLINE]);
+                // Apply neuromodulator effects to the target module
+                // This would involve calling module-specific neuromodulation methods
+                apply_neuromodulator_to_module(module, type, intensity);
+            }
+        } else {
+            // Apply to all modules
+            std::lock_guard<std::mutex> lock(modules_mutex_);
+            for (const auto& pair : registered_modules_) {
+                apply_neuromodulator_to_module(pair.second, type, intensity);
+            }
+        }
+        
+        if (detailed_logging_enabled_) {
+            log_action("Released " + to_string(type) + " (intensity: " + 
+                      std::to_string(intensity) + ") to " + 
+                      (target_module.empty() ? "all modules" : target_module));
+        }
+    }
+}
+
+void ControllerModule::set_baseline_level(NeuromodulatorType type, float level) {
+    auto it = neuromodulators_.find(type);
+    if (it != neuromodulators_.end()) {
+        it->second->baseline_level = std::max(0.0f, std::min(1.0f, level));
+        
+        if (detailed_logging_enabled_) {
+            log_action("Set " + to_string(type) + " baseline to " + std::to_string(level));
+        }
+    }
+}
+
+float ControllerModule::get_concentration(NeuromodulatorType type) const {
+    auto it = neuromodulators_.find(type);
+    return (it != neuromodulators_.end()) ? it->second->concentration : 0.0f;
+}
+
+std::unordered_map<NeuromodulatorType, float> ControllerModule::get_all_concentrations() const {
+    std::unordered_map<NeuromodulatorType, float> concentrations;
+    for (const auto& pair : neuromodulators_) {
+        concentrations[pair.first] = pair.second->concentration;
+    }
+    return concentrations;
+}
+
+// ============================================================================
+// REWARD SYSTEM
+// ============================================================================
+
+void ControllerModule::process_reward_signal(const RewardSignal& signal) {
+    pending_rewards_.push(signal);
+    
+    // Immediate dopamine response for significant rewards
+    if (signal.magnitude > 0.5f) {
+        release_neuromodulator(NeuromodulatorType::DOPAMINE, 
+                              signal.magnitude * 0.3f, 
+                              signal.target_module);
+    }
+    
+    if (detailed_logging_enabled_) {
+        log_action("Received reward signal: " + to_string(signal.type) + 
+                  " (magnitude: " + std::to_string(signal.magnitude) + ")");
+    }
+}
+
+void ControllerModule::generate_intrinsic_reward(const std::string& module_name, float curiosity_level) {
+    RewardSignal signal;
+    signal.type = RewardSignalType::INTRINSIC_CURIOSITY;
+    signal.magnitude = curiosity_level * config_.curiosity_drive_strength;
+    signal.confidence = 0.8f; // High confidence in intrinsic rewards
+    signal.temporal_delay = 0.0f; // Immediate
+    signal.source_module = "ControllerModule";
+    signal.target_module = module_name;
+    signal.timestamp = std::chrono::high_resolution_clock::now();
+    
+    process_reward_signal(signal);
+}
+
+void ControllerModule::distribute_global_reward(float reward_magnitude, RewardSignalType type) {
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    
+    for (const auto& pair : registered_modules_) {
+        RewardSignal signal;
+        signal.type = type;
+        signal.magnitude = reward_magnitude;
+        signal.confidence = 0.7f;
+        signal.temporal_delay = 0.0f;
+        signal.source_module = "ControllerModule";
+        signal.target_module = pair.first;
+        signal.timestamp = std::chrono::high_resolution_clock::now();
+        
+        process_reward_signal(signal);
+    }
+    
+    if (detailed_logging_enabled_) {
+        log_action("Distributed global reward: " + to_string(type) + 
+                  " (magnitude: " + std::to_string(reward_magnitude) + ")");
+    }
+}
+
+// ============================================================================
+// ATTENTION AND COORDINATION
+// ============================================================================
+
+void ControllerModule::allocate_attention(const std::unordered_map<std::string, float>& attention_weights) {
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    
+    for (const auto& weight_pair : attention_weights) {
+        auto module = get_module(weight_pair.first);
+        if (module) {
+            // Increase norepinephrine and acetylcholine for focused modules
+            float attention_strength = weight_pair.second;
+            
+            if (attention_strength > 0.5f) {
+                release_neuromodulator(NeuromodulatorType::NOREPINEPHRINE, 
+                                      attention_strength * 0.4f, weight_pair.first);
+                release_neuromodulator(NeuromodulatorType::ACETYLCHOLINE, 
+                                      attention_strength * 0.3f, weight_pair.first);
             }
         }
     }
-}
-
-void ControllerModule::processInterModuleCommunication() {
-    routeInterModuleSignals();
-    updateSignalPriorities();
-    manageSignalQueue();
     
-    // Clear processed signals
-    inter_module_signals_.clear();
+    if (detailed_logging_enabled_) {
+        log_action("Allocated attention across " + std::to_string(attention_weights.size()) + " modules");
+    }
 }
 
-void ControllerModule::processMemoryConsolidation() {
-    // Perform periodic memory consolidation
-    static int consolidation_counter = 0;
-    if (++consolidation_counter % 1000 == 0) {  // Every ~16 seconds at 60Hz
-        consolidateMemories();
+void ControllerModule::coordinate_module_activities() {
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    
+    if (registered_modules_.size() < 2) return;
+    
+    // Calculate coordination needs
+    float coordination_demand = calculate_attention_demand();
+    
+    if (coordination_demand > 0.6f) {
+        // Increase serotonin for better coordination
+        release_neuromodulator(NeuromodulatorType::SEROTONIN, coordination_demand * 0.3f);
+        
+        // Moderate GABA to reduce excessive competition
+        release_neuromodulator(NeuromodulatorType::GABA, coordination_demand * 0.2f);
+    }
+    
+    if (detailed_logging_enabled_) {
+        log_action("Coordinated module activities (demand: " + std::to_string(coordination_demand) + ")");
+    }
+}
+
+void ControllerModule::apply_global_inhibition(float strength) {
+    release_neuromodulator(NeuromodulatorType::GABA, strength);
+    
+    if (detailed_logging_enabled_) {
+        log_action("Applied global inhibition (strength: " + std::to_string(strength) + ")");
     }
 }
 
 // ============================================================================
-// PERFORMANCE AND STATE MANAGEMENT
+// SPECIALIZED NEUROMODULATOR FUNCTIONS
 // ============================================================================
 
-void ControllerModule::updatePerformanceMetrics() {
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now - performance_metrics_.last_update).count();
+void ControllerModule::dopamine_reward_prediction_update(const RewardSignal& signal) {
+    // Implement reward prediction error learning
+    float current_dopamine = get_concentration(NeuromodulatorType::DOPAMINE);
+    float baseline_dopamine = neuromodulators_[NeuromodulatorType::DOPAMINE]->baseline_level;
     
-    if (elapsed >= 1000) {  // Update every second
-        // Calculate success rate
-        if (performance_metrics_.total_actions > 0) {
-            float success_rate = static_cast<float>(performance_metrics_.successful_actions) / 
-                               performance_metrics_.total_actions;
-            performance_metrics_.decision_accuracy = success_rate;
+    // Update baseline based on recent performance
+    float avg_performance = calculate_overall_system_performance();
+    if (avg_performance > 0.7f) {
+        // Increase baseline for consistently good performance
+        float new_baseline = std::min(0.5f, baseline_dopamine + 0.01f);
+        set_baseline_level(NeuromodulatorType::DOPAMINE, new_baseline);
+    } else if (avg_performance < 0.3f) {
+        // Decrease baseline for poor performance
+        float new_baseline = std::max(0.1f, baseline_dopamine - 0.01f);
+        set_baseline_level(NeuromodulatorType::DOPAMINE, new_baseline);
+    }
+}
+
+void ControllerModule::serotonin_mood_regulation() {
+    float stress_level = calculate_stress_level();
+    float current_serotonin = get_concentration(NeuromodulatorType::SEROTONIN);
+    
+    // Increase serotonin if stress is high or if coordination is needed
+    if (stress_level > 0.6f || system_coherence_level_ < 0.4f) {
+        float boost = (stress_level - 0.6f) * 0.2f;
+        release_neuromodulator(NeuromodulatorType::SEROTONIN, boost);
+    }
+}
+
+void ControllerModule::norepinephrine_attention_modulation() {
+    float attention_demand = calculate_attention_demand();
+    float learning_opportunity = calculate_learning_opportunity();
+    
+    // Increase norepinephrine for high attention demand or learning opportunities
+    if (attention_demand > 0.5f || learning_opportunity > 0.6f) {
+        float boost = std::max(attention_demand, learning_opportunity) * 0.3f;
+        release_neuromodulator(NeuromodulatorType::NOREPINEPHRINE, boost);
+    }
+}
+
+void ControllerModule::acetylcholine_learning_enhancement() {
+    float learning_opportunity = calculate_learning_opportunity();
+    
+    // Increase acetylcholine when learning opportunities are high
+    if (learning_opportunity > 0.4f) {
+        release_neuromodulator(NeuromodulatorType::ACETYLCHOLINE, learning_opportunity * 0.4f);
+    }
+}
+
+void ControllerModule::gaba_inhibitory_balance() {
+    float current_gaba = get_concentration(NeuromodulatorType::GABA);
+    float current_glutamate = get_concentration(NeuromodulatorType::GLUTAMATE);
+    
+    // Maintain excitation-inhibition balance
+    float target_ratio = 0.8f; // GABA should be slightly lower than glutamate
+    float current_ratio = (current_glutamate > 0.0f) ? current_gaba / current_glutamate : 1.0f;
+    
+    if (current_ratio < target_ratio - 0.2f) {
+        // Need more inhibition
+        release_neuromodulator(NeuromodulatorType::GABA, 0.1f);
+    }
+}
+
+void ControllerModule::glutamate_excitatory_drive() {
+    float system_activity = calculate_overall_system_performance();
+    
+    // Maintain appropriate excitatory drive
+    if (system_activity < 0.3f) {
+        // Boost excitation if system is too quiet
+        release_neuromodulator(NeuromodulatorType::GLUTAMATE, 0.2f);
+    }
+}
+
+// ============================================================================
+// INTERNAL HELPER METHODS
+// ============================================================================
+
+void ControllerModule::update_neuromodulator_dynamics(float dt) {
+    for (auto& pair : neuromodulators_) {
+        pair.second->update_dynamics(dt);
+    }
+}
+
+void ControllerModule::process_pending_rewards() {
+    while (!pending_rewards_.empty()) {
+        RewardSignal signal = pending_rewards_.front();
+        pending_rewards_.pop();
+        
+        // Update module performance tracking
+        if (!signal.target_module.empty()) {
+            module_performance_history_[signal.target_module] = 
+                0.9f * module_performance_history_[signal.target_module] + 0.1f * signal.magnitude;
         }
         
-        // Update processing efficiency
-        float active_modules = 0.0f;
-        for (const auto& [name, state] : module_states_) {
-            if (state.is_active) active_modules += 1.0f;
-        }
-        
-        performance_metrics_.processing_efficiency = (active_modules > 0.0f) ? 
-            (1.0f / active_modules) : 1.0f;
-        
-        performance_metrics_.last_update = now;
+        // Update global performance trend
+        global_performance_trend_ = 0.95f * global_performance_trend_ + 0.05f * signal.magnitude;
     }
 }
 
-bool ControllerModule::saveControllerState(const std::string& filename) const {
-    std::lock_guard<std::mutex> lock(state_mutex_);
-    
-    std::ofstream file(filename + "_controller.json");
-    if (!file.is_open()) {
-        return false;
-    }
-    
-    // Save controller state as JSON (simplified)
-    file << "{\n";
-    file << "  \"module_count\": " << registered_modules_.size() << ",\n";
-    file << "  \"active_modules\": [";
-    
-    bool first = true;
-    for (const auto& [name, state] : module_states_) {
-        if (state.is_active) {
-            if (!first) file << ", ";
-            file << "\"" << name << "\"";
-            first = false;
+void ControllerModule::execute_pending_commands() {
+    while (!pending_commands_.empty()) {
+        NeuromodulationCommand cmd = pending_commands_.front();
+        pending_commands_.pop();
+        
+        release_neuromodulator(cmd.modulator_type, cmd.intensity, cmd.target_module);
+        
+        if (detailed_logging_enabled_) {
+            log_action("Executed command: " + cmd.reasoning);
         }
     }
-    
-    file << "],\n";
-    file << "  \"performance_metrics\": {\n";
-    file << "    \"total_actions\": " << performance_metrics_.total_actions << ",\n";
-    file << "    \"successful_actions\": " << performance_metrics_.successful_actions << ",\n";
-    file << "    \"decision_accuracy\": " << performance_metrics_.decision_accuracy << "\n";
-    file << "  }\n";
-    file << "}\n";
-    
-    return true;
 }
 
-void ControllerModule::performSystemHealthCheck() {
-    // Check for inactive modules that should be active
-    for (const auto& [name, state] : module_states_) {
-        if (!state.is_active && state.activation_level > 0.5f) {
-            std::cout << "ControllerModule: Warning - Module '" << name 
-                      << "' should be active but isn't" << std::endl;
+void ControllerModule::assess_system_state() {
+    // Calculate system coherence
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    
+    if (registered_modules_.empty()) {
+        system_coherence_level_ = 0.0f;
+        return;
+    }
+    
+    float total_coherence = 0.0f;
+    int active_modules = 0;
+    
+    for (const auto& pair : registered_modules_) {
+        auto stats = pair.second->get_stats();
+        if (stats.active_neuron_count > 0) {
+            float module_coherence = std::min(1.0f, 
+                static_cast<float>(stats.active_neuron_count) / stats.total_neurons * 2.0f);
+            total_coherence += module_coherence;
+            active_modules++;
         }
     }
     
-    // Check memory usage
-    if (memory_system_ && memory_system_->working_memory.size() > memory_system_->working_memory_capacity) {
-        std::cout << "ControllerModule: Warning - Working memory overflow" << std::endl;
+    system_coherence_level_ = (active_modules > 0) ? total_coherence / active_modules : 0.0f;
+}
+
+void ControllerModule::generate_automatic_responses() {
+    // Generate homeostatic responses
+    if (should_trigger_homeostatic_response()) {
+        auto commands = generate_coordinated_response();
+        for (const auto& cmd : commands) {
+            pending_commands_.push(cmd);
+        }
+    }
+}
+
+float ControllerModule::calculate_stress_level() const {
+    // Stress based on imbalance and poor performance
+    float performance_stress = std::max(0.0f, 0.5f - global_performance_trend_);
+    float coherence_stress = std::max(0.0f, 0.5f - system_coherence_level_);
+    return std::min(1.0f, performance_stress + coherence_stress);
+}
+
+float ControllerModule::calculate_attention_demand() const {
+    // High demand when multiple modules are active
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    
+    int active_modules = 0;
+    for (const auto& pair : registered_modules_) {
+        auto stats = pair.second->get_stats();
+        if (stats.active_neuron_count > 5) {
+            active_modules++;
+        }
     }
     
-    // Check neuromodulator levels
-    if (neuromodulator_controller_) {
-        for (int i = 0; i < NeuromodulatorController::NUM_MODULATORS; ++i) {
-            float level = neuromodulator_controller_->getModulatorLevel(
-                static_cast<NeuromodulatorController::ModulatorType>(i));
-            if (level > 1.5f || level < 0.1f) {
-                std::cout << "ControllerModule: Warning - Neuromodulator " << i 
-                          << " at extreme level: " << level << std::endl;
-            }
+    return std::min(1.0f, static_cast<float>(active_modules) / 3.0f);
+}
+
+float ControllerModule::calculate_learning_opportunity() const {
+    // High opportunity when novel patterns or errors are detected
+    float avg_reward_prediction_error = 0.0f;
+    for (const auto& pair : reward_prediction_errors_) {
+        avg_reward_prediction_error += std::abs(pair.second);
+    }
+    
+    if (!reward_prediction_errors_.empty()) {
+        avg_reward_prediction_error /= reward_prediction_errors_.size();
+    }
+    
+    return std::min(1.0f, avg_reward_prediction_error * 2.0f);
+}
+
+bool ControllerModule::should_trigger_homeostatic_response() const {
+    // Trigger if any neuromodulator is far from baseline
+    for (const auto& pair : neuromodulators_) {
+        float deviation = std::abs(pair.second->concentration - pair.second->baseline_level);
+        if (deviation > 0.3f) {
+            return true;
         }
+    }
+    
+    // Trigger if system performance is poor
+    return global_performance_trend_ < 0.3f || system_coherence_level_ < 0.3f;
+}
+
+void ControllerModule::log_action(const std::string& action) {
+    action_history_.push_back("[" + std::to_string(simulation_time_) + "s] " + action);
+    
+    // Keep only recent history
+    if (action_history_.size() > 1000) {
+        action_history_.erase(action_history_.begin());
     }
 }
 
 // ============================================================================
-// AUTONOMOUS LEARNING AGENT IMPLEMENTATION
+// PRIVATE HELPER METHOD DECLARATIONS (to be implemented)
 // ============================================================================
 
-AutonomousLearningAgent::AutonomousLearningAgent(const NetworkConfig& config) {
-    controller_module_ = std::make_unique<ControllerModule>("central_controller", config);
+void ControllerModule::apply_neuromodulator_to_module(std::shared_ptr<NeuralModule> module, 
+                                                     NeuromodulatorType type, float intensity) {
+    // This method would apply neuromodulator effects to a specific module
+    // Implementation depends on the NeuralModule interface
+    // For now, we'll implement a placeholder
     
-    // Create a simplified memory system interface
-    // In a real implementation, this would be a more sophisticated memory system
-    memory_system_ = nullptr;  // Will be handled by controller module
+    if (!module) return;
+    
+    // Apply effects based on neuromodulator type
+    switch (type) {
+        case NeuromodulatorType::DOPAMINE:
+            // Enhance learning rate and reward sensitivity
+            break;
+        case NeuromodulatorType::SEROTONIN:
+            // Improve stability and reduce impulsivity
+            break;
+        case NeuromodulatorType::NOREPINEPHRINE:
+            // Increase attention and arousal
+            break;
+        case NeuromodulatorType::ACETYLCHOLINE:
+            // Enhance plasticity and memory formation
+            break;
+        case NeuromodulatorType::GABA:
+            // Increase inhibition and reduce activity
+            break;
+        case NeuromodulatorType::GLUTAMATE:
+            // Increase excitation and activity
+            break;
+        default:
+            break;
+    }
 }
 
-bool AutonomousLearningAgent::initialize() {
-    if (!controller_module_) {
-        return false;
+void ControllerModule::update_performance_metrics() {
+    // Update module statistics history
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    
+    for (const auto& pair : registered_modules_) {
+        module_stats_history_[pair.first] = pair.second->get_stats();
+    }
+}
+
+std::vector<NeuromodulationCommand> ControllerModule::generate_coordinated_response() {
+    std::vector<NeuromodulationCommand> commands;
+    
+    // Generate commands to restore homeostasis
+    for (const auto& pair : neuromodulators_) {
+        float deviation = pair.second->concentration - pair.second->baseline_level;
+        
+        if (std::abs(deviation) > 0.2f) {
+            NeuromodulationCommand cmd;
+            cmd.target_module = ""; // Apply to all modules
+            cmd.modulator_type = pair.first;
+            cmd.intensity = -deviation * 0.5f; // Correct half the deviation
+            cmd.duration = 5.0f;
+            cmd.urgency = std::abs(deviation);
+            cmd.reasoning = "Homeostatic correction for " + to_string(pair.first);
+            
+            commands.push_back(cmd);
+        }
     }
     
-    controller_module_->initialize();
-    std::cout << "AutonomousLearningAgent: Initialization complete" << std::endl;
-    return true;
+    return commands;
 }
 
-void AutonomousLearningAgent::update(double dt) {
-    if (controller_module_) {
-        controller_module_->update(dt);
-    }
+// ============================================================================
+// PUBLIC API METHODS (continued)
+// ============================================================================
+
+float ControllerModule::calculate_module_performance(const std::string& module_name) {
+    auto it = module_performance_history_.find(module_name);
+    return (it != module_performance_history_.end()) ? it->second : 0.0f;
 }
 
-void AutonomousLearningAgent::shutdown() {
-    if (controller_module_) {
-        controller_module_->shutdown();
-    }
-}
-
-// Delegate methods to controller module
-std::vector<float> AutonomousLearningAgent::collect_inter_module_signals(const std::string& target_module) {
-    return controller_module_ ? controller_module_->collect_inter_module_signals(target_module) : std::vector<float>();
-}
-
-void AutonomousLearningAgent::distribute_module_output(const std::string& source_module, 
-                                                      const std::vector<float>& output_data) {
-    if (controller_module_) {
-        controller_module_->distribute_module_output(source_module, output_data);
-    }
-}
-
-std::vector<AutonomousLearningAgent::BrowsingAction> AutonomousLearningAgent::generate_action_candidates() {
-    return controller_module_ ? controller_module_->generate_action_candidates() : std::vector<BrowsingAction>();
-}
-
-std::vector<float> AutonomousLearningAgent::evaluate_action_candidates(
-    const std::vector<BrowsingAction>& candidates,
-    const std::vector<MemoryTrace>& similar_episodes) {
-    return controller_module_ ? controller_module_->evaluate_action_candidates(candidates, similar_episodes) : std::vector<float>();
-}
-
-AutonomousLearningAgent::BrowsingAction AutonomousLearningAgent::select_action_with_exploration(
-    const std::vector<BrowsingAction>& candidates,
-    const std::vector<float>& action_values) {
+float ControllerModule::calculate_overall_system_performance() {
+    if (module_performance_history_.empty()) return 0.0f;
     
-    if (controller_module_) {
-        selected_action_ = controller_module_->select_action_with_exploration(candidates, action_values);
-        return selected_action_;
+    float total = 0.0f;
+    for (const auto& pair : module_performance_history_) {
+        total += pair.second;
     }
     
-    // Return default action if no controller
-    BrowsingAction default_action;
-    default_action.type = BrowsingAction::WAIT;
-    default_action.parameters.wait_duration = 1.0f;
-    return default_action;
+    return total / module_performance_history_.size();
 }
 
-void AutonomousLearningAgent::execute_action() {
-    if (controller_module_) {
-        controller_module_->execute_action();
+std::string ControllerModule::generate_status_report() {
+    std::stringstream ss;
+    
+    ss << "=== ControllerModule Status Report ===\n";
+    ss << "Simulation Time: " << std::fixed << std::setprecision(2) << simulation_time_ << "s\n";
+    ss << "System Coherence: " << std::setprecision(3) << system_coherence_level_ << "\n";
+    ss << "Performance Trend: " << global_performance_trend_ << "\n\n";
+    
+    ss << "Neuromodulator Concentrations:\n";
+    for (const auto& pair : neuromodulators_) {
+        ss << "  " << to_string(pair.first) << ": " 
+           << std::setprecision(3) << pair.second->concentration 
+           << " (baseline: " << pair.second->baseline_level << ")\n";
+    }
+    
+    ss << "\nModule Performance:\n";
+    for (const auto& pair : module_performance_history_) {
+        ss << "  " << pair.first << ": " << std::setprecision(3) << pair.second << "\n";
+    }
+    
+    ss << "\nRecent Actions:\n";
+    int recent_count = std::min(5, static_cast<int>(action_history_.size()));
+    for (int i = action_history_.size() - recent_count; i < action_history_.size(); ++i) {
+        ss << "  " << action_history_[i] << "\n";
+    }
+    
+    return ss.str();
+}
+
+// Advanced mode methods
+void ControllerModule::enable_creative_mode(float intensity) {
+    release_neuromodulator(NeuromodulatorType::DOPAMINE, intensity * 0.4f);
+    release_neuromodulator(NeuromodulatorType::NOREPINEPHRINE, intensity * 0.3f);
+    set_baseline_level(NeuromodulatorType::SEROTONIN, 0.6f); // Higher baseline for openness
+    
+    log_action("Creative mode enabled (intensity: " + std::to_string(intensity) + ")");
+}
+
+void ControllerModule::enable_focus_mode(const std::string& target_module, float intensity) {
+    // Increase attention modulators for target
+    release_neuromodulator(NeuromodulatorType::NOREPINEPHRINE, intensity * 0.5f, target_module);
+    release_neuromodulator(NeuromodulatorType::ACETYLCHOLINE, intensity * 0.4f, target_module);
+    
+    // Reduce activity in other modules
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    for (const auto& pair : registered_modules_) {
+        if (pair.first != target_module) {
+            release_neuromodulator(NeuromodulatorType::GABA, intensity * 0.3f, pair.first);
+        }
+    }
+    
+    log_action("Focus mode enabled for " + target_module + " (intensity: " + std::to_string(intensity) + ")");
+}
+
+void ControllerModule::enable_exploration_mode(float curiosity_boost) {
+    release_neuromodulator(NeuromodulatorType::DOPAMINE, curiosity_boost * 0.3f);
+    release_neuromodulator(NeuromodulatorType::NOREPINEPHRINE, curiosity_boost * 0.4f);
+    
+    // Generate intrinsic rewards for all modules
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    for (const auto& pair : registered_modules_) {
+        generate_intrinsic_reward(pair.first, curiosity_boost);
+    }
+    
+    log_action("Exploration mode enabled (curiosity boost: " + std::to_string(curiosity_boost) + ")");
+}
+
+void ControllerModule::enable_consolidation_mode(float memory_strength) {
+    release_neuromodulator(NeuromodulatorType::ACETYLCHOLINE, memory_strength * 0.5f);
+    release_neuromodulator(NeuromodulatorType::SEROTONIN, memory_strength * 0.3f);
+    
+    // Reduce overall activity for consolidation
+    apply_global_inhibition(0.2f);
+    
+    log_action("Consolidation mode enabled (memory strength: " + std::to_string(memory_strength) + ")");
+}
+
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+std::string to_string(NeuromodulatorType type) {
+    switch (type) {
+        case NeuromodulatorType::DOPAMINE: return "Dopamine";
+        case NeuromodulatorType::SEROTONIN: return "Serotonin";
+        case NeuromodulatorType::NOREPINEPHRINE: return "Norepinephrine";
+        case NeuromodulatorType::ACETYLCHOLINE: return "Acetylcholine";
+        case NeuromodulatorType::GABA: return "GABA";
+        case NeuromodulatorType::GLUTAMATE: return "Glutamate";
+        case NeuromodulatorType::OXYTOCIN: return "Oxytocin";
+        case NeuromodulatorType::ENDORPHINS: return "Endorphins";
+        case NeuromodulatorType::CORTISOL: return "Cortisol";
+        case NeuromodulatorType::ADENOSINE: return "Adenosine";
+        default: return "Unknown";
     }
 }
 
-void AutonomousLearningAgent::execute_click_action() {
-    if (controller_module_) {
-        controller_module_->execute_click_action();
-    }
-}
-
-void AutonomousLearningAgent::execute_scroll_action() {
-    if (controller_module_) {
-        controller_module_->execute_scroll_action();
-    }
-}
-
-void AutonomousLearningAgent::execute_type_action() {
-    if (controller_module_) {
-        controller_module_->execute_type_action();
-    }
-}
-
-void AutonomousLearningAgent::execute_navigate_action() {
-    if (controller_module_) {
-        controller_module_->execute_navigate_action();
-    }
-}
-
-void AutonomousLearningAgent::execute_wait_action() {
-    if (controller_module_) {
-        controller_module_->execute_wait_action();
+std::string to_string(RewardSignalType type) {
+    switch (type) {
+        case RewardSignalType::INTRINSIC_CURIOSITY: return "Intrinsic Curiosity";
+        case RewardSignalType::EXTRINSIC_TASK: return "Extrinsic Task";
+        case RewardSignalType::SOCIAL_COOPERATION: return "Social Cooperation";
+        case RewardSignalType::EFFICIENCY_BONUS: return "Efficiency Bonus";
+        case RewardSignalType::NOVELTY_DETECTION: return "Novelty Detection";
+        case RewardSignalType::PREDICTION_ACCURACY: return "Prediction Accuracy";
+        case RewardSignalType::HOMEOSTATIC_BALANCE: return "Homeostatic Balance";
+        case RewardSignalType::CREATIVITY_BURST: return "Creativity Burst";
+        default: return "Unknown";
     }
 }

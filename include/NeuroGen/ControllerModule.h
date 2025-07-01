@@ -1,423 +1,282 @@
-#ifndef CONTROLLER_MODULE_H
-#define CONTROLLER_MODULE_H
+// ============================================================================
+// NEUROMODULATORY CONTROLLER MODULE
+// File: include/NeuroGen/ControllerModule.h
+// ============================================================================
 
-// ============================================================================
-// NEUREGEN FRAMEWORK INCLUDES - Modular Architecture
-// ============================================================================
-#include <NeuroGen/EnhancedNeuralModule.h>
-#include <NeuroGen/Network.h>
-#include <NeuroGen/NetworkConfig.h>
-#include <NeuroGen/ModularNeuralNetwork.h>
-#include <NeuroGen/cuda/NetworkCUDA.cuh>
-#include <NeuroGen/cuda/KernelLaunchWrappers.cuh>
+#pragma once
 
-// ============================================================================
-// SYSTEM INCLUDES
-// ============================================================================
-#include <vector>
 #include <memory>
-#include <string>
+#include <vector>
 #include <unordered_map>
-#include <map>
-#include <queue>
+#include <string>
 #include <functional>
 #include <chrono>
-#include <atomic>
 #include <mutex>
+#include <queue>
+
+#include "NeuroGen/NeuralModule.h"
+#include "NeuroGen/NetworkConfig.h"
+#include "NeuroGen/NetworkStats.h"
 
 // ============================================================================
-// FORWARD DECLARATIONS
+// NEUROTRANSMITTER AND NEUROMODULATOR DEFINITIONS
 // ============================================================================
-class MemorySystem;
-class NeuralModule;
 
-/**
- * @brief Neuromodulatory controller subnetwork for executive control
- * 
- * This specialized neural subnetwork implements central executive functions
- * through neuromodulatory mechanisms, providing top-down control and
- * attention allocation across the modular neural network.
- */
-class NeuromodulatorController {
-public:
-    enum ModulatorType {
-        DOPAMINE = 0,     // Reward/motivation
-        SEROTONIN = 1,    // Mood/exploration
-        NOREPINEPHRINE = 2, // Attention/arousal
-        ACETYLCHOLINE = 3,  // Learning/plasticity
-        GABA = 4,          // Inhibition/stability
-        NUM_MODULATORS = 5
-    };
-
-    struct ModulatorState {
-        float concentration;
-        float release_rate;
-        float reuptake_rate;
-        float baseline_level;
-        float decay_constant;
-        std::vector<std::string> target_modules;
-        std::vector<float> modulation_weights;
-    };
-
-private:
-    std::array<ModulatorState, NUM_MODULATORS> modulators_;
-    std::unique_ptr<Network> controller_network_;
-    std::map<std::string, float> module_activation_levels_;
-    std::vector<float> attention_weights_;
-    float global_arousal_;
-    float cognitive_load_;
-
-public:
-    NeuromodulatorController(const NetworkConfig& config);
-    ~NeuromodulatorController() = default;
-
-    // Core neuromodulation interface
-    void initialize();
-    void update(float dt);
-    void setTargetModulation(ModulatorType type, float target_level);
-    float getModulatorLevel(ModulatorType type) const;
-    
-    // Module orchestration
-    void setModuleActivation(const std::string& module_name, float activation);
-    float getModuleActivation(const std::string& module_name) const;
-    void updateAttentionWeights(const std::vector<float>& context_input);
-    
-    // Executive control
-    void processControlSignals(const std::vector<float>& control_input);
-    std::vector<float> generateModulationOutput() const;
-    void applyGlobalInhibition(float inhibition_strength);
-    
-    // State management
-    void saveControllerState(const std::string& filename) const;
-    bool loadControllerState(const std::string& filename);
+enum class NeuromodulatorType {
+    DOPAMINE,           // Reward prediction, motivation, learning
+    SEROTONIN,          // Mood regulation, plasticity modulation
+    NOREPINEPHRINE,     // Attention, arousal, stress response
+    ACETYLCHOLINE,      // Attention, learning, memory consolidation
+    GABA,               // Inhibition, anxiety regulation
+    GLUTAMATE,          // Excitation, synaptic plasticity
+    OXYTOCIN,           // Social bonding, trust
+    ENDORPHINS,         // Pain relief, reward enhancement
+    CORTISOL,           // Stress response, memory modulation
+    ADENOSINE           // Sleep pressure, metabolic regulation
 };
 
-/**
- * @brief Central controller module managing the entire modular neural network
- * 
- * This class implements a biologically-inspired central control system that
- * orchestrates specialized neural modules through attention mechanisms,
- * neuromodulation, and inter-module communication pathways.
- */
-class ControllerModule : public EnhancedNeuralModule {
+enum class RewardSignalType {
+    INTRINSIC_CURIOSITY,    // Internal exploration reward
+    EXTRINSIC_TASK,         // External task completion reward
+    SOCIAL_COOPERATION,     // Multi-module coordination reward
+    EFFICIENCY_BONUS,       // Energy-efficient operation reward
+    NOVELTY_DETECTION,      // New pattern discovery reward
+    PREDICTION_ACCURACY,    // Successful prediction reward
+    HOMEOSTATIC_BALANCE,    // Maintaining optimal states reward
+    CREATIVITY_BURST        // Novel solution generation reward
+};
+
+struct NeuromodulatorState {
+    NeuromodulatorType type;
+    float concentration;        // Current concentration (0.0 - 1.0)
+    float baseline_level;       // Homeostatic baseline
+    float production_rate;      // Rate of synthesis
+    float degradation_rate;     // Rate of breakdown
+    float half_life;           // Time to half concentration
+    float target_modules_sensitivity; // How sensitive target modules are
+    
+    // Temporal dynamics
+    float peak_concentration;   // Maximum achieved
+    float time_since_peak;     // Time since last peak
+    std::vector<float> concentration_history; // Recent history for analysis
+    
+    NeuromodulatorState(NeuromodulatorType t) : type(t) {
+        reset_to_defaults();
+    }
+    
+    void reset_to_defaults();
+    void update_dynamics(float dt);
+    void apply_stimulus(float intensity, float duration = 1.0f);
+};
+
+struct RewardSignal {
+    RewardSignalType type;
+    float magnitude;           // Strength of reward signal
+    float confidence;          // Confidence in reward assessment
+    float temporal_delay;      // Delay between action and reward
+    std::string source_module; // Which module generated this
+    std::string target_module; // Which module should receive this
+    std::chrono::high_resolution_clock::time_point timestamp;
+    
+    // Context information
+    std::vector<float> context_state;    // Environmental context
+    std::unordered_map<std::string, float> module_contributions; // How each module contributed
+};
+
+struct NeuromodulationCommand {
+    std::string target_module;
+    NeuromodulatorType modulator_type;
+    float intensity;           // How much to release
+    float duration;            // How long the effect should last
+    float urgency;            // Priority of this command
+    std::string reasoning;     // Why this command was issued
+};
+
+// ============================================================================
+// CONTROLLER MODULE CONFIGURATION
+// ============================================================================
+
+struct ControllerConfig {
+    // Neuromodulator pool settings
+    float initial_dopamine_level = 0.3f;
+    float initial_serotonin_level = 0.4f;
+    float initial_norepinephrine_level = 0.2f;
+    float initial_acetylcholine_level = 0.3f;
+    float initial_gaba_level = 0.5f;
+    float initial_glutamate_level = 0.4f;
+    
+    // Production and regulation
+    float base_production_rate = 0.1f;
+    float stress_production_multiplier = 2.0f;
+    float reward_production_multiplier = 1.5f;
+    float homeostatic_regulation_strength = 0.8f;
+    
+    // Reward processing
+    float reward_integration_window = 10.0f;  // seconds
+    float reward_prediction_learning_rate = 0.01f;
+    float curiosity_drive_strength = 0.3f;
+    
+    // Module coordination
+    float inter_module_communication_strength = 0.7f;
+    float attention_allocation_sensitivity = 0.5f;
+    float global_inhibition_threshold = 0.8f;
+    
+    // Adaptive behavior
+    bool enable_adaptive_baselines = true;
+    bool enable_circadian_modulation = true;
+    bool enable_stress_response = true;
+    bool enable_social_learning = true;
+    
+    // Performance monitoring
+    float performance_assessment_window = 5.0f;  // seconds
+    float module_efficiency_threshold = 0.6f;
+    float coordination_bonus_threshold = 0.7f;
+};
+
+// ============================================================================
+// CONTROLLER MODULE CLASS
+// ============================================================================
+
+class ControllerModule {
 public:
-    // ========================================================================
-    // MODULE COMMUNICATION STRUCTURES
-    // ========================================================================
-    
-    struct InterModuleSignal {
-        std::string source_module;
-        std::string target_module;
-        std::string signal_type;
-        std::vector<float> data;
-        float timestamp;
-        float strength;
-        int priority;
-    };
-
-    struct ModuleState {
-        std::string module_name;
-        bool is_active;
-        float activation_level;
-        float attention_weight;
-        std::vector<float> output_signals;
-        std::vector<float> feedback_signals;
-        float processing_load;
-        float specialization_index;
-    };
-
-    struct BrowsingAction {
-        enum Type {
-            CLICK = 0,
-            SCROLL = 1,
-            TYPE = 2,
-            NAVIGATE = 3,
-            WAIT = 4,
-            OBSERVE = 5
-        } type;
-        
-        struct {
-            int x, y;                    // Screen coordinates
-            std::string text;            // Text to type
-            std::string url;             // URL to navigate
-            float scroll_amount;         // Scroll distance
-            float wait_duration;         // Wait time in seconds
-        } parameters;
-        
-        float confidence;                // Action confidence [0-1]
-        float expected_reward;           // Expected outcome value
-        int element_id;                  // Target screen element ID
-        std::string reasoning;           // Action reasoning text
-    };
-
-    // ========================================================================
-    // MEMORY AND LEARNING STRUCTURES
-    // ========================================================================
-    
-    struct MemoryTrace {
-        std::vector<float> state_vector;
-        BrowsingAction action_taken;
-        float reward_received;
-        std::vector<float> next_state;
-        float temporal_discount;
-        float importance_weight;
-        std::chrono::steady_clock::time_point timestamp;
-        bool is_consolidated;
-    };
-
-    struct ContextualMemory {
-        std::map<std::string, std::vector<MemoryTrace>> episodic_memories;
-        std::map<std::string, std::vector<float>> semantic_knowledge;
-        std::map<std::string, float> skill_competencies;
-        std::queue<MemoryTrace> working_memory;
-        size_t working_memory_capacity;
-    };
-
-private:
-    // ========================================================================
-    // CORE CONTROLLER COMPONENTS
-    // ========================================================================
-    
-    std::unique_ptr<NeuromodulatorController> neuromodulator_controller_;
-    std::unique_ptr<ModularNeuralNetwork> modular_network_;
-    std::unique_ptr<NetworkCUDA> gpu_accelerator_;
+    // Constructor and initialization
+    explicit ControllerModule(const ControllerConfig& config = ControllerConfig());
+    ~ControllerModule();
     
     // Module management
-    std::unordered_map<std::string, std::unique_ptr<NeuralModule>> registered_modules_;
-    std::unordered_map<std::string, ModuleState> module_states_;
-    std::vector<InterModuleSignal> inter_module_signals_;
-    std::queue<InterModuleSignal> signal_queue_;
+    void register_module(const std::string& name, std::shared_ptr<NeuralModule> module);
+    void unregister_module(const std::string& name);
+    std::shared_ptr<NeuralModule> get_module(const std::string& name) const;
+    std::vector<std::string> get_registered_modules() const;
     
-    // Decision and action systems
-    BrowsingAction selected_action_;
-    std::vector<BrowsingAction> action_candidates_;
-    std::map<std::string, float> action_values_;
-    std::unique_ptr<ContextualMemory> memory_system_;
+    // Core control functions
+    void update(float dt);
+    void reset();
+    void emergency_stop();
     
-    // Control and coordination
-    std::vector<float> global_context_;
-    std::vector<float> attention_allocation_;
-    std::map<std::string, float> module_specializations_;
-    float cognitive_load_threshold_;
-    bool adaptive_processing_enabled_;
+    // Neuromodulator management
+    void release_neuromodulator(NeuromodulatorType type, float intensity, 
+                               const std::string& target_module = "");
+    void set_baseline_level(NeuromodulatorType type, float level);
+    float get_concentration(NeuromodulatorType type) const;
+    std::unordered_map<NeuromodulatorType, float> get_all_concentrations() const;
     
-    // Performance monitoring
-    struct PerformanceMetrics {
-        float processing_efficiency;
-        float decision_accuracy;
-        float learning_progress;
-        float module_coordination_quality;
-        float memory_utilization;
-        int successful_actions;
-        int total_actions;
-        std::chrono::steady_clock::time_point last_update;
-    } performance_metrics_;
+    // Reward system
+    void process_reward_signal(const RewardSignal& signal);
+    void generate_intrinsic_reward(const std::string& module_name, float curiosity_level);
+    void distribute_global_reward(float reward_magnitude, RewardSignalType type);
+    float calculate_module_performance(const std::string& module_name);
     
-    // Synchronization and threading
-    mutable std::mutex state_mutex_;
-    std::atomic<bool> is_processing_;
-    std::atomic<bool> shutdown_requested_;
-
-public:
-    // ========================================================================
-    // CONSTRUCTION AND INITIALIZATION
-    // ========================================================================
-    
-    explicit ControllerModule(const std::string& name, const NetworkConfig& config);
-    virtual ~ControllerModule();
-    
-    // Core module interface
-    void initialize() override;
-    void update(double dt) override;
-    void shutdown();
-    
-    // ========================================================================
-    // MODULE MANAGEMENT AND ORCHESTRATION
-    // ========================================================================
-    
-    // Module registration and management
-    void registerModule(std::unique_ptr<NeuralModule> module);
-    void unregisterModule(const std::string& module_name);
-    NeuralModule* getModule(const std::string& module_name) const;
-    std::vector<std::string> getRegisteredModules() const;
-    
-    // Module activation and control
-    void activateModule(const std::string& module_name, float activation_level = 1.0f);
-    void deactivateModule(const std::string& module_name);
-    void setModuleSpecialization(const std::string& module_name, float specialization);
-    float getModuleActivation(const std::string& module_name) const;
-    
-    // Inter-module communication
-    std::vector<float> collect_inter_module_signals(const std::string& target_module);
-    void distribute_module_output(const std::string& source_module, 
-                                 const std::vector<float>& output_data);
-    void processInterModuleCommunication();
-    void establishModuleConnection(const std::string& source_module,
-                                  const std::string& target_module,
-                                  float connection_strength = 1.0f);
-    
-    // ========================================================================
-    // DECISION AND ACTION SYSTEMS
-    // ========================================================================
-    
-    // Action generation and selection
-    std::vector<BrowsingAction> generate_action_candidates();
-    std::vector<float> evaluate_action_candidates(
-        const std::vector<BrowsingAction>& candidates,
-        const std::vector<MemoryTrace>& similar_episodes);
-    BrowsingAction select_action_with_exploration(
-        const std::vector<BrowsingAction>& candidates,
-        const std::vector<float>& action_values);
-    
-    // Action execution
-    void execute_action();
-    void execute_click_action();
-    void execute_scroll_action();
-    void execute_type_action();
-    void execute_navigate_action();
-    void execute_wait_action();
-    
-    // Motor command generation
-    std::vector<float> convert_action_to_motor_command(const BrowsingAction& action);
-    void sendMotorCommand(const std::vector<float>& motor_command);
-    
-    // ========================================================================
-    // ATTENTION AND CONTROL MECHANISMS
-    // ========================================================================
-    
-    // Attention allocation
-    void updateAttentionMechanism(const std::vector<float>& sensory_input);
-    void allocateAttention(const std::map<std::string, float>& attention_demands);
-    std::vector<float> computeAttentionWeights(const std::vector<float>& context);
-    void applyAttentionalModulation();
-    
-    // Executive control
-    void processExecutiveControl(const std::vector<float>& goal_state);
-    void updateCognitiveLoad();
-    void manageResourceAllocation();
-    void coordinateModuleActivation();
-    
-    // ========================================================================
-    // LEARNING AND MEMORY SYSTEMS
-    // ========================================================================
-    
-    // Memory management
-    void consolidateMemories();
-    void updateWorkingMemory(const MemoryTrace& trace);
-    std::vector<MemoryTrace> retrieveSimilarEpisodes(const std::vector<float>& current_state);
-    void strengthenMemoryTrace(const std::string& episode_key, float reinforcement);
+    // Attention and coordination
+    void allocate_attention(const std::unordered_map<std::string, float>& attention_weights);
+    void coordinate_module_activities();
+    void apply_global_inhibition(float strength);
+    void promote_inter_module_cooperation();
     
     // Learning and adaptation
-    void updateActionValues(const BrowsingAction& action, float reward);
-    void adaptModuleSpecializations();
-    void updateInterModuleWeights();
-    void performMetaLearning();
+    void adapt_to_performance();
+    void update_reward_predictions();
+    void learn_optimal_modulation_patterns();
+    void adjust_homeostatic_setpoints();
     
-    // ========================================================================
-    // STATE MANAGEMENT AND PERSISTENCE
-    // ========================================================================
+    // Assessment and monitoring
+    std::unordered_map<std::string, float> assess_module_health();
+    std::unordered_map<std::string, float> measure_coordination_efficiency();
+    float calculate_overall_system_performance();
+    std::string generate_status_report();
     
-    // Module state persistence
-    bool saveModuleState(const std::string& module_name, const std::string& filename) const;
-    bool loadModuleState(const std::string& module_name, const std::string& filename);
-    bool saveControllerState(const std::string& filename) const override;
-    bool loadControllerState(const std::string& filename) override;
+    // Advanced features
+    void enable_creative_mode(float intensity = 0.7f);
+    void enable_focus_mode(const std::string& target_module, float intensity = 0.8f);
+    void enable_exploration_mode(float curiosity_boost = 0.5f);
+    void enable_consolidation_mode(float memory_strength = 0.6f);
     
-    // System state queries
-    ModuleState getModuleState(const std::string& module_name) const;
-    std::map<std::string, ModuleState> getAllModuleStates() const;
-    PerformanceMetrics getPerformanceMetrics() const;
+    // Configuration and tuning
+    void update_config(const ControllerConfig& new_config);
+    ControllerConfig get_config() const;
+    void save_state(const std::string& filename) const;
+    void load_state(const std::string& filename);
     
-    // ========================================================================
-    // DEBUGGING AND MONITORING
-    // ========================================================================
+    // Diagnostics and debugging
+    std::vector<std::string> get_recent_actions() const;
+    std::unordered_map<std::string, std::vector<float>> get_modulator_histories() const;
+    void enable_detailed_logging(bool enable = true);
     
-    // Performance monitoring
-    void updatePerformanceMetrics();
-    void logModuleActivity(const std::string& activity) const;
-    std::string generateStatusReport() const;
-    
-    // Diagnostic interface
-    void enableDiagnosticMode(bool enable);
-    std::vector<float> getModuleActivationPattern() const;
-    std::map<std::string, float> getInterModuleConnectivity() const;
-    
-protected:
-    // ========================================================================
-    // INTERNAL HELPER METHODS
-    // ========================================================================
-    
-    // Initialization helpers
-    void initializeNeuromodulatorController();
-    void initializeModularNetwork();
-    void initializeMemorySystem();
-    void setupDefaultModuleConnections();
-    
-    // Processing helpers
-    void processModuleUpdates(double dt);
-    void processAttentionAllocation();
-    void processNeuromodulation();
-    void processMemoryConsolidation();
-    
-    // Communication helpers
-    void routeInterModuleSignals();
-    void updateSignalPriorities();
-    void manageSignalQueue();
-    
-    // Validation and error handling
-    bool validateModuleState(const std::string& module_name) const;
-    void handleModuleError(const std::string& module_name, const std::string& error);
-    void performSystemHealthCheck();
-};
-
-/**
- * @brief Autonomous learning agent class that integrates the ControllerModule
- * 
- * This class provides the high-level interface for the autonomous browsing agent,
- * integrating decision-making, action execution, and learning capabilities.
- */
-class AutonomousLearningAgent {
-public:
-    // Expose necessary types for DecisionAndActionSystems.cpp
-    using BrowsingAction = ControllerModule::BrowsingAction;
-    using MemoryTrace = ControllerModule::MemoryTrace;
-
 private:
-    std::unique_ptr<ControllerModule> controller_module_;
-    std::unique_ptr<MemorySystem> memory_system_;
-    ControllerModule::BrowsingAction selected_action_;
+    // Configuration
+    ControllerConfig config_;
     
-public:
-    explicit AutonomousLearningAgent(const NetworkConfig& config);
-    ~AutonomousLearningAgent() = default;
+    // Module registry
+    std::unordered_map<std::string, std::shared_ptr<NeuralModule>> registered_modules_;
+    mutable std::mutex modules_mutex_;
     
-    // Core agent interface
-    bool initialize();
-    void update(double dt);
-    void shutdown();
+    // Neuromodulator state
+    std::unordered_map<NeuromodulatorType, std::unique_ptr<NeuromodulatorState>> neuromodulators_;
     
-    // Decision and action interface (for DecisionAndActionSystems.cpp)
-    std::vector<float> collect_inter_module_signals(const std::string& target_module);
-    void distribute_module_output(const std::string& source_module, 
-                                 const std::vector<float>& output_data);
-    std::vector<BrowsingAction> generate_action_candidates();
-    std::vector<float> evaluate_action_candidates(
-        const std::vector<BrowsingAction>& candidates,
-        const std::vector<MemoryTrace>& similar_episodes);
-    BrowsingAction select_action_with_exploration(
-        const std::vector<BrowsingAction>& candidates,
-        const std::vector<float>& action_values);
-    void execute_action();
-    void execute_click_action();
-    void execute_scroll_action();
-    void execute_type_action();
-    void execute_navigate_action();
-    void execute_wait_action();
+    // Reward processing
+    std::queue<RewardSignal> pending_rewards_;
+    std::unordered_map<std::string, float> module_performance_history_;
+    std::unordered_map<RewardSignalType, float> reward_prediction_errors_;
     
-    // State access
-    const BrowsingAction& getSelectedAction() const { return selected_action_; }
-    MemorySystem* getMemorySystem() const { return memory_system_.get(); }
-    ControllerModule* getControllerModule() const { return controller_module_.get(); }
+    // Command queue
+    std::queue<NeuromodulationCommand> pending_commands_;
+    std::vector<std::string> action_history_;
+    
+    // Temporal tracking
+    float simulation_time_;
+    std::chrono::high_resolution_clock::time_point last_update_time_;
+    
+    // Performance metrics
+    std::unordered_map<std::string, NetworkStats> module_stats_history_;
+    float global_performance_trend_;
+    float system_coherence_level_;
+    
+    // State flags
+    bool is_running_;
+    bool detailed_logging_enabled_;
+    
+    // Internal methods
+    void initialize_neuromodulators();
+    void update_neuromodulator_dynamics(float dt);
+    void process_pending_rewards();
+    void execute_pending_commands();
+    void assess_system_state();
+    void generate_automatic_responses();
+    void update_performance_metrics();
+    void log_action(const std::string& action);
+    
+    // Helper functions
+    float calculate_stress_level() const;
+    float calculate_attention_demand() const;
+    float calculate_learning_opportunity() const;
+    bool should_trigger_homeostatic_response() const;
+    std::vector<NeuromodulationCommand> generate_coordinated_response();
+    
+    // Specialized control algorithms
+    void dopamine_reward_prediction_update(const RewardSignal& signal);
+    void serotonin_mood_regulation();
+    void norepinephrine_attention_modulation();
+    void acetylcholine_learning_enhancement();
+    void gaba_inhibitory_balance();
+    void glutamate_excitatory_drive();
 };
 
-#endif // CONTROLLER_MODULE_H
+// ============================================================================
+// UTILITY FUNCTIONS
+// ============================================================================
+
+// Convert enum to string for logging and debugging
+std::string to_string(NeuromodulatorType type);
+std::string to_string(RewardSignalType type);
+
+// Factory function for creating pre-configured controllers
+std::unique_ptr<ControllerModule> create_learning_focused_controller();
+std::unique_ptr<ControllerModule> create_exploration_focused_controller();
+std::unique_ptr<ControllerModule> create_balanced_controller();
+std::unique_ptr<ControllerModule> create_performance_focused_controller();
+
+// Helper for module interconnection
+void setup_standard_module_connections(ControllerModule& controller,
+                                      std::shared_ptr<NeuralModule> perception,
+                                      std::shared_ptr<NeuralModule> planning,
+                                      std::shared_ptr<NeuralModule> motor);
