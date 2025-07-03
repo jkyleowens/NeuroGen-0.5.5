@@ -8,4 +8,6 @@ obj/DecisionAndActionSystems.o: src/DecisionAndActionSystems.cpp \
  include/NeuroGen/NeuralConstants.h \
  include/NeuroGen/AutonomousLearningAgent.h \
  include/NeuroGen/ControllerModule.h include/NeuroGen/ScreenElement.h \
- include/NeuroGen/VisualInterface.h
+ include/NeuroGen/VisualInterface.h \
+ include/NeuroGen/BrainModuleArchitecture.h \
+ include/NeuroGen/ModularNeuralNetwork.h

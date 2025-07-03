@@ -8,4 +8,6 @@ obj/AutonomousLearningAgent.o: src/AutonomousLearningAgent.cpp \
  include/NeuroGen/EnhancedNeuralModule.h \
  include/NeuroGen/TopologyGenerator.h \
  include/NeuroGen/cuda/GPUNeuralStructures.h \
- include/NeuroGen/NeuralConstants.h
+ include/NeuroGen/NeuralConstants.h \
+ include/NeuroGen/BrainModuleArchitecture.h \
+ include/NeuroGen/ModularNeuralNetwork.h

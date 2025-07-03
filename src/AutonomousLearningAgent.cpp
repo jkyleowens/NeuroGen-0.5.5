@@ -35,6 +35,9 @@ AutonomousLearningAgent::AutonomousLearningAgent(const NetworkConfig& config)
     // Initialize attention controller
     attention_controller_ = std::make_unique<AttentionController>();
     
+    // Initialize brain module architecture
+    brain_architecture_ = std::make_unique<BrainModuleArchitecture>();
+    
     // Initialize environmental context
     environmental_context_.resize(512, 0.0f);
     
@@ -80,6 +83,15 @@ bool AutonomousLearningAgent::initialize() {
     // Initialize neural modules and attention system
     initialize_neural_modules();
     initialize_attention_system();
+    
+    // Initialize brain module architecture
+    if (brain_architecture_) {
+        if (!brain_architecture_->initialize(1920, 1080)) {
+            std::cerr << "Warning: Failed to initialize brain module architecture" << std::endl;
+        } else {
+            std::cout << "Brain module architecture initialized successfully" << std::endl;
+        }
+    }
     
     std::cout << "AutonomousLearningAgent initialized successfully" << std::endl;
     return true;

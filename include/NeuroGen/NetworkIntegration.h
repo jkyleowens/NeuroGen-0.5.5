@@ -2,7 +2,7 @@
 #define NETWORK_INTEGRATION_H
 
 #include <NeuroGen/Network.h>
-#include <NeuroGen/GPUNeuralStructures.h>
+#include <NeuroGen/cuda/GPUNeuralStructures.h>
 #include <NeuroGen/cuda/GridBlockUtils.cuh>
 #include <NeuroGen/EnhancedLearningSystem.h>
 #include <NeuroGen/LearningRuleConstants.h>

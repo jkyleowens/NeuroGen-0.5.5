@@ -12,6 +12,7 @@
 #include "NeuroGen/NetworkConfig.h"
 #include "NeuroGen/VisualInterface.h"
 #include "NeuroGen/SpecializedModule.h"
+#include "NeuroGen/BrainModuleArchitecture.h"
 #include <iostream>
 #include <algorithm>
 #include <cmath>
@@ -399,6 +400,7 @@ private:
     std::unique_ptr<MemorySystem> memory_system_;
     std::unique_ptr<VisualInterface> visual_interface_;
     std::unique_ptr<AttentionController> attention_controller_;
+    std::unique_ptr<BrainModuleArchitecture> brain_architecture_;
     
     // Environment interaction
     std::function<BrowsingState()> environment_sensor_;

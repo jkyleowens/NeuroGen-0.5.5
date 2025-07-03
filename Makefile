@@ -90,7 +90,14 @@ clean:
 	@echo "Cleaning up..."
 	rm -rf $(OBJ_DIR) $(TARGET) $(TARGET_AUTONOMOUS) $(DEPS_DIR)
 
-.PHONY: all autonomous clean
+# Test targets
+test_brain_architecture: test_brain_module_architecture.cpp $(OBJECTS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
+test_modular_agent: test_modular_agent_comprehensive.cpp $(OBJECTS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
+.PHONY: all autonomous clean test_brain_architecture test_modular_agent
 
 # Include dependency files
 -include $(DEPS)

@@ -71,17 +71,20 @@ struct NeuromodulatorState {
 };
 
 struct RewardSignal {
-    RewardSignalType type;
-    float magnitude;           // Strength of reward signal (0.0 - 1.0)
-    float persistence;         // How long signal persists
-    std::string source_module; // Module that generated this reward
-    float timestamp;          // When this reward was generated
+    RewardSignalType signal_type;  // Type of reward signal
+    float magnitude;               // Strength of reward signal (0.0 - 1.0)
+    float persistence;             // How long signal persists
+    std::string source_module;     // Module that generated this reward
+    std::string context;           // Context in which reward was generated
+    std::chrono::steady_clock::time_point timestamp; // When this reward was generated
     
-    RewardSignal() : type(RewardSignalType::INTRINSIC_CURIOSITY), 
-        magnitude(0.0f), persistence(1.0f), source_module(""), timestamp(0.0f) {}
+    RewardSignal() : signal_type(RewardSignalType::INTRINSIC_CURIOSITY), 
+        magnitude(0.0f), persistence(1.0f), source_module(""), context(""),
+        timestamp(std::chrono::steady_clock::now()) {}
     
     RewardSignal(RewardSignalType t, float mag, const std::string& src = "") 
-        : type(t), magnitude(mag), persistence(1.0f), source_module(src), timestamp(0.0f) {}
+        : signal_type(t), magnitude(mag), persistence(1.0f), source_module(src), 
+          context(""), timestamp(std::chrono::steady_clock::now()) {}
 };
 
 struct NeuromodulationCommand {
@@ -222,6 +225,17 @@ private:
     // Action history for debugging
     std::vector<std::string> action_history_;
     
+    // Reward signal storage
+    std::vector<RewardSignal> reward_history_;
+    
+    // Performance metrics structure
+    struct SystemPerformanceMetrics {
+        float overall_performance = 0.5f;
+        float learning_efficiency = 0.5f;
+        float network_stability = 0.5f;
+        float resource_utilization = 0.5f;
+    } system_performance_metrics_;
+    
     // ========================================================================
     // PRIVATE METHODS
     // ========================================================================
@@ -239,6 +253,7 @@ private:
     float calculate_stress_level() const;
     float calculate_attention_demand() const;
     float calculate_learning_opportunity() const;
+    float calculate_learning_efficiency();
     bool should_trigger_homeostatic_response() const;
     
     // **FIXED: Added missing declaration**

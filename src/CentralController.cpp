@@ -189,7 +189,7 @@ void CentralController::process_screen_elements() {
     if (reward > 0.0f) {
         // **FIXED: Use proper RewardSignal structure with existing members**
         RewardSignal signal;
-        signal.type = RewardSignalType::NOVELTY_DETECTION;
+        signal.signal_type = RewardSignalType::NOVELTY_DETECTION;
         signal.magnitude = reward;
         signal.source_module = "PerceptionNet";  // Use source_module instead of target_module
         // **FIXED: Use correct method name that exists in ControllerModule**
