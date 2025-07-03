@@ -3,37 +3,28 @@
 
 #include <vector>
 #include <string>
-#include <chrono>
-#include <unordered_map>
-#include <atomic>
-#include <memory>
+#include <cstdint>
+#include <fstream>
+
+// ============================================================================
+// PLATFORM-SPECIFIC DEFINITIONS
+// ============================================================================
 
 #ifdef __CUDACC__
-    #include <cuda_runtime.h>
     #define STATS_HOST_DEVICE __host__ __device__
-    #define STATS_DEVICE __device__
     #define STATS_MANAGED __managed__
 #else
     #define STATS_HOST_DEVICE
-    #define STATS_DEVICE  
     #define STATS_MANAGED
 #endif
 
-
-enum class SystemState {
-    STABLE,
-    LEARNING,
-    PRUNING,
-    GROWING,
-    DEGRADED,
-    INACTIVE
-};
-
 /**
- * @brief Comprehensive network statistics for biologically-inspired neural networks
- * 
- * This class tracks both computational performance and biological realism metrics
- * for modular neural networks with cortical columns, neuromodulation, and plasticity.
+ * @class NetworkStats
+ * @brief Comprehensive statistics collection for neural network simulations.
+ *
+ * This class provides a unified interface for collecting, storing, and analyzing
+ * performance metrics from neural network simulations. It tracks everything from
+ * basic activity metrics to advanced computational performance indicators.
  * Optimized for real-time brain simulation and supports both CPU and CUDA backends.
  */
 class NetworkStats {
@@ -70,8 +61,7 @@ public:
     /** Total spikes across entire simulation */
     uint64_t total_spike_count = 0;
     
-    /** Alias for backward compatibility */
-    uint64_t& total_spikes = total_spike_count;
+    /** **FIXED: Removed reference alias to fix copy assignment operator** */
     
     /** Mean firing rate across all neurons (Hz) */
     float mean_firing_rate = 0.0f;
@@ -110,353 +100,185 @@ public:
     /** Standard deviation of synaptic weights */
     float synaptic_weight_std = 0.0f;
     
-    /** Rate of synaptic weight changes */
+    /** Rate of synaptic weight change (plasticity) */
     float plasticity_rate = 0.0f;
     
-    /** Excitatory/Inhibitory balance ratio */
-    float excitation_inhibition_ratio = 0.0f;
+    /** Connection density (synapses/possible connections) */
+    float connection_density = 0.0f;
     
-    /** Average connectivity per neuron */
-    float mean_connectivity = 0.0f;
+    /** Small-world connectivity measure */
+    float small_world_coefficient = 0.0f;
     
     /** Network clustering coefficient */
     float clustering_coefficient = 0.0f;
     
-    /** Average path length in connectivity graph */
+    /** Average path length between neurons */
     float average_path_length = 0.0f;
     
     // ========================================================================
     // NEUROMODULATION METRICS
     // ========================================================================
     
-    /** Current dopamine concentration */
-    float dopamine_level = 0.5f;
+    /** Dopamine concentration level */
+    float dopamine_level = 0.0f;
     
-    /** Current acetylcholine concentration */
-    float acetylcholine_level = 0.5f;
+    /** Acetylcholine concentration level */
+    float acetylcholine_level = 0.0f;
     
-    /** Current serotonin concentration */
-    float serotonin_level = 0.5f;
+    /** Serotonin concentration level */
+    float serotonin_level = 0.0f;
     
-    /** Current norepinephrine concentration */
-    float norepinephrine_level = 0.5f;
+    /** Norepinephrine concentration level */
+    float norepinephrine_level = 0.0f;
     
-    /** Rate of neuromodulator release */
-    float neuromodulator_release_rate = 0.0f;
+    /** GABA concentration level */
+    float gaba_level = 0.0f;
     
-    /** Overall modulatory influence on plasticity */
-    float modulation_strength = 1.0f;
+    /** Glutamate concentration level */
+    float glutamate_level = 0.0f;
     
-    // ========================================================================
-    // CORTICAL COLUMN METRICS (for modular architecture)
-    // ========================================================================
+    /** Overall neuromodulatory balance */
+    float neuromod_balance = 0.0f;
     
-    /** Number of cortical columns */
-    uint32_t num_columns = 0;
-    
-    /** Activity per column */
-    std::vector<float> column_activity;
-    
-    /** Inter-column synchronization */
-    float inter_column_sync = 0.0f;
-    
-    /** Dominant frequency per column */
-    std::vector<float> column_frequencies;
-    
-    /** Column specialization index */
-    std::vector<float> column_specialization;
-    
-    // ========================================================================
-    // LEARNING AND ADAPTATION METRICS
-    // ========================================================================
-    
-    /** Current learning rate */
-    float learning_rate = 0.001f;
-    
-    /** Hebbian learning activity */
-    float hebbian_activity = 0.0f;
-    
-    /** Homeostatic scaling factor */
-    float homeostatic_scaling = 1.0f;
-    
-    /** Structural plasticity events (synapse creation/deletion) */
-    uint32_t structural_changes = 0;
-    
-    /** Metaplasticity state (learning-to-learn) */
-    float metaplasticity_factor = 1.0f;
-    
-    /** Network entropy (measure of information processing) */
-    float network_entropy = 0.0f;
+    /** Excitation/inhibition ratio */
+    float excitation_inhibition_ratio = 1.0f;
     
     // ========================================================================
     // COMPUTATIONAL PERFORMANCE METRICS
     // ========================================================================
     
-    /** CUDA kernel execution time (microseconds) */
-    float cuda_kernel_time_us = 0.0f;
+    /** Time spent in CUDA kernels (ms) */
+    float kernel_execution_time = 0.0f;
     
-    /** Memory transfer time */
-    float memory_transfer_time_us = 0.0f;
+    /** Memory transfer time (ms) */
+    float memory_transfer_time = 0.0f;
     
-    /** Total computation time per timestep */
-    float computation_time_us = 0.0f;
+    /** Total memory usage (bytes) */
+    uint64_t memory_usage_bytes = 0;
     
-    /** Memory usage in bytes */
-    size_t memory_usage_bytes = 0;
+    /** GPU utilization percentage */
+    float gpu_utilization = 0.0f;
     
-    /** GPU memory utilization percentage */
-    float gpu_memory_utilization = 0.0f;
-    
-    /** Simulation speed (real-time factor) */
+    /** Simulation speed factor (real-time = 1.0) */
     float simulation_speed_factor = 1.0f;
     
-    /** Number of CUDA blocks launched */
-    uint32_t cuda_blocks_launched = 0;
+    /** Energy consumption estimate (arbitrary units) */
+    float energy_consumption = 0.0f;
     
-    /** Average threads per block */
-    float avg_threads_per_block = 0.0f;
-    
-    // ========================================================================
-    // BIOLOGICAL REALISM METRICS
-    // ========================================================================
-    
-    /** Calcium concentration dynamics */
-    float mean_calcium_level = 0.0f;
-    
-    /** Vesicle pool depletion rate */
-    float vesicle_depletion_rate = 0.0f;
-    
-    /** Network criticality measure (edge of chaos) */
-    float criticality_index = 0.0f;
-    
-    /** Avalanche size distribution exponent */
-    float avalanche_exponent = 0.0f;
-    
-    /** Oscillation power in different frequency bands */
-    float theta_power = 0.0f;      // 4-8 Hz
-    float alpha_power = 0.0f;      // 8-13 Hz  
-    float beta_power = 0.0f;       // 13-30 Hz
-    float gamma_power = 0.0f;      // 30-100 Hz
-    
-    /** Phase-locking between regions */
-    float phase_coherence = 0.0f;
-    
-    // ========================================================================
-    // ERROR AND STABILITY METRICS
-    // ========================================================================
-    
-    /** Numerical stability indicator */
-    float numerical_stability = 1.0f;
-    
-    /** Maximum voltage deviation */
-    float max_voltage_deviation = 0.0f;
-    
-    /** Weight saturation percentage */
-    float weight_saturation = 0.0f;
-    
-    /** Simulation divergence indicator */
-    bool simulation_stable = true;
-    
-    /** CUDA error count */
+    /** Number of CUDA errors encountered */
     uint32_t cuda_error_count = 0;
     
+    /** Whether simulation is numerically stable */
+    bool simulation_stable = true;
+    
+    /** Numerical stability score (0-1) */
+    float numerical_stability = 1.0f;
+    
     // ========================================================================
-    // TIMING AND PROFILING
+    // LEARNING AND ADAPTATION METRICS
     // ========================================================================
     
-    /** Detailed timing breakdown */
-    struct TimingProfile {
-        float neuron_update_time = 0.0f;
-        float synapse_update_time = 0.0f;
-        float plasticity_update_time = 0.0f;
-        float spike_processing_time = 0.0f;
-        float memory_copy_time = 0.0f;
-        float total_time = 0.0f;
-    } timing_profile;
+    /** Rate of learning (weight change magnitude) */
+    float learning_rate = 0.0f;
     
-    /** Performance history for trend analysis */
+    /** Prediction error (for supervised learning) */
+    float prediction_error = 0.0f;
+    
+    /** Information capacity estimate */
+    float information_capacity = 0.0f;
+    
+    /** Network entropy measure */
+    float network_entropy = 0.0f;
+    
+    /** Mutual information between layers */
+    float mutual_information = 0.0f;
+    
+    /** Adaptation rate to input changes */
+    float adaptation_rate = 0.0f;
+    
+    // ========================================================================
+    // COLUMNAR AND MODULAR ORGANIZATION
+    // ========================================================================
+    
+    /** Activity per cortical column */
+    std::vector<float> column_activity;
+    
+    /** Frequency bands per column */
+    std::vector<float> column_frequencies;
+    
+    /** Specialization index per column */
+    std::vector<float> column_specialization;
+    
+    /** Performance tracking history */
     std::vector<float> performance_history;
     
     // ========================================================================
-    // CONSTRUCTORS AND BASIC OPERATIONS
+    // METHODS FOR UPDATING STATISTICS
     // ========================================================================
     
-    STATS_HOST_DEVICE NetworkStats() {
-        reset();
+    /** Update basic simulation metrics */
+    STATS_HOST_DEVICE void updateSimulationMetrics(float dt, uint64_t steps) {
+        current_time_ms += dt * 1000.0f;
+        total_simulation_time += dt * 1000.0f;
+        simulation_steps += steps;
     }
     
-    /** Reset all statistics to initial state */
-    STATS_HOST_DEVICE void reset() {
-        // Core metrics
-        current_time_ms = 0.0f;
-        total_simulation_time = 0.0f;
-        current_reward = 0.0f;
-        cumulative_reward = 0.0f;
-        average_reward = 0.0f;
-        simulation_steps = 0;
-        
-        // Activity metrics
-        current_spike_count = 0;
-        total_spike_count = 0;
-        mean_firing_rate = 0.0f;
-        firing_rate_std = 0.0f;
-        network_synchrony = 0.0f;
-        neuron_activity_ratio = 0.0f;
-        active_neuron_count = 0;
-        population_vector_strength = 0.0f;
-        
-        // Synaptic metrics
-        mean_synaptic_weight = 0.0f;
-        synaptic_weight_std = 0.0f;
-        plasticity_rate = 0.0f;
-        excitation_inhibition_ratio = 1.0f;
-        mean_connectivity = 0.0f;
-        clustering_coefficient = 0.0f;
-        average_path_length = 0.0f;
-        
-        // Neuromodulation
-        dopamine_level = 0.5f;
-        acetylcholine_level = 0.5f;
-        serotonin_level = 0.5f;
-        norepinephrine_level = 0.5f;
-        neuromodulator_release_rate = 0.0f;
-        modulation_strength = 1.0f;
-        
-        // Learning metrics
-        learning_rate = 0.001f;
-        hebbian_activity = 0.0f;
-        homeostatic_scaling = 1.0f;
-        structural_changes = 0;
-        metaplasticity_factor = 1.0f;
-        network_entropy = 0.0f;
-        
-        // Performance metrics
-        cuda_kernel_time_us = 0.0f;
-        memory_transfer_time_us = 0.0f;
-        computation_time_us = 0.0f;
-        memory_usage_bytes = 0;
-        gpu_memory_utilization = 0.0f;
-        simulation_speed_factor = 1.0f;
-        
-        // Biological metrics
-        mean_calcium_level = 0.0f;
-        vesicle_depletion_rate = 0.0f;
-        criticality_index = 0.0f;
-        avalanche_exponent = 0.0f;
-        theta_power = 0.0f;
-        alpha_power = 0.0f;
-        beta_power = 0.0f;
-        gamma_power = 0.0f;
-        phase_coherence = 0.0f;
-        
-        // Stability metrics
-        numerical_stability = 1.0f;
-        max_voltage_deviation = 0.0f;
-        weight_saturation = 0.0f;
-        simulation_stable = true;
-        cuda_error_count = 0;
-        
-        // Reset timing profile
-        timing_profile = TimingProfile{};
-        
-        // Clear history vectors
-        #ifndef __CUDA_ARCH__  // Host code only
-        column_activity.clear();
-        column_frequencies.clear();
-        column_specialization.clear();
-        performance_history.clear();
-        #endif
-    }
-    
-    // ========================================================================
-    // UPDATE METHODS
-    // ========================================================================
-    
-    /** Update core simulation metrics */
-    STATS_HOST_DEVICE void updateSimulationMetrics(float dt_ms, uint64_t step_count) {
-        current_time_ms += dt_ms;
-        total_simulation_time += dt_ms;
-        simulation_steps = step_count;
-        
-        // Update average reward with exponential decay
-        const float alpha = 0.01f; // Decay factor
-        average_reward = alpha * current_reward + (1.0f - alpha) * average_reward;
-        cumulative_reward += current_reward;
-    }
-    
-    /** Update activity metrics */
-    STATS_HOST_DEVICE void updateActivityMetrics(uint32_t spikes_this_step, 
-                                                uint32_t active_neurons,
-                                                uint32_t total_neurons) {
-        current_spike_count = spikes_this_step;
-        total_spike_count += spikes_this_step;
-        active_neuron_count = active_neurons;
-        
-        if (total_neurons > 0) {
-            neuron_activity_ratio = static_cast<float>(active_neurons) / total_neurons;
-        }
-        
-        // Update mean firing rate (exponential moving average)
-        const float dt = 0.001f; // Assume 1ms timestep for rate calculation
-        const float alpha = 0.05f;
-        float instantaneous_rate = static_cast<float>(spikes_this_step) / (total_neurons * dt);
-        mean_firing_rate = alpha * instantaneous_rate + (1.0f - alpha) * mean_firing_rate;
+    /** Update neural activity metrics */
+    STATS_HOST_DEVICE void updateActivityMetrics(uint32_t spikes, uint32_t active, uint32_t total) {
+        current_spike_count = spikes;
+        total_spike_count += spikes;
+        active_neuron_count = active;
+        total_neurons = total;
+        neuron_activity_ratio = (total > 0) ? static_cast<float>(active) / total : 0.0f;
     }
     
     /** Update synaptic metrics */
-    STATS_HOST_DEVICE void updateSynapticMetrics(float mean_weight, float weight_std,
-                                                uint32_t active_syns, uint32_t total_syns) {
+    STATS_HOST_DEVICE void updateSynapticMetrics(float mean_weight, float weight_std, 
+                                               uint32_t active_syn, uint32_t total_syn) {
         mean_synaptic_weight = mean_weight;
         synaptic_weight_std = weight_std;
-        active_synapses = active_syns;
-        total_synapses = total_syns;
-        
-        if (total_syns > 0) {
-            mean_connectivity = static_cast<float>(active_syns) / total_syns;
-        }
+        active_synapses = active_syn;
+        total_synapses = total_syn;
+        connection_density = (total_syn > 0) ? static_cast<float>(active_syn) / total_syn : 0.0f;
     }
     
-    /** Update neuromodulator levels */
+    /** Update neuromodulation levels */
     STATS_HOST_DEVICE void updateNeuromodulation(float da, float ach, float ser, float nor) {
         dopamine_level = da;
         acetylcholine_level = ach;
         serotonin_level = ser;
         norepinephrine_level = nor;
         
-        // Calculate overall modulation strength
-        modulation_strength = (da + ach + ser + nor) / 4.0f;
+        // Calculate balance metric
+        float total = da + ach + ser + nor;
+        neuromod_balance = (total > 0.0f) ? (4.0f * 0.25f) / total : 0.0f;
     }
     
     /** Update performance metrics */
-    STATS_HOST_DEVICE void updatePerformanceMetrics(float kernel_time, float transfer_time,
-                                                   size_t memory_bytes) {
-        cuda_kernel_time_us = kernel_time;
-        memory_transfer_time_us = transfer_time;
-        computation_time_us = kernel_time + transfer_time;
+    STATS_HOST_DEVICE void updatePerformanceMetrics(float kernel_time, float transfer_time, 
+                                                   uint64_t memory_bytes) {
+        kernel_execution_time = kernel_time;
+        memory_transfer_time = transfer_time;
         memory_usage_bytes = memory_bytes;
         
-        // Calculate simulation speed factor
-        const float real_time_us = 1000.0f; // 1ms in microseconds
-        if (computation_time_us > 0) {
-            simulation_speed_factor = real_time_us / computation_time_us;
-        }
+        // Calculate simulation speed (inverse of total time)
+        float total_time = kernel_time + transfer_time;
+        simulation_speed_factor = (total_time > 0.0f) ? 1.0f / total_time : 1.0f;
+    }
+    
+    /** Reset all statistics to default values */
+    STATS_HOST_DEVICE void reset() {
+        *this = NetworkStats();
     }
     
     // ========================================================================
-    // ANALYSIS METHODS
+    // ANALYSIS AND SCORING METHODS
     // ========================================================================
     
-    /** Check if network is in healthy operating range */
-    STATS_HOST_DEVICE bool isNetworkHealthy() const {
-        return simulation_stable &&
-               mean_firing_rate > 0.1f && mean_firing_rate < 100.0f &&
-               numerical_stability > 0.9f &&
-               cuda_error_count == 0;
-    }
-    
-    /** Get overall network efficiency score (0-1) */
-    STATS_HOST_DEVICE float getNetworkEfficiency() const {
-        float activity_score = (neuron_activity_ratio > 0.05f && neuron_activity_ratio < 0.8f) ? 1.0f : 0.5f;
+    /** Get overall network health score (0-1) */
+    STATS_HOST_DEVICE float getHealthScore() const {
+        float activity_score = (neuron_activity_ratio > 0.1f && neuron_activity_ratio < 0.9f) ? 
+                               1.0f : 0.5f;
         float plasticity_score = (plasticity_rate > 0.0f && plasticity_rate < 0.1f) ? 1.0f : 0.5f;
         float stability_score = numerical_stability;
         
@@ -483,6 +305,20 @@ public:
     
     /** Load statistics from binary file */
     bool loadFromFile(const std::string& filename);
+    
+    // ========================================================================
+    // BACKWARD COMPATIBILITY
+    // ========================================================================
+    
+    /** **FIXED: Added getter for backward compatibility with total_spikes** */
+    STATS_HOST_DEVICE uint64_t getTotalSpikes() const {
+        return total_spike_count;
+    }
+    
+    /** **FIXED: Added setter for backward compatibility with total_spikes** */
+    STATS_HOST_DEVICE void setTotalSpikes(uint64_t spikes) {
+        total_spike_count = spikes;
+    }
 };
 
 // ============================================================================

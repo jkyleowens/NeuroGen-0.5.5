@@ -3,17 +3,426 @@
 // File: src/AutonomousLearningAgent.cpp
 // ============================================================================
 
-#include <NeuroGen/AutonomousLearningAgent.h>
-#include <NeuroGen/ControllerModule.h>
-#include <NeuroGen/Network.h>
-#include <NeuroGen/NetworkConfig.h>
-#include <NeuroGen/EnhancedNeuralModule.h>
+#include "NeuroGen/AutonomousLearningAgent.h"
+#include "NeuroGen/ControllerModule.h"
+#include "NeuroGen/Network.h"
+#include "NeuroGen/NetworkConfig.h"
+#include "NeuroGen/EnhancedNeuralModule.h"
 #include <iostream>
 #include <algorithm>
 #include <cmath>
 #include <sstream>
+#include <chrono>
 #include <random>
-#include <iomanip>
+
+// ============================================================================
+// AUTONOMOUS LEARNING AGENT IMPLEMENTATION
+// ============================================================================
+AutonomousLearningAgent::AutonomousLearningAgent(const NetworkConfig& config) 
+    : config_(config), is_learning_active_(false), detailed_logging_(false), simulation_time_(0.0f),
+      exploration_rate_(0.2f), global_reward_signal_(0.0f), learning_rate_(0.001f) {
+    
+    // Initialize controller module
+    ControllerConfig controller_config;
+    controller_module_ = std::make_unique<ControllerModule>(controller_config);
+    
+    // Initialize memory system
+    memory_system_ = std::make_unique<MemorySystem>();
+    
+    // Initialize visual interface
+    visual_interface_ = std::make_unique<VisualInterface>(1920, 1080);
+    
+    // Initialize attention controller
+    attention_controller_ = std::make_unique<AttentionController>();
+    
+    // Initialize environmental context
+    environmental_context_.resize(512, 0.0f);
+    
+    // Initialize current goals
+    current_goals_.resize(64, 0.0f);
+    
+    // Initialize global state
+    global_state_.resize(256, 0.0f);
+    
+    // Initialize selected action to default
+    selected_action_.type = ActionType::WAIT;
+    selected_action_.x_coordinate = 0;
+    selected_action_.y_coordinate = 0;
+    selected_action_.confidence = 0.5f;
+    
+    // Initialize learning system (removed to avoid CUDA dependencies)
+    // learning_system_ = nullptr;
+    
+    std::cout << "AutonomousLearningAgent created with configuration" << std::endl;
+}
+
+AutonomousLearningAgent::~AutonomousLearningAgent() {
+    shutdown();
+}
+
+bool AutonomousLearningAgent::initialize() {
+    if (!controller_module_) {
+        std::cerr << "Error: Controller module not created" << std::endl;
+        return false;
+    }
+    
+    // Initialize visual interface
+    if (!visual_interface_->initialize_capture()) {
+        std::cerr << "Warning: Failed to initialize visual capture" << std::endl;
+    }
+    
+    // Register basic modules with attention controller
+    attention_controller_->register_module("visual_cortex");
+    attention_controller_->register_module("working_memory");
+    attention_controller_->register_module("decision_making");
+    attention_controller_->register_module("action_execution");
+    
+    // Initialize neural modules and attention system
+    initialize_neural_modules();
+    initialize_attention_system();
+    
+    std::cout << "AutonomousLearningAgent initialized successfully" << std::endl;
+    return true;
+}
+
+void AutonomousLearningAgent::update(float dt) {
+    simulation_time_ += dt;
+    
+    if (controller_module_) {
+        controller_module_->update(dt);
+    }
+    
+    if (is_learning_active_) {
+        autonomousLearningStep(dt);
+        update_learning_goals();
+    }
+}
+
+void AutonomousLearningAgent::shutdown() {
+    stopAutonomousLearning();
+    
+    if (visual_interface_) {
+        visual_interface_->stop_capture();
+    }
+    
+    std::cout << "AutonomousLearningAgent shutdown complete" << std::endl;
+}
+
+void AutonomousLearningAgent::startAutonomousLearning() {
+    if (is_learning_active_) return;
+    
+    is_learning_active_ = true;
+    std::cout << "Starting autonomous learning mode..." << std::endl;
+    
+    if (visual_interface_) {
+        visual_interface_->start_continuous_capture();
+    }
+}
+
+void AutonomousLearningAgent::stopAutonomousLearning() {
+    if (!is_learning_active_) return;
+    
+    is_learning_active_ = false;
+    std::cout << "Stopping autonomous learning mode..." << std::endl;
+    
+    if (visual_interface_) {
+        visual_interface_->stop_capture();
+    }
+}
+
+float AutonomousLearningAgent::autonomousLearningStep(float dt) {
+    if (!is_learning_active_) return 0.0f;
+    
+    // Step 1: Process visual input
+    process_visual_input();
+    
+    // Step 2: Update working memory
+    update_working_memory();
+    
+    // Step 3: Make decisions and select actions
+    select_and_execute_action();
+    
+    // Step 4: Learn from outcomes
+    learn_from_experience();
+    
+    // Return learning progress (simplified)
+    return std::min(1.0f, simulation_time_ / 1000.0f);
+}
+
+void AutonomousLearningAgent::process_visual_input() {
+    if (!visual_interface_) return;
+    
+    // Capture and process current visual scene
+    std::vector<float> visual_features = visual_interface_->capture_and_process_screen();
+    
+    // Update environmental context with visual information
+    size_t context_visual_size = std::min(visual_features.size(), environmental_context_.size() / 2);
+    for (size_t i = 0; i < context_visual_size; ++i) {
+        environmental_context_[i] = visual_features[i];
+    }
+    
+    // Update attention based on visual context
+    if (attention_controller_) {
+        attention_controller_->update_context(visual_features);
+    }
+}
+
+void AutonomousLearningAgent::update_working_memory() {
+    // Simulate working memory update by maintaining context
+    float decay_factor = 0.95f;
+    
+    for (size_t i = environmental_context_.size() / 2; i < environmental_context_.size(); ++i) {
+        environmental_context_[i] *= decay_factor;
+        
+        // Add some random maintenance activity
+        environmental_context_[i] += 0.01f * ((rand() % 100) / 100.0f - 0.5f);
+        environmental_context_[i] = std::max(0.0f, std::min(1.0f, environmental_context_[i]));
+    }
+}
+
+void AutonomousLearningAgent::select_and_execute_action() {
+    // Generate possible actions based on current context
+    std::vector<BrowsingAction> actions = generate_action_candidates();
+    
+    if (actions.empty()) return;
+    
+    // Select action using simple exploration strategy
+    BrowsingAction selected_action;
+    
+    float exploration_rate = 0.1f;
+    if ((rand() % 100) / 100.0f < exploration_rate) {
+        // Explore: random action
+        selected_action = actions[rand() % actions.size()];
+    } else {
+        // Exploit: best action (simplified)
+        selected_action = actions[0]; // For now, just take first action
+    }
+    
+    // Store action for learning
+    last_action_ = selected_action;
+    
+    // Simulate action execution
+    execute_action(selected_action);
+}
+
+void AutonomousLearningAgent::learn_from_experience() {
+    // Create memory trace from recent experience
+    MemorySystem::MemoryTrace trace;
+    trace.state_vector = environmental_context_;
+    trace.action_vector = {static_cast<float>(last_action_.type), 
+                          static_cast<float>(last_action_.x_coordinate),
+                          static_cast<float>(last_action_.y_coordinate)};
+    trace.reward_received = calculate_immediate_reward();
+    trace.reward = trace.reward_received;  // Set both for compatibility
+    trace.importance_weight = std::abs(trace.reward_received) + 0.1f;
+    trace.episode_context = "autonomous_browsing";
+    trace.context_description = trace.episode_context;  // Set both for compatibility
+    
+    // Store in memory
+    if (memory_system_) {
+        memory_system_->storeEpisode(trace);
+    }
+    
+    // Update controller with reward
+    if (controller_module_) {
+        controller_module_->apply_reward("global", trace.reward_received);
+    }
+    
+    // Log learning event
+    log_action("Learned from experience - Reward: " + std::to_string(trace.reward_received));
+}
+
+std::vector<BrowsingAction> AutonomousLearningAgent::generate_action_candidates() {
+    std::vector<BrowsingAction> actions;
+    
+    // Get detected screen elements
+    auto elements = visual_interface_->detect_screen_elements();
+    
+    // Generate actions for each element
+    for (const auto& element : elements) {
+        BrowsingAction action;
+        // Calculate center coordinates using x, y, width, height
+        action.x_coordinate = element.x + element.width / 2; // Center X
+        action.y_coordinate = element.y + element.height / 2; // Center Y
+        action.confidence = element.confidence;
+        action.expected_reward = 0.5f; // Default expected reward
+        
+        if (element.type == "button") {
+            action.type = ActionType::CLICK;
+            action.description = "Click button: " + element.text;
+        } else if (element.type == "text_input") {
+            action.type = ActionType::TYPE;
+            action.description = "Type in field";
+            action.text_content = "test input";
+        } else {
+            action.type = ActionType::WAIT;
+            action.description = "Wait and observe";
+        }
+        
+        actions.push_back(action);
+    }
+    
+    // Add some exploration actions
+    BrowsingAction scroll_action;
+    scroll_action.type = ActionType::SCROLL;
+    scroll_action.scroll_direction = (rand() % 2) ? ScrollDirection::DOWN : ScrollDirection::UP;
+    scroll_action.scroll_amount = 100 + rand() % 200;
+    scroll_action.description = "Explore by scrolling";
+    scroll_action.confidence = 0.3f;
+    actions.push_back(scroll_action);
+    
+    return actions;
+}
+
+void AutonomousLearningAgent::execute_action(const BrowsingAction& action) {
+    // Simulate action execution
+    std::cout << "Executing action: " << action.description << std::endl;
+    
+    switch (action.type) {
+        case ActionType::CLICK:
+            std::cout << "  Clicking at (" << action.x_coordinate << ", " << action.y_coordinate << ")" << std::endl;
+            break;
+        case ActionType::TYPE:
+            std::cout << "  Typing: " << action.text_content << std::endl;
+            break;
+        case ActionType::SCROLL:
+            std::cout << "  Scrolling " << (action.scroll_direction == ScrollDirection::DOWN ? "down" : "up") 
+                     << " by " << action.scroll_amount << " pixels" << std::endl;
+            break;
+        case ActionType::NAVIGATE:
+            std::cout << "  Navigating to: " << action.target_url << std::endl;
+            break;
+        case ActionType::WAIT:
+            std::cout << "  Waiting and observing..." << std::endl;
+            break;
+        case ActionType::OBSERVE:
+            std::cout << "  Observing environment..." << std::endl;
+            break;
+        case ActionType::BACK:
+            std::cout << "  Going back in browser history" << std::endl;
+            break;
+        case ActionType::FORWARD:
+            std::cout << "  Going forward in browser history" << std::endl;
+            break;
+        case ActionType::REFRESH:
+            std::cout << "  Refreshing page" << std::endl;
+            break;
+    }
+}
+
+float AutonomousLearningAgent::calculate_immediate_reward() {
+    // Simple reward calculation based on action success and novelty
+    float base_reward = 0.1f; // Small positive reward for any action
+    
+    // Add novelty bonus (simplified)
+    float novelty_bonus = 0.0f;
+    if (memory_system_ && !environmental_context_.empty()) {
+        auto similar_episodes = memory_system_->retrieveSimilarEpisodes(environmental_context_, "default", 3);
+        if (similar_episodes.size() < 2) {
+            novelty_bonus = 0.3f; // High novelty
+        } else {
+            novelty_bonus = 0.1f; // Some novelty
+        }
+    }
+    
+    return base_reward + novelty_bonus;
+}
+
+// ============================================================================
+// ADDITIONAL INTERFACE METHODS
+// ============================================================================
+
+void AutonomousLearningAgent::addLearningGoal(std::unique_ptr<AutonomousGoal> goal) {
+    if (goal) {
+        learning_goals_.push_back(std::move(goal));
+        std::cout << "Added learning goal: " << learning_goals_.back()->description << std::endl;
+    }
+}
+
+BrowsingState AutonomousLearningAgent::getCurrentEnvironmentState() const {
+    if (environment_sensor_) {
+        return environment_sensor_();
+    }
+    
+    // Return default state if no sensor is set
+    BrowsingState default_state;
+    default_state.current_url = "about:blank";
+    return default_state;
+}
+
+std::string AutonomousLearningAgent::getStatusReport() const {
+    std::stringstream ss;
+    ss << "=== Autonomous Learning Agent Status ===\n";
+    ss << "Learning Active: " << (is_learning_active_ ? "Yes" : "No") << "\n";
+    ss << "Simulation Time: " << simulation_time_ << "s\n";
+    ss << "Learning Goals: " << learning_goals_.size() << "\n";
+    ss << "Environmental Context Size: " << environmental_context_.size() << "\n";
+    
+    if (memory_system_) {
+        ss << "Episodic Memories: " << memory_system_->get_episodic_memory_size() << "\n";
+    }
+    
+    return ss.str();
+}
+
+float AutonomousLearningAgent::getLearningProgress() const {
+    // Simple progress calculation based on simulation time and memory accumulation
+    float time_progress = std::min(1.0f, simulation_time_ / 1000.0f);
+    
+    float memory_progress = 0.0f;
+    if (memory_system_ && memory_system_->get_episodic_memory_size() > 0) {
+        memory_progress = std::min(1.0f, static_cast<float>(memory_system_->get_episodic_memory_size()) / 100.0f);
+    }
+    
+    return (time_progress + memory_progress) / 2.0f;
+}
+
+std::map<std::string, float> AutonomousLearningAgent::getAttentionWeights() const {
+    std::map<std::string, float> weights;
+    
+    if (attention_controller_) {
+        // Get weights for all registered modules
+        weights["visual_cortex"] = attention_controller_->get_attention_weight("visual_cortex");
+        weights["working_memory"] = attention_controller_->get_attention_weight("working_memory");
+        weights["decision_making"] = attention_controller_->get_attention_weight("decision_making");
+        weights["action_execution"] = attention_controller_->get_attention_weight("action_execution");
+    }
+    
+    return weights;
+}
+
+void AutonomousLearningAgent::initialize_neural_modules() {
+    // Initialize basic neural module coordination
+    std::cout << "Initializing neural modules..." << std::endl;
+    
+    // This would create and register specialized neural modules
+    // For now, we'll just set up the controller coordination
+}
+
+void AutonomousLearningAgent::initialize_attention_system() {
+    // Set up attention priorities for different contexts
+    if (attention_controller_) {
+        attention_controller_->set_priority("visual_processing", 0.8f);
+        attention_controller_->set_priority("decision_making", 0.7f);
+        attention_controller_->set_priority("memory_consolidation", 0.5f);
+    }
+}
+
+void AutonomousLearningAgent::update_learning_goals() {
+    // Update progress on active learning goals
+    for (auto& goal : learning_goals_) {
+        if (goal && goal->is_active) {
+            // Simple goal progress tracking
+            // In a real implementation, this would check success criteria
+        }
+    }
+}
+
+void AutonomousLearningAgent::log_action(const std::string& action) {
+    if (detailed_logging_) {
+        std::cout << "[" << simulation_time_ << "s] " << action << std::endl;
+    }
+}
 
 // ============================================================================
 // UTILITY FUNCTION IMPLEMENTATIONS
@@ -51,480 +460,68 @@ float computeBrowsingStateSimilarity(const BrowsingState& state1, const Browsing
     float similarity = 0.0f;
     float weight_sum = 0.0f;
     
-    // URL similarity (exact match or domain match)
-    float url_weight = 0.3f;
+    // URL similarity (exact match)
+    float url_weight = 0.4f;
     if (state1.current_url == state2.current_url) {
-        similarity += url_weight * 1.0f;
-    } else {
-        // Extract domain and compare
-        auto extractDomain = [](const std::string& url) {
-            size_t start = url.find("://");
-            if (start != std::string::npos) {
-                start += 3;
-                size_t end = url.find("/", start);
-                return (end != std::string::npos) ? url.substr(start, end - start) : url.substr(start);
-            }
-            return url;
-        };
-        
-        if (extractDomain(state1.current_url) == extractDomain(state2.current_url)) {
-            similarity += url_weight * 0.5f;
-        }
+        similarity += url_weight;
     }
     weight_sum += url_weight;
     
-    // Visual features similarity
+    // Visual features similarity (if available)
     float visual_weight = 0.4f;
-    if (!state1.visual_features.empty() && !state2.visual_features.empty()) {
-        float cosine_sim = 0.0f;
-        float norm1 = 0.0f, norm2 = 0.0f;
-        size_t min_size = std::min(state1.visual_features.size(), state2.visual_features.size());
+    if (!state1.visual_features.empty() && !state2.visual_features.empty() &&
+        state1.visual_features.size() == state2.visual_features.size()) {
         
-        for (size_t i = 0; i < min_size; ++i) {
-            cosine_sim += state1.visual_features[i] * state2.visual_features[i];
+        float dot_product = 0.0f;
+        float norm1 = 0.0f, norm2 = 0.0f;
+        
+        for (size_t i = 0; i < state1.visual_features.size(); ++i) {
+            dot_product += state1.visual_features[i] * state2.visual_features[i];
             norm1 += state1.visual_features[i] * state1.visual_features[i];
             norm2 += state2.visual_features[i] * state2.visual_features[i];
         }
         
-        if (norm1 > 0 && norm2 > 0) {
-            cosine_sim /= (std::sqrt(norm1) * std::sqrt(norm2));
-            similarity += visual_weight * cosine_sim;
+        if (norm1 > 0.0f && norm2 > 0.0f) {
+            float cosine_sim = dot_product / (std::sqrt(norm1) * std::sqrt(norm2));
+            similarity += visual_weight * std::max(0.0f, cosine_sim);
         }
     }
     weight_sum += visual_weight;
     
-    // Structural similarity (page elements)
-    float structural_weight = 0.3f;
-    if (!state1.page_elements.empty() && !state2.page_elements.empty()) {
-        size_t common_elements = 0;
-        for (const auto& elem1 : state1.page_elements) {
-            for (const auto& elem2 : state2.page_elements) {
-                if (elem1 == elem2) {
-                    common_elements++;
-                    break;
-                }
-            }
-        }
-        float structural_sim = static_cast<float>(common_elements) / 
-                             std::max(state1.page_elements.size(), state2.page_elements.size());
-        similarity += structural_weight * structural_sim;
-    }
-    weight_sum += structural_weight;
+    // Scroll position similarity
+    float scroll_weight = 0.2f;
+    float scroll_diff = std::abs(state1.scroll_position - state2.scroll_position);
+    float scroll_sim = std::max(0.0f, 1.0f - scroll_diff / 1000.0f); // Normalize by typical scroll range
+    similarity += scroll_weight * scroll_sim;
+    weight_sum += scroll_weight;
     
-    return weight_sum > 0 ? similarity / weight_sum : 0.0f;
+    return (weight_sum > 0.0f) ? similarity / weight_sum : 0.0f;
 }
 
-// ============================================================================
-// MEMORY SYSTEM HELPER CLASS
-// ============================================================================
-
-/**
- * @brief Memory system for the autonomous learning agent
- */
-/*
-// Duplicate MemorySystem class - commented out
-// Use the one from VisualInterface.h instead
-class MemorySystem {
-public:
-    // Episode storage and retrieval
-    std::vector<MemoryTrace> episodic_memory_;
-    std::map<std::string, std::vector<float>> semantic_memory_;
+float computeActionValue(const BrowsingAction& action, const BrowsingState& state) {
+    float value = action.expected_reward;
     
-    // Memory management
-    size_t max_episodes_;
-    float consolidation_threshold_;
+    // Bonus for high confidence actions
+    value += action.confidence * 0.2f;
     
-    MemorySystem(size_t max_episodes = 10000) 
-        : max_episodes_(max_episodes), consolidation_threshold_(0.7f) {}
-    
-    void storeEpisode(const MemoryTrace& trace) {
-        episodic_memory_.push_back(trace);
-        
-        // Maintain memory capacity
-        if (episodic_memory_.size() > max_episodes_) {
-            // Remove oldest memories with low importance
-            auto it = std::min_element(episodic_memory_.begin(), episodic_memory_.end(),
-                [](const MemoryTrace& a, const MemoryTrace& b) {
-                    return a.importance_weight < b.importance_weight;
-                });
-            if (it != episodic_memory_.end() && it->importance_weight < consolidation_threshold_) {
-                episodic_memory_.erase(it);
-            }
-        }
+    // Penalty for risky actions without clear benefit
+    if (action.type == ActionType::NAVIGATE && action.target_url.empty()) {
+        value -= 0.3f;
     }
     
-    std::vector<MemoryTrace> retrieveSimilarEpisodes(
-        const BrowsingState& current_state, size_t max_results = 10) {
-        std::vector<std::pair<float, MemoryTrace*>> similarities;
-        
-        // Extract features from current state for comparison
-        std::vector<float> current_features = extractStateFeatures(current_state);
-        
-        for (auto& episode : episodic_memory_) {
-            float similarity = computeCosineSimilarity(current_features, episode.state_vector);
-            similarities.emplace_back(similarity, &episode);
-        }
-        
-        // Sort by similarity and return top results
-        std::sort(similarities.begin(), similarities.end(),
-            [](const auto& a, const auto& b) { return a.first > b.first; });
-        
-        std::vector<MemoryTrace> results;
-        size_t count = std::min(max_results, similarities.size());
-        for (size_t i = 0; i < count; ++i) {
-            results.push_back(*similarities[i].second);
-        }
-        
-        return results;
+    return std::max(0.0f, std::min(1.0f, value));
+}
+
+float updateExplorationRate(float current_rate, float recent_performance, float target_performance) {
+    const float min_rate = 0.01f;
+    const float max_rate = 0.5f;
+    const float adaptation_speed = 0.01f;
+    
+    if (recent_performance < target_performance) {
+        // Increase exploration if performance is low
+        return std::min(max_rate, current_rate + adaptation_speed);
+    } else {
+        // Decrease exploration if performance is good
+        return std::max(min_rate, current_rate - adaptation_speed * 0.5f);
     }
-    
-private:
-    std::vector<float> extractStateFeatures(const BrowsingState& state) {
-        std::vector<float> features;
-        
-        // URL features (simple hash-based encoding)
-        features.push_back(static_cast<float>(std::hash<std::string>{}(state.current_url) % 1000) / 1000.0f);
-        
-        // Page element features
-        features.push_back(static_cast<float>(state.page_elements.size()) / 100.0f);
-        
-        // Scroll position feature
-        features.push_back(static_cast<float>(state.scroll_position) / 10000.0f);
-        
-        // Window dimensions
-        features.push_back(static_cast<float>(state.window_width) / 2000.0f);
-        features.push_back(static_cast<float>(state.window_height) / 2000.0f);
-        
-        // Loading state
-        features.push_back(state.page_loading ? 1.0f : 0.0f);
-        
-        return features;
-    }
-    
-    float computeCosineSimilarity(const std::vector<float>& a, const std::vector<float>& b) {
-        if (a.size() != b.size()) return 0.0f;
-        
-        float dot_product = 0.0f;
-        float norm_a = 0.0f;
-        float norm_b = 0.0f;
-        
-        for (size_t i = 0; i < a.size(); ++i) {
-            dot_product += a[i] * b[i];
-            norm_a += a[i] * a[i];
-            norm_b += b[i] * b[i];
-        }
-        
-        if (norm_a == 0.0f || norm_b == 0.0f) return 0.0f;
-        
-        return dot_product / (std::sqrt(norm_a) * std::sqrt(norm_b));
-    }
-};
-*/
-// End of commented out duplicate MemorySystem class
-
-// ============================================================================
-// AUTONOMOUS LEARNING AGENT IMPLEMENTATION
-// ============================================================================
-
-AutonomousLearningAgent::AutonomousLearningAgent(const NetworkConfig& config) 
-    : config_(config), autonomous_learning_active_(false), exploration_rate_(0.1f), learning_progress_(0.0f) {
-    // Initialize performance stats
-    performance_stats_ = PerformanceStats();
-    
-    // Reserve space for experiences
-    recent_experiences_.reserve(1000);
-}
-
-bool AutonomousLearningAgent::initialize() {
-    std::cout << "🧠 Initializing Autonomous Learning Agent..." << std::endl;
-    
-    // Initialize specialized modules
-    if (!initializeSpecializedModules()) {
-        std::cerr << "❌ Failed to initialize specialized modules" << std::endl;
-        return false;
-    }
-    
-    std::cout << "✅ Autonomous Learning Agent initialized successfully" << std::endl;
-    return true;
-}
-
-void AutonomousLearningAgent::update(float dt) {
-    // Update all specialized modules
-    for (auto& [name, module] : specialized_modules_) {
-        if (module && module->isActive()) {
-            module->update(dt);
-        }
-    }
-    
-    // Update learning progress
-    updateLearningProgress();
-}
-
-void AutonomousLearningAgent::shutdown() {
-    std::cout << "🔄 Shutting down Autonomous Learning Agent..." << std::endl;
-    
-    autonomous_learning_active_ = false;
-    specialized_modules_.clear();
-    
-    std::cout << "✅ Autonomous Learning Agent shutdown complete" << std::endl;
-}
-
-std::vector<float> AutonomousLearningAgent::collect_inter_module_signals(const std::string& target_module) {
-    // Simple implementation - collect signals from all modules for the target
-    std::vector<float> combined_signals;
-    
-    for (const auto& [name, module] : specialized_modules_) {
-        if (name != target_module && module && module->isActive()) {
-            // Get output from this module
-            auto outputs = module->getOutputs();
-            combined_signals.insert(combined_signals.end(), outputs.begin(), outputs.end());
-        }
-    }
-    
-    return combined_signals;
-}
-
-void AutonomousLearningAgent::distribute_module_output(const std::string& source_module, 
-                                                      const std::vector<float>& output) {
-    // Distribute output to all other active modules
-    for (auto& [name, module] : specialized_modules_) {
-        if (name != source_module && module && module->isActive()) {
-            // Send signal to this module
-            module->receiveInterModuleSignal(output, source_module);
-        }
-    }
-}
-
-std::vector<BrowsingAction> AutonomousLearningAgent::generate_action_candidates() {
-    std::vector<BrowsingAction> candidates;
-    
-    // Generate basic action candidates
-    BrowsingAction wait_action;
-    wait_action.type = ActionType::WAIT;
-    wait_action.confidence = 0.9f;
-    wait_action.expected_reward = 0.1f;
-    candidates.push_back(wait_action);
-    
-    BrowsingAction observe_action;
-    observe_action.type = ActionType::OBSERVE;
-    observe_action.confidence = 0.8f;
-    observe_action.expected_reward = 0.2f;
-    candidates.push_back(observe_action);
-    
-    BrowsingAction scroll_action;
-    scroll_action.type = ActionType::SCROLL;
-    scroll_action.scroll_amount = 100;
-    scroll_action.confidence = 0.7f;
-    scroll_action.expected_reward = 0.3f;
-    candidates.push_back(scroll_action);
-    
-    return candidates;
-}
-
-BrowsingAction AutonomousLearningAgent::selectBestAction(const std::vector<BrowsingAction>& candidates) {
-    if (candidates.empty()) {
-        // Return default wait action
-        BrowsingAction default_action;
-        default_action.type = ActionType::WAIT;
-        return default_action;
-    }
-    
-    // Simple selection based on expected reward and confidence
-    auto best_it = std::max_element(candidates.begin(), candidates.end(),
-        [](const BrowsingAction& a, const BrowsingAction& b) {
-            return (a.expected_reward * a.confidence) < (b.expected_reward * b.confidence);
-        });
-    
-    return *best_it;
-}
-
-void AutonomousLearningAgent::startAutonomousLearning() {
-    autonomous_learning_active_ = true;
-    std::cout << "🚀 Autonomous learning started" << std::endl;
-}
-
-void AutonomousLearningAgent::stopAutonomousLearning() {
-    autonomous_learning_active_ = false;
-    std::cout << "⏹️ Autonomous learning stopped" << std::endl;
-}
-
-float AutonomousLearningAgent::autonomousLearningStep(float dt) {
-    if (!autonomous_learning_active_) {
-        return learning_progress_;
-    }
-    
-    // Update modules
-    update(dt);
-    
-    // Increment action count
-    performance_stats_.total_actions_taken += 1.0f;
-    
-    // Update exploration rate based on performance
-    if (performance_stats_.total_actions_taken > 0) {
-        float success_rate = performance_stats_.successful_actions / performance_stats_.total_actions_taken;
-        if (success_rate < 0.5f) {
-            exploration_rate_ = std::min(0.3f, exploration_rate_ + 0.01f);
-        } else {
-            exploration_rate_ = std::max(0.05f, exploration_rate_ - 0.005f);
-        }
-    }
-    
-    // Update learning progress
-    learning_progress_ = std::min(1.0f, learning_progress_ + 0.001f);
-    
-    return learning_progress_;
-}
-
-void AutonomousLearningAgent::addLearningGoal(std::unique_ptr<AutonomousGoal> goal) {
-    learning_goals_.push_back(std::move(goal));
-}
-
-void AutonomousLearningAgent::setEnvironmentSensor(std::function<BrowsingState()> sensor) {
-    environment_sensor_ = sensor;
-}
-
-void AutonomousLearningAgent::setActionExecutor(std::function<float(const BrowsingAction&)> executor) {
-    action_executor_ = executor;
-}
-
-std::vector<float> AutonomousLearningAgent::processEnvironmentalState(const BrowsingState& state) {
-    std::vector<float> processed_state;
-    
-    // Basic state processing
-    processed_state.push_back(static_cast<float>(state.scroll_position) / 10000.0f);
-    processed_state.push_back(static_cast<float>(state.window_width) / 2000.0f);
-    processed_state.push_back(static_cast<float>(state.window_height) / 2000.0f);
-    processed_state.push_back(state.page_loading ? 1.0f : 0.0f);
-    processed_state.push_back(static_cast<float>(state.page_elements.size()) / 100.0f);
-    
-    return processed_state;
-}
-
-PerformanceStats AutonomousLearningAgent::getPerformanceMetrics() const {
-    return performance_stats_;
-}
-
-std::map<std::string, float> AutonomousLearningAgent::getNetworkStatistics() const {
-    std::map<std::string, float> stats;
-    
-    // Count total neurons and synapses across all modules
-    float total_neurons = 0.0f;
-    float total_synapses = 0.0f;
-    float total_activity = 0.0f;
-    
-    for (const auto& [name, module] : specialized_modules_) {
-        if (module) {
-            auto module_metrics = module->getPerformanceMetrics();
-            total_neurons += module_metrics["neuron_count"];
-            total_activity += module_metrics["average_activity"];
-        }
-    }
-    
-    stats["neuron_count"] = total_neurons;
-    stats["synapse_count"] = total_synapses;
-    stats["average_activity"] = total_activity / specialized_modules_.size();
-    stats["module_count"] = static_cast<float>(specialized_modules_.size());
-    
-    return stats;
-}
-
-std::map<std::string, float> AutonomousLearningAgent::getGoalCompetencies() const {
-    std::map<std::string, float> competencies;
-    
-    for (const auto& goal : learning_goals_) {
-        // Simple competency calculation
-        float competency = std::min(1.0f, learning_progress_ * (goal->priority / 10.0f));
-        competencies[goal->description] = competency;
-    }
-    
-    return competencies;
-}
-
-float AutonomousLearningAgent::getExplorationEffectiveness() const {
-    return exploration_rate_;
-}
-
-std::string AutonomousLearningAgent::generateLearningReport() const {
-    std::ostringstream report;
-    
-    report << "🧠 Autonomous Learning Agent Report\n";
-    report << "===================================\n\n";
-    
-    // Performance metrics
-    report << "📊 Performance Metrics:\n";
-    report << "  Total Actions: " << performance_stats_.total_actions_taken << "\n";
-    report << "  Successful Actions: " << performance_stats_.successful_actions << "\n";
-    report << "  Success Rate: " << std::fixed << std::setprecision(2) 
-           << (performance_stats_.total_actions_taken > 0 ? 
-               performance_stats_.successful_actions / performance_stats_.total_actions_taken * 100 : 0) << "%\n";
-    report << "  Average Reward: " << performance_stats_.average_reward << "\n";
-    report << "  Exploration Rate: " << exploration_rate_ << "\n\n";
-    
-    // Network statistics
-    auto network_stats = getNetworkStatistics();
-    report << "🧮 Network Statistics:\n";
-    report << "  Modules: " << network_stats["module_count"] << "\n";
-    report << "  Neurons: " << network_stats["neuron_count"] << "\n";
-    report << "  Average Activity: " << network_stats["average_activity"] << "\n\n";
-    
-    // Goal competencies
-    auto competencies = getGoalCompetencies();
-    report << "🎯 Goal Competencies:\n";
-    for (const auto& [goal, competency] : competencies) {
-        report << "  " << goal << ": " << std::setprecision(1) << competency * 100 << "%\n";
-    }
-    
-    report << "\n📈 Overall Learning Progress: " << std::setprecision(1) << learning_progress_ * 100 << "%\n";
-    
-    return report.str();
-}
-
-void AutonomousLearningAgent::storeExperience(const BrowsingState& state, const BrowsingAction& action, float reward) {
-    MemoryTrace trace;
-    trace.state_vector = processEnvironmentalState(state);
-    trace.reward_received = reward;
-    trace.importance_weight = std::abs(reward) + 0.1f; // Higher importance for high-magnitude rewards
-    trace.timestamp = std::chrono::steady_clock::now();
-    
-    recent_experiences_.push_back(trace);
-    
-    // Maintain experience buffer size
-    if (recent_experiences_.size() > 1000) {
-        recent_experiences_.erase(recent_experiences_.begin());
-    }
-}
-
-bool AutonomousLearningAgent::initializeSpecializedModules() {
-    try {
-        // Create basic modules for demonstration
-        auto visual_module = std::make_shared<EnhancedNeuralModule>("visual_cortex", config_);
-        auto memory_module = std::make_shared<EnhancedNeuralModule>("memory_system", config_);
-        auto decision_module = std::make_shared<EnhancedNeuralModule>("decision_maker", config_);
-        
-        if (!visual_module->initialize() || !memory_module->initialize() || !decision_module->initialize()) {
-            return false;
-        }
-        
-        specialized_modules_["visual_cortex"] = visual_module;
-        specialized_modules_["memory_system"] = memory_module;
-        specialized_modules_["decision_maker"] = decision_module;
-        
-        std::cout << "✅ Initialized " << specialized_modules_.size() << " specialized modules" << std::endl;
-        return true;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "❌ Exception during module initialization: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-void AutonomousLearningAgent::updateLearningProgress() {
-    // Simple learning progress calculation based on recent performance
-    if (performance_stats_.total_actions_taken > 10) {
-        float recent_success_rate = performance_stats_.successful_actions / performance_stats_.total_actions_taken;
-        learning_progress_ = std::max(learning_progress_, recent_success_rate);
-    }
-    
-    // Gradual progress increase
-    learning_progress_ = std::min(1.0f, learning_progress_ + 0.0001f);
 }

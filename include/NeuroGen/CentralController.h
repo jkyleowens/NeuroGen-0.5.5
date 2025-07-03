@@ -1,12 +1,11 @@
 // ============================================================================
-// CENTRAL CONTROLLER HEADER
+// CENTRAL CONTROLLER HEADER - FIXED
 // File: include/NeuroGen/CentralController.h
 // ============================================================================
 
 #pragma once
 
 #include "NeuroGen/ScreenElement.h"
-#include "NeuroGen/VisualInterface.h"
 #include <memory>
 #include <vector>
 #include <string>
@@ -15,6 +14,7 @@
 class ControllerModule;
 class NeuralModule; 
 class AutonomousLearningAgent;
+class VisualInterface;
 class CognitiveModule;
 class MotorModule;
 

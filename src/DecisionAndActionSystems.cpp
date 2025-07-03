@@ -187,7 +187,14 @@ void AutonomousLearningAgent::process_visual_input() {
     // Send to visual cortex for processing
     if (modules_.count("visual_cortex")) {
         float visual_attention = attention_controller_->get_attention_weight("visual_cortex");
-        auto visual_output = modules_["visual_cortex"]->process(visual_features, visual_attention);
+        
+        // Apply attention to input before processing
+        std::vector<float> attended_visual_features = visual_features;
+        for (size_t i = 0; i < attended_visual_features.size(); ++i) {
+            attended_visual_features[i] *= visual_attention;
+        }
+        
+        auto visual_output = modules_["visual_cortex"]->process(attended_visual_features);
         
         // Store visual features in environmental context
         size_t context_visual_size = std::min(visual_output.size(), environmental_context_.size() / 2);
@@ -222,7 +229,14 @@ void AutonomousLearningAgent::update_working_memory() {
     
     // Process through working memory module
     float wm_attention = attention_controller_->get_attention_weight("working_memory");
-    auto wm_output = modules_["working_memory"]->process(working_memory_input, wm_attention);
+    
+    // Apply attention to input before processing
+    std::vector<float> attended_wm_input = working_memory_input;
+    for (size_t i = 0; i < attended_wm_input.size(); ++i) {
+        attended_wm_input[i] *= wm_attention;
+    }
+    
+    auto wm_output = modules_["working_memory"]->process(attended_wm_input);
     
     // Update memory system
     memory_system_->update_working_memory(wm_output);
@@ -259,11 +273,8 @@ void AutonomousLearningAgent::update_attention_weights() {
     // Update attention controller
     attention_controller_->update_context(attention_context);
     
-    // Apply attention to learning system
-    if (learning_system_) {
-        auto attention_weights = attention_controller_->get_all_attention_weights();
-        learning_system_->update_attention_learning(attention_weights, 0.05f); // 50ms timestep
-    }
+    // Note: Learning system removed to avoid CUDA dependencies
+    // TODO: Re-implement attention learning without CUDA when needed
 }
 
 void AutonomousLearningAgent::coordinate_modules() {
@@ -277,8 +288,13 @@ void AutonomousLearningAgent::coordinate_modules() {
         // Collect input from connected modules
         std::vector<float> module_input = collect_inter_module_signals(module_name);
         
+        // Apply attention weighting to input
+        for (size_t i = 0; i < module_input.size(); ++i) {
+            module_input[i] *= attention_weight;
+        }
+        
         // Process the module
-        auto module_output = module->process(module_input, attention_weight);
+        auto module_output = module->process(module_input);
         
         // Send output to connected modules
         distribute_module_output(module_name, module_output);
@@ -292,9 +308,10 @@ std::vector<float> AutonomousLearningAgent::collect_inter_module_signals(const s
     // Collect signals from modules connected to the target
     for (const auto& [source_module, module] : modules_) {
         if (source_module != target_module) {
-            auto signal = module->get_output_for_module(target_module);
-            for (float val : signal) {
-                combined_input.push_back(val);
+            // Use general get_output method instead of specific get_output_for_module
+            auto signal = module->get_output();
+            if (!signal.empty()) {
+                combined_input.insert(combined_input.end(), signal.begin(), signal.end());
             }
         }
     }
@@ -324,7 +341,7 @@ void AutonomousLearningAgent::distribute_module_output(const std::string& source
     // Send output to all connected modules
     for (auto& [target_module, module] : modules_) {
         if (target_module != source_module) {
-            module->receive_signal(source_module, output);
+            module->receive_signal(output, source_module, "default");
         }
     }
     
@@ -349,7 +366,8 @@ void AutonomousLearningAgent::make_decision() {
     // Step 1: Get current situation assessment from prefrontal cortex
     if (!modules_.count("prefrontal_cortex")) return;
     
-    auto prefrontal_output = modules_["prefrontal_cortex"]->get_internal_state();
+    // Use get_output instead of get_internal_state
+    auto prefrontal_output = modules_["prefrontal_cortex"]->get_output();
     
     // Step 2: Retrieve relevant memories
     std::vector<float> current_state_summary;
@@ -383,12 +401,15 @@ void AutonomousLearningAgent::make_decision() {
     }
 }
 
-std::vector<AutonomousLearningAgent::BrowsingAction> AutonomousLearningAgent::generate_action_candidates() {
+std::vector<BrowsingAction> AutonomousLearningAgent::generate_action_candidates() {
     std::vector<BrowsingAction> candidates;
     
     if (!visual_interface_) {
         // Generate basic movement actions as fallback
-        candidates.push_back({BrowsingAction::WAIT, 0, 0, "", "", 0.8f});
+        BrowsingAction wait_action;
+        wait_action.type = ActionType::WAIT;
+        wait_action.confidence = 0.8f;
+        candidates.push_back(wait_action);
         return candidates;
     }
     
@@ -399,10 +420,10 @@ std::vector<AutonomousLearningAgent::BrowsingAction> AutonomousLearningAgent::ge
     for (const auto& element : screen_elements) {
         if (element.is_clickable && element.confidence > 0.5f) {
             BrowsingAction action;
-            action.type = BrowsingAction::CLICK;
-            action.x = element.x + element.width / 2;
-            action.y = element.y + element.height / 2;
-            action.text = element.text;
+            action.type = ActionType::CLICK;
+            action.x_coordinate = element.x + element.width / 2;
+            action.y_coordinate = element.y + element.height / 2;
+            action.text_content = element.text;
             action.confidence = element.confidence * 0.8f; // Reduce confidence slightly
             
             candidates.push_back(action);
@@ -418,18 +439,18 @@ std::vector<AutonomousLearningAgent::BrowsingAction> AutonomousLearningAgent::ge
         std::uniform_int_distribution<int> y_dist(100, 1000);
         
         BrowsingAction explore_action;
-        explore_action.type = BrowsingAction::CLICK;
-        explore_action.x = x_dist(gen);
-        explore_action.y = y_dist(gen);
+        explore_action.type = ActionType::CLICK;
+        explore_action.x_coordinate = x_dist(gen);
+        explore_action.y_coordinate = y_dist(gen);
         explore_action.confidence = exploration_rate_ * 0.5f;
         
         candidates.push_back(explore_action);
         
         // Scroll action
         BrowsingAction scroll_action;
-        scroll_action.type = BrowsingAction::SCROLL;
-        scroll_action.x = 960; // Screen center
-        scroll_action.y = 540;
+        scroll_action.type = ActionType::SCROLL;
+        scroll_action.x_coordinate = 960; // Screen center
+        scroll_action.y_coordinate = 540;
         scroll_action.confidence = exploration_rate_ * 0.3f;
         
         candidates.push_back(scroll_action);
@@ -437,7 +458,7 @@ std::vector<AutonomousLearningAgent::BrowsingAction> AutonomousLearningAgent::ge
     
     // Wait action (always available)
     BrowsingAction wait_action;
-    wait_action.type = BrowsingAction::WAIT;
+    wait_action.type = ActionType::WAIT;
     wait_action.confidence = 0.6f;
     
     candidates.push_back(wait_action);
@@ -457,20 +478,23 @@ std::vector<float> AutonomousLearningAgent::evaluate_action_candidates(
         
         // Base value from action type
         switch (action.type) {
-            case BrowsingAction::CLICK:
+            case ActionType::CLICK:
                 value = 0.6f; // Generally positive
                 break;
-            case BrowsingAction::SCROLL:
+            case ActionType::SCROLL:
                 value = 0.4f; // Moderate value
                 break;
-            case BrowsingAction::TYPE:
+            case ActionType::TYPE:
                 value = 0.7f; // High value for input
                 break;
-            case BrowsingAction::NAVIGATE:
+            case ActionType::NAVIGATE:
                 value = 0.5f; // Navigation is risky but potentially valuable
                 break;
-            case BrowsingAction::WAIT:
+            case ActionType::WAIT:
                 value = 0.2f; // Low value, but safe
+                break;
+            default:
+                value = 0.1f; // Unknown action type
                 break;
         }
         
@@ -492,7 +516,7 @@ std::vector<float> AutonomousLearningAgent::evaluate_action_candidates(
         }
         
         // Add exploration bonus
-        if (action.type != BrowsingAction::WAIT) {
+        if (action.type != ActionType::WAIT) {
             value += exploration_rate_ * 0.2f;
         }
         
@@ -502,11 +526,14 @@ std::vector<float> AutonomousLearningAgent::evaluate_action_candidates(
     return values;
 }
 
-AutonomousLearningAgent::BrowsingAction AutonomousLearningAgent::select_action_with_exploration(
+BrowsingAction AutonomousLearningAgent::select_action_with_exploration(
     const std::vector<BrowsingAction>& candidates, const std::vector<float>& values) {
     
     if (candidates.empty()) {
-        return {BrowsingAction::WAIT, 0, 0, "", "", 0.5f};
+        BrowsingAction default_action;
+        default_action.type = ActionType::WAIT;
+        default_action.confidence = 0.5f;
+        return default_action;
     }
     
     // Softmax action selection with temperature
@@ -549,20 +576,31 @@ AutonomousLearningAgent::BrowsingAction AutonomousLearningAgent::select_action_w
 void AutonomousLearningAgent::execute_action() {
     // Simulate action execution (in a real system, this would interface with OS)
     switch (selected_action_.type) {
-        case BrowsingAction::CLICK:
+        case ActionType::CLICK:
             execute_click_action();
             break;
-        case BrowsingAction::SCROLL:
+        case ActionType::SCROLL:
             execute_scroll_action();
             break;
-        case BrowsingAction::TYPE:
+        case ActionType::TYPE:
             execute_type_action();
             break;
-        case BrowsingAction::NAVIGATE:
+        case ActionType::NAVIGATE:
             execute_navigate_action();
             break;
-        case BrowsingAction::WAIT:
+        case ActionType::WAIT:
             execute_wait_action();
+            break;
+        case ActionType::OBSERVE:
+            execute_wait_action(); // Treat observe as wait for now
+            break;
+        case ActionType::BACK:
+        case ActionType::FORWARD:
+        case ActionType::REFRESH:
+            execute_navigate_action(); // Treat navigation actions similarly
+            break;
+        default:
+            execute_wait_action(); // Default fallback
             break;
     }
     
@@ -573,12 +611,18 @@ void AutonomousLearningAgent::execute_action() {
     if (modules_.count("motor_cortex")) {
         std::vector<float> motor_command = convert_action_to_motor_command(selected_action_);
         float motor_attention = attention_controller_->get_attention_weight("motor_cortex");
-        modules_["motor_cortex"]->process(motor_command, motor_attention);
+        
+        // Apply attention weighting to motor command
+        for (size_t i = 0; i < motor_command.size(); ++i) {
+            motor_command[i] *= motor_attention;
+        }
+        
+        modules_["motor_cortex"]->process(motor_command);
     }
 }
 
 void AutonomousLearningAgent::execute_click_action() {
-    std::cout << "Executing CLICK at (" << selected_action_.x << ", " << selected_action_.y 
+    std::cout << "Executing CLICK at (" << selected_action_.x_coordinate << ", " << selected_action_.y_coordinate 
               << ") with confidence " << selected_action_.confidence << std::endl;
     
     // In a real implementation, this would use platform-specific APIs:
@@ -598,7 +642,7 @@ void AutonomousLearningAgent::execute_click_action() {
 }
 
 void AutonomousLearningAgent::execute_scroll_action() {
-    std::cout << "Executing SCROLL at (" << selected_action_.x << ", " << selected_action_.y 
+    std::cout << "Executing SCROLL at (" << selected_action_.x_coordinate << ", " << selected_action_.y_coordinate 
               << ") with confidence " << selected_action_.confidence << std::endl;
     
     // Simulate scroll execution
@@ -612,26 +656,26 @@ void AutonomousLearningAgent::execute_scroll_action() {
 }
 
 void AutonomousLearningAgent::execute_type_action() {
-    std::cout << "Executing TYPE: '" << selected_action_.text 
+    std::cout << "Executing TYPE: '" << selected_action_.text_content 
               << "' with confidence " << selected_action_.confidence << std::endl;
     
     // Simulate typing
-    bool success = !selected_action_.text.empty() && selected_action_.confidence > 0.4f;
+    bool success = !selected_action_.text_content.empty() && selected_action_.confidence > 0.4f;
     if (success) {
         metrics_.successful_actions++;
         global_reward_signal_ += 0.15f; // Higher reward for meaningful input
     }
     
     // Simulate typing delay
-    std::this_thread::sleep_for(std::chrono::milliseconds(selected_action_.text.length() * 50));
+    std::this_thread::sleep_for(std::chrono::milliseconds(selected_action_.text_content.length() * 50));
 }
 
 void AutonomousLearningAgent::execute_navigate_action() {
-    std::cout << "Executing NAVIGATE to: '" << selected_action_.url 
+    std::cout << "Executing NAVIGATE to: '" << selected_action_.target_url 
               << "' with confidence " << selected_action_.confidence << std::endl;
     
     // Simulate navigation
-    bool success = !selected_action_.url.empty() && selected_action_.confidence > 0.6f;
+    bool success = !selected_action_.target_url.empty() && selected_action_.confidence > 0.6f;
     if (success) {
         metrics_.successful_actions++;
         global_reward_signal_ += 0.2f; // High reward for successful navigation
@@ -660,8 +704,8 @@ std::vector<float> AutonomousLearningAgent::convert_action_to_motor_command(cons
     
     // Encode spatial coordinates (normalized)
     if (motor_command.size() > 10) {
-        motor_command[5] = action.x / 1920.0f; // Normalize x coordinate
-        motor_command[6] = action.y / 1080.0f; // Normalize y coordinate
+        motor_command[5] = action.x_coordinate / 1920.0f; // Normalize x coordinate
+        motor_command[6] = action.y_coordinate / 1080.0f; // Normalize y coordinate
         motor_command[7] = action.confidence;   // Action confidence
     }
     
@@ -692,15 +736,8 @@ void AutonomousLearningAgent::learn_from_feedback() {
     memory_system_->store_episode(current_state, action_vector, action_reward, 
                                  selected_action_.confidence);
     
-    // Update learning system
-    if (learning_system_) {
-        learning_system_->update_learning(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count(),
-            50.0f, // 50ms timestep
-            action_reward
-        );
-    }
+    // Note: Learning system updates removed to avoid CUDA dependencies
+    // TODO: Re-implement learning updates without CUDA when needed
     
     // Update performance metrics
     metrics_.average_reward = metrics_.average_reward * 0.99f + action_reward * 0.01f;
@@ -727,20 +764,31 @@ float AutonomousLearningAgent::compute_action_reward() {
     
     // Reward based on action type effectiveness
     switch (selected_action_.type) {
-        case BrowsingAction::CLICK:
+        case ActionType::CLICK:
             reward += selected_action_.confidence * 0.1f;
             break;
-        case BrowsingAction::TYPE:
+        case ActionType::TYPE:
             reward += selected_action_.confidence * 0.15f;
             break;
-        case BrowsingAction::NAVIGATE:
+        case ActionType::NAVIGATE:
             reward += selected_action_.confidence * 0.2f;
             break;
-        case BrowsingAction::SCROLL:
+        case ActionType::SCROLL:
             reward += selected_action_.confidence * 0.05f;
             break;
-        case BrowsingAction::WAIT:
+        case ActionType::WAIT:
             reward += 0.01f; // Minimal reward for waiting
+            break;
+        case ActionType::OBSERVE:
+            reward += 0.02f; // Small reward for observation
+            break;
+        case ActionType::BACK:
+        case ActionType::FORWARD:
+        case ActionType::REFRESH:
+            reward += selected_action_.confidence * 0.1f; // Navigation rewards
+            break;
+        default:
+            reward += 0.01f; // Minimal default reward
             break;
     }
     
@@ -749,11 +797,8 @@ float AutonomousLearningAgent::compute_action_reward() {
         reward -= 0.02f;
     }
     
-    // Reward for learning progress
-    if (learning_system_) {
-        float learning_progress = learning_system_->get_learning_progress();
-        reward += learning_progress * 0.05f;
-    }
+    // Note: Learning progress reward removed due to learning_system_ removal
+    // TODO: Re-implement learning progress tracking without CUDA dependencies
     
     return std::max(-0.5f, std::min(reward, 0.5f)); // Bound reward
 }
@@ -774,33 +819,36 @@ void AutonomousLearningAgent::adapt_exploration_rate() {
 }
 
 void AutonomousLearningAgent::apply_modular_learning(float reward) {
-    if (!learning_system_) return;
+    // Note: learning_system_ was removed to avoid CUDA dependencies
+    // TODO: Re-implement modular learning without CUDA when needed
     
     // Apply learning to each module based on its contribution to the action
     std::vector<std::string> relevant_modules;
     
     switch (selected_action_.type) {
-        case BrowsingAction::CLICK:
-        case BrowsingAction::SCROLL:
+        case ActionType::CLICK:
+        case ActionType::SCROLL:
             relevant_modules = {"visual_cortex", "motor_cortex", "attention_system"};
             break;
-        case BrowsingAction::TYPE:
+        case ActionType::TYPE:
             relevant_modules = {"prefrontal_cortex", "working_memory", "motor_cortex"};
             break;
-        case BrowsingAction::NAVIGATE:
+        case ActionType::NAVIGATE:
+        case ActionType::BACK:
+        case ActionType::FORWARD:
+        case ActionType::REFRESH:
             relevant_modules = {"prefrontal_cortex", "hippocampus", "motor_cortex"};
             break;
-        case BrowsingAction::WAIT:
+        case ActionType::WAIT:
+        case ActionType::OBSERVE:
             relevant_modules = {"prefrontal_cortex", "attention_system"};
+            break;
+        default:
+            relevant_modules = {"prefrontal_cortex"};
             break;
     }
     
-    // Apply module-specific learning
-    for (size_t i = 0; i < relevant_modules.size(); ++i) {
-        if (i < modules_.size()) {
-            learning_system_->update_modular_learning(i, reward, 0.05f);
-        }
-    }
+    // Note: Module-specific learning would be applied here if learning_system_ was available
 }
 
 void AutonomousLearningAgent::update_global_state() {
@@ -852,21 +900,13 @@ void AutonomousLearningAgent::consolidate_learning() {
     std::cout << "Learning consolidation: Integrating recent experiences..." << std::endl;
     
     // Consolidate memories
-    memory_system_->consolidate_memories();
+    memory_system_->consolidateMemories();
     
     // Transfer learning between modules
     transfer_knowledge_between_modules();
     
-    // Update long-term learning parameters
-    if (learning_system_) {
-        // Adjust learning rates based on performance
-        float performance = static_cast<float>(metrics_.successful_actions) / 
-                          std::max(metrics_.total_actions, 1);
-        
-        float lr_adjustment = (performance > 0.6f) ? 0.95f : 1.05f;
-        learning_system_->configure_learning_parameters(
-            learning_rate_ * lr_adjustment, 0.995f, 1.0f);
-    }
+    // Note: Learning system parameter updates removed to avoid CUDA dependencies
+    // TODO: Re-implement learning parameter adjustment without CUDA when needed
     
     std::cout << "Learning consolidation complete." << std::endl;
 }
@@ -876,36 +916,17 @@ void AutonomousLearningAgent::transfer_knowledge_between_modules() {
     
     // Visual-Prefrontal transfer (visual attention patterns)
     if (modules_.count("visual_cortex") && modules_.count("prefrontal_cortex")) {
-        auto visual_state = modules_["visual_cortex"]->get_internal_state();
+        auto visual_state = modules_["visual_cortex"]->get_output();
         std::vector<float> visual_patterns(visual_state.begin(), 
                                          visual_state.begin() + std::min(visual_state.size(), size_t(128)));
-        modules_["prefrontal_cortex"]->receive_signal("visual_transfer", visual_patterns);
+        modules_["prefrontal_cortex"]->receive_signal(visual_patterns, "visual_cortex", "default");
     }
     
     // Hippocampus-Prefrontal transfer (memory-guided decisions)
     if (modules_.count("hippocampus") && modules_.count("prefrontal_cortex")) {
-        auto memory_state = modules_["hippocampus"]->get_internal_state();
+        auto memory_state = modules_["hippocampus"]->get_output();
         std::vector<float> memory_patterns(memory_state.begin(),
                                          memory_state.begin() + std::min(memory_state.size(), size_t(256)));
-        modules_["prefrontal_cortex"]->receive_signal("memory_transfer", memory_patterns);
+        modules_["prefrontal_cortex"]->receive_signal(memory_patterns, "hippocampus", "default");
     }
-}
-
-void AutonomousLearningAgent::stop_autonomous_operation() {
-    if (!is_running_) return;
-    
-    std::cout << "\nStopping autonomous operation..." << std::endl;
-    is_running_ = false;
-    
-    // Stop visual capture
-    if (visual_interface_) {
-        visual_interface_->stop_capture();
-    }
-    
-    // Wait for main loop to finish
-    if (main_loop_thread_.joinable()) {
-        main_loop_thread_.join();
-    }
-    
-    std::cout << "✓ Autonomous operation stopped successfully" << std::endl;
 }

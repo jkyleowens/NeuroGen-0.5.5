@@ -1,7 +1,7 @@
 # Compiler and Linker
-CXX := clang++
+CXX := g++
 NVCC := /opt/cuda/bin/nvcc
-LINK := clang++
+LINK := g++
 
 # Directories
 SRC_DIR := src
