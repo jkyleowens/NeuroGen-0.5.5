@@ -17,13 +17,6 @@
 #include <opencv2/highgui.hpp>
 #endif
 
-// Forward declaration for specialized module
-class SpecializedModule {
-public:
-    virtual void process(const std::vector<float>& input, float attention_weight) = 0;
-    virtual ~SpecializedModule() = default;
-};
-
 // ============================================================================
 // VISUAL INTERFACE IMPLEMENTATION
 // ============================================================================
@@ -35,7 +28,12 @@ VisualInterface::VisualInterface(int width, int height)
     real_screen_capture_ = std::make_unique<RealScreenCapture>();
     gui_detector_ = std::make_unique<GUIElementDetector>();
     ocr_processor_ = std::make_unique<OCRProcessor>();
-    feature_extractor_ = std::make_unique<VisualFeatureExtractor>();
+    NetworkConfig cfg;
+    cfg.input_size = width * height;
+    cfg.output_size = 128;
+    cfg.num_neurons = 128;
+    visual_processor_ = std::make_unique<BioVisualProcessor>("bio_visual_processor", cfg, 128);
+    visual_processor_->initialize();
     
     std::cout << "Visual Interface: Initializing visual processing system..." << std::endl;
     std::cout << "  - Target resolution: " << width << "x" << height << std::endl;
@@ -95,8 +93,8 @@ std::vector<float> VisualInterface::capture_and_process_screen() {
         preprocess_image();
     }
 
-    if (feature_extractor_) {
-        visual_features_ = feature_extractor_->extractFeatures(current_screen_);
+    if (visual_processor_) {
+        visual_features_ = visual_processor_->processPixels(current_screen_);
     }
 
     if (gui_detector_) {
@@ -244,7 +242,7 @@ void VisualInterface::send_to_visual_cortex(SpecializedModule* visual_cortex) {
     }
     
     // Process through visual cortex
-    visual_cortex->process(attended_features, 1.0f);
+    visual_cortex->process(attended_features);
 }
 
 ScreenElement VisualInterface::find_element_by_type(const std::string& type) const {
