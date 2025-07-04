@@ -5,6 +5,7 @@
 
 #include <NeuroGen/SpecializedModule.h>
 #include <NeuroGen/AutonomousLearningAgent.h>
+#include <NeuroGen/SafetyManager.h>
 #include <iostream>
 #include <algorithm>
 #include <random>
@@ -622,52 +623,60 @@ void AutonomousLearningAgent::execute_action() {
 }
 
 void AutonomousLearningAgent::execute_click_action() {
-    std::cout << "Executing CLICK at (" << selected_action_.x_coordinate << ", " << selected_action_.y_coordinate 
+    std::cout << "Executing CLICK at (" << selected_action_.x_coordinate << ", " << selected_action_.y_coordinate
               << ") with confidence " << selected_action_.confidence << std::endl;
-    
-    // In a real implementation, this would use platform-specific APIs:
-    // - Windows: SetCursorPos() + mouse_event()
-    // - Linux: XTestFakeButtonEvent()
-    // - macOS: CGEventCreateMouseEvent()
-    
-    // Simulate click success based on confidence
-    bool success = selected_action_.confidence > 0.5f;
+
+    if (!SafetyManager::getInstance().isActionSafe(selected_action_)) {
+        std::cout << "Action blocked by safety manager" << std::endl;
+        return;
+    }
+
+    bool success = false;
+    if (input_controller_) {
+        success = input_controller_->clickMouse(selected_action_.x_coordinate, selected_action_.y_coordinate);
+    }
     if (success) {
         metrics_.successful_actions++;
-        global_reward_signal_ += 0.1f; // Small positive reward for successful clicks
+        global_reward_signal_ += 0.1f;
     }
-    
-    // Add slight delay for realism
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    SafetyManager::getInstance().recordAction(selected_action_);
 }
 
 void AutonomousLearningAgent::execute_scroll_action() {
     std::cout << "Executing SCROLL at (" << selected_action_.x_coordinate << ", " << selected_action_.y_coordinate 
               << ") with confidence " << selected_action_.confidence << std::endl;
     
-    // Simulate scroll execution
-    bool success = selected_action_.confidence > 0.3f;
+    if (!SafetyManager::getInstance().isActionSafe(selected_action_)) {
+        std::cout << "Action blocked by safety manager" << std::endl;
+        return;
+    }
+
+    bool success = false;
+    if (input_controller_) {
+        success = input_controller_->scrollMouse(selected_action_.x_coordinate,
+                                                 selected_action_.y_coordinate,
+                                                 selected_action_.scroll_amount);
+    }
     if (success) {
         metrics_.successful_actions++;
-        global_reward_signal_ += 0.05f; // Small reward for exploration
+        global_reward_signal_ += 0.05f;
     }
-    
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    SafetyManager::getInstance().recordAction(selected_action_);
 }
 
 void AutonomousLearningAgent::execute_type_action() {
-    std::cout << "Executing TYPE: '" << selected_action_.text_content 
+    std::cout << "Executing TYPE: '" << selected_action_.text_content
               << "' with confidence " << selected_action_.confidence << std::endl;
-    
-    // Simulate typing
-    bool success = !selected_action_.text_content.empty() && selected_action_.confidence > 0.4f;
+
+    bool success = false;
+    if (input_controller_) {
+        success = input_controller_->typeText(selected_action_.text_content);
+    }
     if (success) {
         metrics_.successful_actions++;
-        global_reward_signal_ += 0.15f; // Higher reward for meaningful input
+        global_reward_signal_ += 0.15f;
     }
-    
-    // Simulate typing delay
-    std::this_thread::sleep_for(std::chrono::milliseconds(selected_action_.text_content.length() * 50));
+    SafetyManager::getInstance().recordAction(selected_action_);
 }
 
 void AutonomousLearningAgent::execute_navigate_action() {

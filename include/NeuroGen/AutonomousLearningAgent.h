@@ -13,6 +13,10 @@
 #include "NeuroGen/VisualInterface.h"
 #include "NeuroGen/SpecializedModule.h"
 #include "NeuroGen/BrainModuleArchitecture.h"
+#include "NeuroGen/RealScreenCapture.h"
+#include "NeuroGen/InputController.h"
+#include "NeuroGen/OCRProcessor.h"
+#include "NeuroGen/GUIElementDetector.h"
 #include <iostream>
 #include <algorithm>
 #include <cmath>
@@ -401,6 +405,10 @@ private:
     std::unique_ptr<VisualInterface> visual_interface_;
     std::unique_ptr<AttentionController> attention_controller_;
     std::unique_ptr<BrainModuleArchitecture> brain_architecture_;
+    std::unique_ptr<RealScreenCapture> real_screen_capture_;
+    std::unique_ptr<InputController> input_controller_;
+    std::unique_ptr<OCRProcessor> ocr_processor_;
+    std::unique_ptr<GUIElementDetector> gui_detector_;
     
     // Environment interaction
     std::function<BrowsingState()> environment_sensor_;
