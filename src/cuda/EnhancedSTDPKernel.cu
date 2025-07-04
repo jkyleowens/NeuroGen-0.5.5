@@ -12,6 +12,40 @@
 #include <NeuroGen/cuda/GPUNeuralStructures.h>
 
 // ============================================================================
+// ADDITIONAL STRUCTURES FOR ADVANCED LEARNING
+// ============================================================================
+
+/**
+ * @brief Actor-Critic learning state
+ */
+struct ActorCriticState {
+    float policy_parameters[16];        // Policy network weights
+    float value_parameters[16];         // Value network weights
+    float action_probabilities[16];     // Action probability distribution
+    float state_value;                  // Current state value estimate
+    float baseline_estimate;            // Value baseline estimate
+    float advantage_estimate;           // Advantage estimate
+    float policy_gradient[16];          // Policy gradient
+    float value_gradient[16];           // Value gradient
+    float learning_rate;                // Learning rate
+    bool is_active;                     // State active flag
+};
+
+/**
+ * @brief Curiosity-driven exploration state
+ */
+struct CuriosityState {
+    float novelty_detector[32];         // Novelty detection features
+    float surprise_level;               // Current surprise level
+    float mastery_level;                // Skill mastery level
+    float familiarity_level;            // Environment familiarity
+    float random_exploration;           // Random exploration factor
+    float directed_exploration;         // Directed exploration factor
+    float prediction_error;             // Forward model prediction error
+    bool exploration_active;            // Exploration enabled flag
+};
+
+// ============================================================================
 // ENHANCED STDP KERNEL WITH MULTI-FACTOR PLASTICITY
 // ============================================================================
 
@@ -77,7 +111,7 @@ __global__ void enhancedSTDPKernel(
     // 3. Neuromodulation (dopamine, acetylcholine)
     float dopamine_factor = 1.0f + neuromodulators->dopamine_concentration * 
                            synapse.dopamine_sensitivity * 0.3f;
-    float ach_factor = 1.0f + neuromodulators->acetylcholine_level * 
+    float ach_factor = 1.0f + neuromodulators->acetylcholine_concentration * 
                       synapse.acetylcholine_sensitivity * 0.2f;
     plasticity_magnitude *= dopamine_factor * ach_factor;
     
@@ -135,8 +169,8 @@ __global__ void bcmLearningKernel(
     const GPUNeuronState& post_neuron = neurons[synapse.post_neuron_idx];
     
     // BCM rule: weight change depends on pre and post activity
-    float pre_rate = pre_neuron.firing_rate;
-    float post_rate = post_neuron.firing_rate;
+    float pre_rate = pre_neuron.average_firing_rate;
+    float post_rate = post_neuron.average_firing_rate;
     float threshold = post_neuron.bcm_threshold;
     
     // BCM learning rule
@@ -219,7 +253,7 @@ __global__ void dopamineUpdateKernel(
     da_neuron.dopamine_concentration = fmaxf(0.0f, fminf(da_neuron.dopamine_concentration, 2.0f));
     
     // Update firing rate based on dopamine level
-    da_neuron.firing_rate = da_neuron.dopamine_concentration * 10.0f; // 10Hz per unit dopamine
+    da_neuron.average_firing_rate = da_neuron.dopamine_concentration * 10.0f; // 10Hz per unit dopamine
     
     // Diffuse dopamine to nearby network neurons
     for (int i = 0; i < fminf(64, num_network_neurons); i++) {
@@ -338,4 +372,105 @@ __global__ void curiosityUpdateKernel(
     // Update mastery level based on prediction accuracy
     float prediction_accuracy = 1.0f / (1.0f + curiosity.surprise_level);
     curiosity.mastery_level = curiosity.mastery_level * 0.999f + prediction_accuracy * 0.001f;
+}
+
+// ============================================================================
+// SIMPLIFIED WRAPPER FUNCTION FOR BACKWARD COMPATIBILITY
+// ============================================================================
+
+/**
+ * @brief Simplified enhancedSTDPKernel wrapper with basic signature
+ * This provides backward compatibility for existing code
+ */
+__global__ void enhancedSTDPKernel(
+    GPUSynapse* synapses,
+    const GPUNeuronState* neurons,
+    float current_time,
+    float dt,
+    int num_synapses
+) {
+    int synapse_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (synapse_idx >= num_synapses) return;
+    
+    GPUSynapse& synapse = synapses[synapse_idx];
+    
+    // Check if synapse is active and plastic
+    if (synapse.active == 0 || !synapse.is_plastic) return;
+    
+    // Get pre and post neurons
+    int pre_idx = synapse.pre_neuron_idx;
+    int post_idx = synapse.post_neuron_idx;
+    
+    if (pre_idx < 0 || post_idx < 0) return;
+    
+    const GPUNeuronState& pre_neuron = neurons[pre_idx];
+    const GPUNeuronState& post_neuron = neurons[post_idx];
+    
+    // Simple STDP rule based on spike timing
+    float time_diff = post_neuron.last_spike_time - pre_neuron.last_spike_time;
+    
+    // STDP window parameters
+    const float tau_plus = 20.0f;  // LTP time constant (ms)
+    const float tau_minus = 20.0f; // LTD time constant (ms)
+    const float A_plus = 0.01f;    // LTP amplitude
+    const float A_minus = 0.01f;   // LTD amplitude
+    
+    float weight_change = 0.0f;
+    
+    // Apply STDP rule
+    if (time_diff > 0.0f && time_diff < 50.0f) {
+        // LTP: post fires after pre
+        weight_change = A_plus * expf(-time_diff / tau_plus);
+    } else if (time_diff < 0.0f && time_diff > -50.0f) {
+        // LTD: pre fires after post  
+        weight_change = -A_minus * expf(time_diff / tau_minus);
+    }
+    
+    // Update synaptic weight
+    synapse.weight += weight_change * dt;
+    
+    // Bound weight within valid range
+    synapse.weight = fmaxf(0.0f, fminf(synapse.weight, 1.0f));
+}
+
+// ============================================================================
+// DEVICE HELPER FUNCTION FOR SIMPLIFIED STDP
+// ============================================================================
+
+/**
+ * Device function for simple STDP update
+ */
+__device__ void enhancedSTDPKernelSimple(GPUSynapse* synapses, 
+                                          const GPUNeuronState* neurons, 
+                                          float dt, 
+                                          int synapse_idx) {
+    
+    // Simple STDP implementation for backward compatibility
+    GPUSynapse& synapse = synapses[synapse_idx];
+    
+    int pre_idx = synapse.pre_neuron_idx;
+    int post_idx = synapse.post_neuron_idx;
+    
+    if (pre_idx < 0 || post_idx < 0) return;
+    
+    const GPUNeuronState& pre_neuron = neurons[pre_idx];
+    const GPUNeuronState& post_neuron = neurons[post_idx];
+    
+    // Simple STDP rule
+    float time_diff = post_neuron.last_spike_time - pre_neuron.last_spike_time;
+    float weight_change = 0.0f;
+    
+    const float learning_rate = 0.01f; // Default learning rate
+    
+    if (time_diff > 0.0f && time_diff < 50.0f) {
+        // LTP
+        weight_change = learning_rate * expf(-time_diff / 20.0f);
+    } else if (time_diff < 0.0f && time_diff > -50.0f) {
+        // LTD
+        weight_change = -learning_rate * expf(time_diff / 20.0f);
+    }
+    
+    // Update weight
+    synapse.weight += weight_change * dt;
+    synapse.weight = fmaxf(0.0f, fminf(synapse.weight, 1.0f));
 }

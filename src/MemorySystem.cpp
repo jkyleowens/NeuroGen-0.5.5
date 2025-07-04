@@ -426,7 +426,7 @@ void MemorySystem::searchClusterForSimilarEpisodes(
 }
 
 float MemorySystem::computeCosineSimilarity(const std::vector<float>& vec1, 
-                                          const std::vector<float>& vec2) const {
+                                           const std::vector<float>& vec2) {
     if (vec1.size() != vec2.size()) return 0.0f;
     
     float dot_product = 0.0f;
@@ -491,4 +491,46 @@ void MemorySystem::organizeMemoryStructure() {
     }
     
     std::cout << "MemorySystem: Memory organization complete" << std::endl;
+}
+
+// ============================================================================
+// ADDITIONAL COMPATIBILITY METHODS
+// ============================================================================
+
+std::vector<float> MemorySystem::get_working_memory() const {
+    return current_working_memory_;
+}
+
+void MemorySystem::update_working_memory(const std::vector<float>& new_memory) {
+    current_working_memory_ = new_memory;
+    
+    // Also update working memory traces for compatibility
+    if (new_memory.size() > 0) {
+        MemoryTrace trace;
+        trace.state_vector = new_memory;
+        trace.timestamp = std::chrono::steady_clock::now();
+        updateWorkingMemory(trace);
+    }
+}
+
+void MemorySystem::store_episode(const std::vector<float>& state, 
+                                 const std::vector<float>& action, 
+                                 float reward, 
+                                 float importance) {
+    MemoryTrace episode;
+    episode.state_vector = state;
+    episode.action_vector = action;
+    episode.reward = reward;
+    episode.reward_received = reward;
+    episode.importance_weight = importance;
+    episode.timestamp = std::chrono::steady_clock::now();
+    episode.is_consolidated = false;
+    
+    storeEpisode(episode, "default");
+}
+
+std::vector<MemorySystem::MemoryTrace> MemorySystem::retrieve_similar_episodes(
+    const std::vector<float>& current_state, 
+    size_t max_results) {
+    return retrieveSimilarEpisodes(current_state, "", max_results);
 }

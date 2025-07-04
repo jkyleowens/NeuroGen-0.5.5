@@ -3,15 +3,16 @@
 
 #include <NeuroGen/cuda/GPUNeuralStructures.h>
 
+#include <cuda_runtime.h>
+
 /**
  * @brief Adjusts incoming synaptic weights to maintain a target firing rate.
  */
 __global__ void synapticScalingKernel(GPUNeuronState* neurons,
                                      GPUSynapse* synapses,
-                                     float current_time,
-                                     float dt,
-                                     int num_synapses,
-                                     int num_neurons);
+                                     int num_neurons,
+                                     int total_synapses,
+                                     float current_time);
 
 /**
  * @brief Apply synaptic scaling factors

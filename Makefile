@@ -25,7 +25,7 @@ TARGET_AUTONOMOUS := NeuroGen_Autonomous
 CXXFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -O3 -g -fPIC -Wall
 NVCCFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -arch=sm_75 -O3 -g -lineinfo \
              -Xcompiler -fPIC -Xcompiler -Wall -use_fast_math \
-             --expt-relaxed-constexpr --expt-extended-lambda
+             --expt-relaxed-constexpr --expt-extended-lambda -ccbin /usr/bin/clang++
 
 # Linker Flags
 LDFLAGS := -L$(CUDA_PATH)/lib64 -L/usr/lib
@@ -90,7 +90,11 @@ clean:
 	@echo "Cleaning up..."
 	rm -rf $(OBJ_DIR) $(TARGET) $(TARGET_AUTONOMOUS) $(DEPS_DIR)
 
-.PHONY: all autonomous clean
+# Test targets
+test_brain_architecture: test_brain_module_architecture.cpp $(OBJECTS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+
+.PHONY: all autonomous clean test_brain_architecture
 
 # Include dependency files
 -include $(DEPS)

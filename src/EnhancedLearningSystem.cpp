@@ -8,6 +8,7 @@
 #include <iostream>
 #include <fstream>
 #include <cstring>
+#include <cmath>
 #include <algorithm>
 #include <chrono>
 
@@ -39,12 +40,27 @@ extern "C" {
 EnhancedLearningSystem::EnhancedLearningSystem() 
     : d_synapses_ptr_(nullptr), d_neurons_ptr_(nullptr), d_reward_signals_ptr_(nullptr),
       d_attention_weights_ptr_(nullptr), d_trace_stats_ptr_(nullptr), d_correlation_matrix_ptr_(nullptr),
-      num_neurons_(0), num_synapses_(0), num_modules_(0), correlation_matrix_size_(0),
+      num_synapses_(0), num_neurons_(0), num_modules_(0), correlation_matrix_size_(0),
       learning_rate_(0.001f), eligibility_decay_(0.99f), reward_scaling_(1.0f), baseline_dopamine_(0.1f),
       cuda_initialized_(false), learning_stream_(0), attention_stream_(0),
       average_eligibility_trace_(0.0f), learning_progress_(0.0f), total_weight_change_(0.0f) {
     
     std::cout << "Enhanced Learning System: Initializing breakthrough neural plasticity architecture..." << std::endl;
+}
+
+EnhancedLearningSystem::EnhancedLearningSystem(int num_synapses, int num_neurons)
+    : d_synapses_ptr_(nullptr), d_neurons_ptr_(nullptr), d_reward_signals_ptr_(nullptr),
+      d_attention_weights_ptr_(nullptr), d_trace_stats_ptr_(nullptr), d_correlation_matrix_ptr_(nullptr),
+      num_synapses_(num_synapses), num_neurons_(num_neurons), num_modules_(1), correlation_matrix_size_(num_neurons),
+      learning_rate_(0.001f), eligibility_decay_(0.99f), reward_scaling_(1.0f), baseline_dopamine_(0.1f),
+      cuda_initialized_(false), learning_stream_(0), attention_stream_(0),
+      average_eligibility_trace_(0.0f), learning_progress_(0.0f), total_weight_change_(0.0f) {
+    
+    std::cout << "Enhanced Learning System: Initializing with " << num_synapses 
+              << " synapses and " << num_neurons << " neurons (legacy mode)..." << std::endl;
+              
+    // Initialize with single module for legacy compatibility
+    initialize(num_neurons, num_synapses, 1);
 }
 
 EnhancedLearningSystem::~EnhancedLearningSystem() {
@@ -77,6 +93,13 @@ bool EnhancedLearningSystem::initialize(int num_neurons, int num_synapses, int n
         module_states_[i].num_neurons = num_neurons / num_modules; // Simplified equal division
         module_states_[i].num_synapses = num_synapses / num_modules;
         module_states_[i].learning_rate = learning_rate_;
+        module_states_[i].total_weight_change = 0.0f;
+        module_states_[i].average_eligibility = 0.0f;
+        module_states_[i].reward_prediction_error = 0.0f;
+        module_states_[i].activity_level = 0.0f;
+        module_states_[i].attention_weight = 1.0f;
+        module_states_[i].plasticity_threshold = 0.5f;
+        module_states_[i].last_update_time = 0;
         module_states_[i].is_active = true;
     }
     
@@ -382,11 +405,11 @@ void EnhancedLearningSystem::reset_learning_state() {
 // ============================================================================
 
 float EnhancedLearningSystem::get_average_eligibility_trace() const {
-    return average_eligibility_trace_.load();
+    return average_eligibility_trace_;
 }
 
 float EnhancedLearningSystem::get_learning_progress() const {
-    return learning_progress_.load();
+    return learning_progress_;
 }
 
 std::vector<float> EnhancedLearningSystem::get_module_learning_rates() const {
@@ -398,14 +421,14 @@ void EnhancedLearningSystem::get_correlation_statistics(std::vector<float>& stat
     std::lock_guard<std::mutex> lock(learning_mutex_);
     
     stats.resize(4);
-    stats[0] = average_eligibility_trace_.load();
-    stats[1] = learning_progress_.load();
-    stats[2] = total_weight_change_.load();
+    stats[0] = average_eligibility_trace_;
+    stats[1] = learning_progress_;
+    stats[2] = total_weight_change_;
     stats[3] = static_cast<float>(module_states_.size());
 }
 
 float EnhancedLearningSystem::get_total_weight_change() const {
-    return total_weight_change_.load();
+    return total_weight_change_;
 }
 
 void EnhancedLearningSystem::get_detailed_learning_statistics(std::vector<float>& detailed_stats) const {
@@ -415,9 +438,9 @@ void EnhancedLearningSystem::get_detailed_learning_statistics(std::vector<float>
     detailed_stats.reserve(module_states_.size() * 4 + 3);
     
     // Global statistics
-    detailed_stats.push_back(average_eligibility_trace_.load());
-    detailed_stats.push_back(learning_progress_.load());
-    detailed_stats.push_back(total_weight_change_.load());
+    detailed_stats.push_back(average_eligibility_trace_);
+    detailed_stats.push_back(learning_progress_);
+    detailed_stats.push_back(total_weight_change_);
     
     // Per-module statistics
     for (const auto& module : module_states_) {
@@ -425,6 +448,60 @@ void EnhancedLearningSystem::get_detailed_learning_statistics(std::vector<float>
         detailed_stats.push_back(module.attention_weight);
         detailed_stats.push_back(module.activity_level);
         detailed_stats.push_back(module.total_weight_change);
+    }
+}
+
+// ============================================================================
+// REWARD AND PROTEIN SYNTHESIS METHODS
+// ============================================================================
+
+void EnhancedLearningSystem::setRewardSignal(float reward_value) {
+    std::lock_guard<std::mutex> lock(learning_mutex_);
+    
+    // Update baseline dopamine based on reward
+    baseline_dopamine_ = baseline_dopamine_ * 0.99f + reward_value * reward_scaling_ * 0.01f;
+    
+    // Clamp baseline dopamine to reasonable range
+    baseline_dopamine_ = std::max(0.0f, std::min(baseline_dopamine_, 1.0f));
+    
+    // If CUDA is initialized, update GPU reward signals
+    if (cuda_initialized_ && d_reward_signals_ptr_) {
+        // Copy reward signal to GPU memory
+        float* d_reward_signals = static_cast<float*>(d_reward_signals_ptr_);
+        cudaMemcpy(d_reward_signals, &reward_value, sizeof(float), cudaMemcpyHostToDevice);
+    }
+    
+    std::cout << "Enhanced Learning System: Set reward signal to " << reward_value 
+              << ", baseline dopamine: " << baseline_dopamine_ << std::endl;
+}
+
+void EnhancedLearningSystem::triggerProteinSynthesis(float stimulus_strength) {
+    std::lock_guard<std::mutex> lock(learning_mutex_);
+    
+    // Trigger protein synthesis only if stimulus exceeds threshold
+    if (stimulus_strength > PROTEIN_SYNTHESIS_THRESHOLD) {
+        
+        // Enhance learning rates temporarily for consolidation
+        float consolidation_factor = 1.5f * stimulus_strength;
+        
+        for (auto& module_state : module_states_) {
+            if (module_state.is_active) {
+                // Temporarily boost learning rate for this module
+                float original_lr = module_state.learning_rate;
+                module_state.learning_rate = std::min(original_lr * consolidation_factor, 0.1f);
+                
+                std::cout << "Enhanced Learning System: Triggered protein synthesis for module " 
+                          << module_state.module_id 
+                          << " - Enhanced LR from " << original_lr 
+                          << " to " << module_state.learning_rate << std::endl;
+            }
+        }
+        
+        // Update learning progress to reflect consolidation
+        learning_progress_ = std::min(1.0f, learning_progress_ + 0.1f * stimulus_strength);
+        
+        std::cout << "Enhanced Learning System: Protein synthesis triggered with strength " 
+                  << stimulus_strength << ", learning progress: " << learning_progress_ << std::endl;
     }
 }
 
@@ -499,14 +576,43 @@ bool EnhancedLearningSystem::initialize_cuda_resources() {
     
     // Initialize GPU memory
     error = cudaMemset(d_synapses_ptr_, 0, synapse_size);
-    error |= cudaMemset(d_neurons_ptr_, 0, neuron_size);
-    error |= cudaMemset(d_reward_signals_ptr_, 0, num_modules_ * sizeof(float));
-    error |= cudaMemset(d_attention_weights_ptr_, 0, num_modules_ * sizeof(float));
-    error |= cudaMemset(d_trace_stats_ptr_, 0, 4 * sizeof(float));
-    error |= cudaMemset(d_correlation_matrix_ptr_, 0, correlation_matrix_size_ * correlation_matrix_size_ * sizeof(float));
-    
     if (error != cudaSuccess) {
-        std::cerr << "Enhanced Learning System: Failed to initialize GPU memory: " 
+        std::cerr << "Enhanced Learning System: Failed to initialize synapse memory: " 
+                  << cudaGetErrorString(error) << std::endl;
+        return false;
+    }
+    
+    error = cudaMemset(d_neurons_ptr_, 0, neuron_size);
+    if (error != cudaSuccess) {
+        std::cerr << "Enhanced Learning System: Failed to initialize neuron memory: " 
+                  << cudaGetErrorString(error) << std::endl;
+        return false;
+    }
+    
+    error = cudaMemset(d_reward_signals_ptr_, 0, num_modules_ * sizeof(float));
+    if (error != cudaSuccess) {
+        std::cerr << "Enhanced Learning System: Failed to initialize reward signals: " 
+                  << cudaGetErrorString(error) << std::endl;
+        return false;
+    }
+    
+    error = cudaMemset(d_attention_weights_ptr_, 0, num_modules_ * sizeof(float));
+    if (error != cudaSuccess) {
+        std::cerr << "Enhanced Learning System: Failed to initialize attention weights: " 
+                  << cudaGetErrorString(error) << std::endl;
+        return false;
+    }
+    
+    error = cudaMemset(d_trace_stats_ptr_, 0, 4 * sizeof(float));
+    if (error != cudaSuccess) {
+        std::cerr << "Enhanced Learning System: Failed to initialize trace stats: " 
+                  << cudaGetErrorString(error) << std::endl;
+        return false;
+    }
+    
+    error = cudaMemset(d_correlation_matrix_ptr_, 0, correlation_matrix_size_ * correlation_matrix_size_ * sizeof(float));
+    if (error != cudaSuccess) {
+        std::cerr << "Enhanced Learning System: Failed to initialize correlation matrix: " 
                   << cudaGetErrorString(error) << std::endl;
         return false;
     }
@@ -549,12 +655,12 @@ void EnhancedLearningSystem::update_performance_metrics() {
     float trace_stats[4];
     cudaMemcpy(trace_stats, d_trace_stats_ptr_, 4 * sizeof(float), cudaMemcpyDeviceToHost);
     
-    // Update atomic variables
-    average_eligibility_trace_.store(trace_stats[0] / num_synapses_);
+    // Update variables
+    average_eligibility_trace_ = trace_stats[0] / num_synapses_;
     
     // Update learning progress based on weight changes
-    float progress = std::min(1.0f, total_weight_change_.load() / (num_synapses_ * 0.1f));
-    learning_progress_.store(progress);
+    float progress = std::min(1.0f, total_weight_change_ / (num_synapses_ * 0.1f));
+    learning_progress_ = progress;
     
     // Update total weight change
     total_weight_change_ += trace_stats[2]; // Assuming trace_stats[2] contains weight change magnitude

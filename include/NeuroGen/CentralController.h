@@ -1,5 +1,5 @@
 // ============================================================================
-// CENTRAL CONTROLLER HEADER
+// CENTRAL CONTROLLER HEADER - FIXED
 // File: include/NeuroGen/CentralController.h
 // ============================================================================
 

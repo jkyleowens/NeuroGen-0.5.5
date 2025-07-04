@@ -16,6 +16,8 @@
 #include <cuda_runtime.h>
 #include <vector>
 #include <memory>
+#include <string>
+#include <mutex>
 
 // Enhanced learning system constants
 #define BASELINE_DOPAMINE 0.4f
@@ -26,101 +28,230 @@
 /**
  * Enhanced Learning System Manager
  * Coordinates multiple biologically-inspired learning mechanisms
- * in a neurobiologically realistic manner
+ * in a neurobiologically realistic manner for modular neural networks
  */
 class EnhancedLearningSystem {
 private:
-    // GPU memory pointers
-    GPUSynapse* d_synapses_;
-    GPUNeuronState* d_neurons_;
-    float* d_network_stats_;
-    float* d_trace_stats_;
-    float* d_correlation_matrix_;
+    // GPU memory pointers (using void* to avoid CUDA types in header)
+    void* d_synapses_ptr_;
+    void* d_neurons_ptr_;
+    void* d_reward_signals_ptr_;
+    void* d_attention_weights_ptr_;
+    void* d_trace_stats_ptr_;
+    void* d_correlation_matrix_ptr_;
     
     // Network parameters
     int num_synapses_;
     int num_neurons_;
+    int num_modules_;
     int correlation_matrix_size_;
     
-    // Learning state variables
-    float current_dopamine_level_;
-    float current_reward_signal_;
-    float predicted_reward_;
-    float prediction_error_;
-    float network_reward_trace_;
-    float protein_synthesis_signal_;
+    // Learning parameters
+    float learning_rate_;
+    float eligibility_decay_;
+    float reward_scaling_;
+    float baseline_dopamine_;
     
-    // Timing and execution control
-    float last_update_time_;
-    float plasticity_update_interval_;
-    float homeostatic_update_interval_;
-    float trace_update_interval_;
+    // CUDA resources
+    bool cuda_initialized_;
+    cudaStream_t learning_stream_;
+    cudaStream_t attention_stream_;
+    
+    // Module state tracking
+    struct ModuleState {
+        int module_id;
+        int num_neurons;
+        int num_synapses;
+        float learning_rate;
+        float total_weight_change;
+        float average_eligibility;
+        float reward_prediction_error;
+        float activity_level;
+        float attention_weight;
+        float plasticity_threshold;
+        long long last_update_time;
+        bool is_active;
+    };
+    
+    std::vector<ModuleState> module_states_;
+    std::vector<float> module_attention_;
+    std::vector<float> module_learning_rates_;
     
     // Performance monitoring
+    float average_eligibility_trace_;
+    float learning_progress_;
     float total_weight_change_;
-    float average_trace_activity_;
-    int plasticity_updates_count_;
     
-    // CUDA execution parameters
-    dim3 synapse_grid_, synapse_block_;
-    dim3 neuron_grid_, neuron_block_;
-    
+    // Thread safety
+    mutable std::mutex learning_mutex_;
+
 public:
-    /**
-     * Constructor initializes the enhanced learning system
-     */
-    EnhancedLearningSystem(int num_synapses, int num_neurons) 
-        : num_synapses_(num_synapses)
-        , num_neurons_(num_neurons)
-        , correlation_matrix_size_(num_neurons)
-        , current_dopamine_level_(BASELINE_DOPAMINE)
-        , current_reward_signal_(0.0f)
-        , predicted_reward_(0.0f)
-        , prediction_error_(0.0f)
-        , network_reward_trace_(0.0f)
-        , protein_synthesis_signal_(0.0f)
-        , last_update_time_(0.0f)
-        , plasticity_update_interval_(UPDATE_FREQUENCY)
-        , homeostatic_update_interval_(1000.0f)  // 1 second
-        , trace_update_interval_(10.0f)          // 10 ms
-        , total_weight_change_(0.0f)
-        , average_trace_activity_(0.0f)
-        , plasticity_updates_count_(0) {
-        
-        initializeGPUMemory();
-        configureExecutionParameters();
-    }
+    // ====================================================================
+    // CONSTRUCTORS AND DESTRUCTORS
+    // ====================================================================
     
     /**
-     * Destructor cleans up GPU memory
+     * Default constructor initializes the enhanced learning system
+     */
+    EnhancedLearningSystem();
+    
+    /**
+     * Parameterized constructor for legacy compatibility
+     */
+    EnhancedLearningSystem(int num_synapses, int num_neurons);
+    
+    /**
+     * Destructor cleans up GPU memory and resources
      */
     ~EnhancedLearningSystem();
     
-    /**
-     * Main update function coordinating all learning mechanisms
-     * This is called from the main network simulation loop
-     */
-    void updateLearning(GPUSynapse* synapses, 
-                       GPUNeuronState* neurons,
-                       float current_time, 
-                       float dt,
-                       float external_reward = 0.0f);
+    // ====================================================================
+    // INITIALIZATION AND CONFIGURATION
+    // ====================================================================
     
     /**
-     * Set external reward signal for the network
+     * Initialize the learning system with network parameters
+     * @param num_neurons Total number of neurons in the network
+     * @param num_synapses Total number of synapses in the network
+     * @param num_modules Number of modular components
+     * @return Success status of initialization
      */
-    void setRewardSignal(float reward) {
-        current_reward_signal_ = reward;
-    }
+    bool initialize(int num_neurons, int num_synapses, int num_modules);
     
     /**
-     * Trigger protein synthesis for late-phase plasticity
+     * Configure core learning parameters
+     * @param lr Learning rate
+     * @param decay Eligibility trace decay rate
+     * @param scaling Reward signal scaling factor
      */
-    void triggerProteinSynthesis(float strength = 1.0f) {
-        protein_synthesis_signal_ = strength;
-        
+    void configure_learning_parameters(float lr, float decay, float scaling);
+    
     /**
-     * Get learning system statistics
+     * Setup modular architecture with variable module sizes
+     * @param module_sizes Vector containing size of each module
+     */
+    void setup_modular_architecture(const std::vector<int>& module_sizes);
+    
+    /**
+     * Configure which learning mechanisms are enabled
+     * @param enable_stdp Enable spike-timing dependent plasticity
+     * @param enable_homeostatic Enable homeostatic regulation
+     * @param enable_correlation Enable correlation-based learning
+     */
+    void configure_learning_mechanisms(bool enable_stdp, bool enable_homeostatic, bool enable_correlation);
+    
+    /**
+     * Set learning parameters for specific module
+     * @param module_id ID of the target module
+     * @param learning_rate Module-specific learning rate
+     * @param plasticity_threshold Threshold for plasticity activation
+     */
+    void set_module_learning_parameters(int module_id, float learning_rate, float plasticity_threshold);
+    
+    /**
+     * Configure reward prediction error learning
+     * @param prediction_window Time window for prediction
+     * @param error_sensitivity Sensitivity to prediction errors
+     */
+    void configure_reward_prediction(float prediction_window, float error_sensitivity);
+    
+    // ====================================================================
+    // MAIN LEARNING UPDATE METHODS
+    // ====================================================================
+    
+    /**
+     * Main learning update coordinating all mechanisms
+     * @param current_time Current simulation time
+     * @param dt Time step
+     * @param reward_signal External reward signal
+     */
+    void update_learning(float current_time, float dt, float reward_signal);
+    
+    /**
+     * Update STDP and eligibility traces
+     * @param current_time Current simulation time
+     * @param dt Time step
+     */
+    void update_stdp_and_eligibility(float current_time, float dt);
+    
+    /**
+     * Apply reward modulation to synaptic weights
+     * @param reward_signal Reward signal strength
+     * @param current_time Current simulation time
+     * @param dt Time step
+     */
+    void apply_reward_modulation(float reward_signal, float current_time, float dt);
+    
+    /**
+     * Update correlation-based learning mechanisms
+     * @param current_time Current simulation time
+     * @param dt Time step
+     */
+    void update_correlation_learning(float current_time, float dt);
+    
+    /**
+     * Apply homeostatic regulation to maintain network stability
+     * @param target_activity Target activity level
+     * @param dt Time step
+     */
+    void apply_homeostatic_regulation(float target_activity, float dt);
+    
+    /**
+     * Update attention-modulated learning
+     * @param attention_weights Attention weights for different modules
+     * @param dt Time step
+     */
+    void update_attention_learning(const std::vector<float>& attention_weights, float dt);
+    
+    /**
+     * Update learning for specific module
+     * @param module_id Target module ID
+     * @param module_reward Module-specific reward
+     * @param dt Time step
+     */
+    void update_modular_learning(int module_id, float module_reward, float dt);
+    
+    /**
+     * Set reward signal for learning system
+     * @param reward_value Reward signal value
+     */
+    void setRewardSignal(float reward_value);
+    
+    /**
+     * Trigger protein synthesis for long-term memory consolidation
+     * @param stimulus_strength Strength of stimulus triggering synthesis
+     */
+    void triggerProteinSynthesis(float stimulus_strength);
+    
+    // ====================================================================
+    // STATE MANAGEMENT
+    // ====================================================================
+    
+    /**
+     * Save current learning state to file
+     * @param filename Base filename for state files
+     * @return Success status
+     */
+    bool save_learning_state(const std::string& filename) const;
+    
+    /**
+     * Load learning state from file
+     * @param filename Base filename for state files
+     * @return Success status
+     */
+    bool load_learning_state(const std::string& filename);
+    
+    /**
+     * Reset all learning state to initial conditions
+     */
+    void reset_learning_state();
+    
+    // ====================================================================
+    // PERFORMANCE MONITORING AND STATISTICS
+    // ====================================================================
+    
+    /**
+     * Learning system statistics structure
      */
     struct LearningStats {
         float total_weight_change;
@@ -130,7 +261,91 @@ public:
         float network_activity;
         int plasticity_updates;
     };
+
+    /**
+     * Get average eligibility trace across network
+     * @return Average eligibility trace value
+     */
+    float get_average_eligibility_trace() const;
     
+    /**
+     * Get overall learning progress metric
+     * @return Learning progress value
+     */
+    float get_learning_progress() const;
+    
+    /**
+     * Get learning rates for all modules
+     * @return Vector of module learning rates
+     */
+    std::vector<float> get_module_learning_rates() const;
+    
+    /**
+     * Get correlation statistics
+     * @param stats Output vector for correlation statistics
+     */
+    void get_correlation_statistics(std::vector<float>& stats) const;
+    
+    /**
+     * Get total weight change across network
+     * @return Total magnitude of weight changes
+     */
+    float get_total_weight_change() const;
+    
+    /**
+     * Get detailed learning statistics
+     * @param detailed_stats Output vector for detailed statistics
+     */
+    void get_detailed_learning_statistics(std::vector<float>& detailed_stats) const;
+    
+    // ====================================================================
+    // GPU-SPECIFIC LEARNING METHODS
+    // ====================================================================
+    
+    /**
+     * Update learning on GPU with direct GPU memory access
+     * @param synapses GPU synapse array
+     * @param neurons GPU neuron state array
+     * @param current_time Current simulation time
+     * @param dt Time step
+     * @param external_reward External reward signal
+     */
+    void updateLearningGPU(struct GPUSynapse* synapses, 
+                          struct GPUNeuronState* neurons,
+                          float current_time, 
+                          float dt,
+                          float external_reward);
+    
+    /**
+     * Reset episode on GPU
+     * @param reset_traces Reset eligibility traces
+     * @param reset_rewards Reset reward signals
+     */
+    void resetEpisodeGPU(bool reset_traces, bool reset_rewards);
+    
+    /**
+     * Get learning statistics from GPU
+     * @return Learning statistics structure
+     */
+    LearningStats getStatisticsGPU() const;
+
+    // ====================================================================
+    // LEGACY INTERFACE METHODS
+    // ====================================================================
+    
+    /**
+     * Main update function for legacy compatibility
+     * This is called from the main network simulation loop
+     */
+    void updateLearning(GPUSynapse* synapses, 
+                       GPUNeuronState* neurons,
+                       float current_time, 
+                       float dt,
+                       float external_reward);
+    
+    /**
+     * Get learning system statistics
+     */
     LearningStats getStatistics() const;
     
     /**
@@ -139,219 +354,45 @@ public:
     void resetEpisode(bool reset_traces = true, bool reset_rewards = true);
 
 private:
-    /**
-     * Initialize GPU memory for learning system
-     */
-    void initializeGPUMemory();
-        cudaMalloc(&d_trace_stats_, 4 * sizeof(float));
-        
-        // Allocate correlation matrix
-        int matrix_elements = correlation_matrix_size_ * correlation_matrix_size_;
-        cudaMalloc(&d_correlation_matrix_, matrix_elements * sizeof(float));
-        
-        // Initialize arrays to zero
-        cudaMemset(d_network_stats_, 0, 4 * sizeof(float));
-        cudaMemset(d_trace_stats_, 0, 4 * sizeof(float));
-        cudaMemset(d_correlation_matrix_, 0, matrix_elements * sizeof(float));
-    }
+    // ====================================================================
+    // PRIVATE IMPLEMENTATION METHODS
+    // ====================================================================
     
     /**
-     * Configure CUDA execution parameters
+     * Initialize CUDA resources and memory allocation
+     * @return Success status of CUDA initialization
      */
-    void configureExecutionParameters() {
-        // Configure for synapses
-        synapse_block_ = dim3(256);
-        synapse_grid_ = dim3((num_synapses_ + synapse_block_.x - 1) / synapse_block_.x);
-        
-        // Configure for neurons
-        neuron_block_ = dim3(256);
-        neuron_grid_ = dim3((num_neurons_ + neuron_block_.x - 1) / neuron_block_.x);
-    }
+    bool initialize_cuda_resources();
     
     /**
-     * Update eligibility traces across all timescales
+     * Clean up CUDA resources and free memory
      */
-    void updateEligibilityTraces(float current_time, float dt) {
-        eligibilityTraceUpdateKernel<<<synapse_grid_, synapse_block_>>>(
-            d_synapses_, d_neurons_, current_time, dt, num_synapses_);
-        
-        // Monitor trace statistics
-        traceMonitoringKernel<<<synapse_grid_, synapse_block_>>>(
-            d_synapses_, num_synapses_, d_trace_stats_);
-    }
+    void cleanup_cuda_resources();
     
     /**
-     * Update enhanced STDP with biological realism
+     * Launch eligibility trace reset kernels
      */
-    void updateEnhancedSTDP(float current_time, float dt) {
-        enhancedSTDPKernel<<<synapse_grid_, synapse_block_>>>(
-            d_synapses_, d_neurons_, current_time, dt, num_synapses_);
-    }
+    void launch_eligibility_reset();
     
     /**
-     * Update Hebbian learning mechanisms
+     * Launch eligibility trace reset kernels on GPU
      */
-    void updateHebbianLearning(float current_time, float dt) {
-        // Core Hebbian learning
-        hebbianLearningKernel<<<synapse_grid_, synapse_block_>>>(
-            d_synapses_, d_neurons_, current_time, dt, num_synapses_);
-        
-        // BCM rule for sliding threshold plasticity
-        bcmLearningKernel<<<synapse_grid_, synapse_block_>>>(
-            d_synapses_, d_neurons_, HEBBIAN_LEARNING_RATE * 0.1f, dt, num_synapses_);
-        
-        // Correlation-based learning
-        correlationLearningKernel<<<synapse_grid_, synapse_block_>>>(
-            d_synapses_, d_neurons_, d_correlation_matrix_, 
-            HEBBIAN_LEARNING_RATE * 0.05f, dt, num_synapses_, correlation_matrix_size_);
-    }
+    void launch_eligibility_reset_gpu();
     
     /**
-     * Update reward prediction and dopaminergic modulation
+     * Update performance metrics tracking
      */
-    void updateRewardModulation(float current_time, float dt, float external_reward) {
-        // Compute reward prediction error
-        float* d_predicted_reward;
-        float* d_prediction_error;
-        float* d_dopamine_level;
-        
-        cudaMalloc(&d_predicted_reward, sizeof(float));
-        cudaMalloc(&d_prediction_error, sizeof(float));
-        cudaMalloc(&d_dopamine_level, sizeof(float));
-        
-        cudaMemcpy(d_dopamine_level, &current_dopamine_level_, sizeof(float), cudaMemcpyHostToDevice);
-        
-        rewardPredictionErrorKernel<<<1, 1>>>(
-            d_neurons_, external_reward, d_predicted_reward, 
-            d_prediction_error, d_dopamine_level, current_time, dt, num_neurons_);
-        
-        // Copy results back
-        cudaMemcpy(&predicted_reward_, d_predicted_reward, sizeof(float), cudaMemcpyDeviceToHost);
-        cudaMemcpy(&prediction_error_, d_prediction_error, sizeof(float), cudaMemcpyDeviceToHost);
-        cudaMemcpy(&current_dopamine_level_, d_dopamine_level, sizeof(float), cudaMemcpyDeviceToHost);
-        
-        // Apply reward modulation to synaptic plasticity
-        rewardModulationKernel<<<synapse_grid_, synapse_block_>>>(
-            d_synapses_, d_neurons_, external_reward, current_dopamine_level_,
-            prediction_error_, current_time, dt, num_synapses_);
-        
-        // Update dopamine sensitivity adaptation
-        float average_reward = network_reward_trace_ * 0.1f; // Simplified
-        dopamineSensitivityAdaptationKernel<<<synapse_grid_, synapse_block_>>>(
-            d_synapses_, d_neurons_, average_reward, current_time, dt, num_synapses_);
-        
-        // Update network reward trace
-        rewardTraceUpdateKernel<<<1, 1>>>(
-            &network_reward_trace_, external_reward, dt);
-        
-        // Cleanup temporary GPU memory
-        cudaFree(d_predicted_reward);
-        cudaFree(d_prediction_error);
-        cudaFree(d_dopamine_level);
-    }
+    void update_performance_metrics();
     
     /**
-     * Update metaplasticity mechanisms
+     * Update performance metrics from GPU data
      */
-    void updateMetaplasticity(float current_time, float dt) {
-        updateMetaplasticityKernel<<<synapse_grid_, synapse_block_>>>(
-            d_synapses_, d_neurons_, current_time, dt, num_synapses_);
-    }
+    void update_performance_metrics_gpu();
     
     /**
-     * Update synaptic scaling for homeostasis
+     * Reset eligibility traces on GPU
      */
-    void updateSynapticScaling(float current_time, float dt) {
-        // Compute scaling factors
-        synapticScalingKernel<<<neuron_grid_, neuron_block_>>>(
-            d_synapses_, d_neurons_, current_time, dt, num_synapses_, num_neurons_);
-        
-        // Apply scaling factors
-        applySynapticScalingKernel<<<synapse_grid_, synapse_block_>>>(
-            d_synapses_, d_neurons_, num_synapses_);
-    }
-    
-    /**
-     * Update weight normalization
-     */
-    void updateWeightNormalization() {
-        int* d_synapse_counts;
-        cudaMalloc(&d_synapse_counts, num_neurons_ * sizeof(int));
-        cudaMemset(d_synapse_counts, 0, num_neurons_ * sizeof(int));
-        
-        weightNormalizationKernel<<<neuron_grid_, neuron_block_>>>(
-            d_synapses_, d_synapse_counts, num_synapses_, num_neurons_);
-        
-        cudaFree(d_synapse_counts);
-    }
-    
-    /**
-     * Update activity regulation
-     */
-    void updateActivityRegulation(float current_time, float dt) {
-        activityRegulationKernel<<<neuron_grid_, neuron_block_>>>(
-            d_neurons_, current_time, dt, num_neurons_);
-    }
-    
-    /**
-     * Update network monitoring
-     */
-    void updateNetworkMonitoring() {
-        // Reset statistics
-        cudaMemset(d_network_stats_, 0, 4 * sizeof(float));
-        
-        networkHomeostaticMonitoringKernel<<<neuron_grid_, neuron_block_>>>(
-            d_neurons_, d_synapses_, d_network_stats_, num_neurons_, num_synapses_);
-    }
-    
-    /**
-     * Update late-phase plasticity
-     */
-    void updateLatePhrasePlasticity(float current_time, float dt) {
-        latePhaseePlasticityKernel<<<synapse_grid_, synapse_block_>>>(
-            d_synapses_, d_neurons_, protein_synthesis_signal_, 
-            current_time, dt, num_synapses_);
-        
-        // Decay protein synthesis signal
-        protein_synthesis_signal_ *= expf(-dt / 30000.0f); // 30-second decay
-    }
-    
-    /**
-     * Check network stability and apply emergency measures if needed
-     */
-    void checkNetworkStability(float current_time) {
-        // Get network activity level
-        float network_stats[4];
-        cudaMemcpy(network_stats, d_network_stats_, 4 * sizeof(float), cudaMemcpyDeviceToHost);
-        
-        float network_activity = network_stats[0];
-        float emergency_threshold = TARGET_ACTIVITY_LEVEL * num_neurons_;
-        
-        // Apply emergency stabilization if needed
-        emergencyStabilizationKernel<<<max(synapse_grid_.x, neuron_grid_.x), 256>>>(
-            d_synapses_, d_neurons_, network_activity, emergency_threshold,
-            num_synapses_, num_neurons_);
-    }
-    
-    /**
-     * Clean up GPU memory
-     */
-    void cleanupGPUMemory() {
-        if (d_network_stats_) cudaFree(d_network_stats_);
-        if (d_trace_stats_) cudaFree(d_trace_stats_);
-        if (d_correlation_matrix_) cudaFree(d_correlation_matrix_);
-    }
-    
-    /**
-     * Check for CUDA errors
-     */
-    void checkCudaErrors() {
-        cudaError_t error = cudaGetLastError();
-        if (error != cudaSuccess) {
-            fprintf(stderr, "CUDA error in Enhanced Learning System: %s\n", 
-                   cudaGetErrorString(error));
-        }
-    }
+    void reset_eligibility_traces_gpu();
 };
 
 #endif // ENHANCED_LEARNING_SYSTEM_H

@@ -19,4 +19,18 @@ __global__ void enhancedSTDPKernel(
     int num_synapses
 );
 
+/**
+ * @brief Overloaded STDP kernel for backward compatibility
+ *
+ * This overload provides compatibility with existing code that expects
+ * a different parameter set including learning_rate.
+ */
+__global__ void enhancedSTDPKernel(
+    GPUSynapse* synapses,
+    const GPUNeuronState* neurons,
+    float learning_rate,
+    float dt,
+    int num_synapses
+);
+
 #endif // ENHANCED_STDP_KERNEL_CUH

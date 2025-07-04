@@ -6,7 +6,8 @@
 #include <memory>
 #include <functional>
 #include <chrono>
-#include <queue>  // FIX: Added missing queue include
+#include <queue>
+#include <map>
 
 /**
  * Enhanced neural module with biological features:
@@ -27,6 +28,7 @@ public:
         int developmental_stage;
         std::map<std::string, float> performance_metrics;
         std::chrono::steady_clock::time_point timestamp;
+        bool is_active;
     };
     
     // Inter-module connection specification
@@ -74,6 +76,12 @@ public:
      */
     std::map<std::string, float> getPerformanceMetrics() const override;
     
+    /**
+     * @brief Get current neural outputs from the module
+     * @return Vector of current neuron outputs
+     */
+    std::vector<float> getOutputs() const;
+    
     // ========================================================================
     // STATE MANAGEMENT
     // ========================================================================
@@ -110,279 +118,152 @@ public:
     
     /**
      * @brief Set attention weight for this module
-     * @param weight Attention weight (0.0 to 1.0)
+     * @param weight Attention weight [0-1]
      */
-    void setAttentionWeight(float weight) { 
-        std::lock_guard<std::mutex> lock(module_mutex_);
-        attention_weight_ = std::max(0.0f, std::min(1.0f, weight)); 
-    }
+    void setAttentionWeight(float weight) { attention_weight_ = weight; }
     
     /**
      * @brief Get current attention weight
      * @return Current attention weight
      */
-    float getAttentionWeight() const { 
-        std::lock_guard<std::mutex> lock(module_mutex_);
-        return attention_weight_; 
-    }
+    float getAttentionWeight() const { return attention_weight_; }
     
     /**
-     * @brief Apply attention-based modulation to module activity
-     * @param global_attention Global attention signal
+     * @brief Update attention based on context
+     * @param context_vector Context information
      */
-    virtual void applyAttentionModulation(float global_attention);
+    void updateAttention(const std::vector<float>& context_vector);
     
     // ========================================================================
-    // MODULE ACTIVITY CONTROL
+    // BIOLOGICAL FEATURES
     // ========================================================================
     
     /**
-     * @brief Set module activity state with enhanced control
-     * @param active Activity state to set
+     * @brief Set developmental stage of the module
+     * @param stage Developmental stage (0-5)
      */
-    void setActive(bool active) { 
-        std::lock_guard<std::mutex> lock(module_mutex_);
-        is_active_ = active; 
-        NeuralModule::set_active(active);
-    }
-    
-    /**
-     * @brief Check if module is active with enhanced state tracking
-     * @return Current activity state
-     */
-    bool isActive() const { 
-        std::lock_guard<std::mutex> lock(module_mutex_);
-        return is_active_ && NeuralModule::is_active(); 
-    }
-    
-    // ========================================================================
-    // FEEDBACK LOOP MANAGEMENT
-    // ========================================================================
-    
-    /**
-     * @brief Add internal feedback loop
-     * @param from_port Source port name
-     * @param to_port Target port name
-     * @param gain Feedback gain factor
-     */
-    void addFeedbackLoop(const std::string& from_port, const std::string& to_port, 
-                        float gain = 1.0f);
-    
-    /**
-     * @brief Process all feedback loops
-     * @param dt Time step for feedback processing
-     */
-    void processFeedback(float dt);
-    
-    /**
-     * @brief Remove feedback loop
-     * @param from_port Source port name
-     * @param to_port Target port name
-     */
-    void removeFeedbackLoop(const std::string& from_port, const std::string& to_port);
-    
-    // ========================================================================
-    // INTER-MODULE COMMUNICATION
-    // ========================================================================
-    
-    /**
-     * @brief Register inter-module connection
-     * @param connection Connection specification
-     */
-    void registerInterModuleConnection(const InterModuleConnection& connection);
-    
-    /**
-     * @brief Get all outgoing connections
-     * @return Vector of outgoing connections
-     */
-    std::vector<InterModuleConnection> getOutgoingConnections() const { 
-        std::lock_guard<std::mutex> lock(module_mutex_);
-        return outgoing_connections_; 
-    }
-    
-    /**
-     * @brief Process inter-module communications with delays
-     * @param dt Time step for processing
-     */
-    virtual void processInterModuleCommunication(float dt);
-    
-    // ========================================================================
-    // NEUROMODULATION INTERFACE
-    // ========================================================================
-    
-    /**
-     * @brief Apply neuromodulation to the module
-     * @param modulator_type Type of neuromodulator (dopamine, serotonin, etc.)
-     * @param level Modulation level
-     */
-    virtual void applyNeuromodulation(const std::string& modulator_type, float level);
-    
-    /**
-     * @brief Get current neuromodulator levels
-     * @return Map of neuromodulator types to levels
-     */
-    std::map<std::string, float> getNeuromodulatorLevels() const {
-        std::lock_guard<std::mutex> lock(module_mutex_);
-        return neuromodulator_levels_;
-    }
-    
-    // ========================================================================
-    // DEVELOPMENT AND PLASTICITY
-    // ========================================================================
-    
-    /**
-     * @brief Set developmental stage
-     * @param stage Developmental stage (0=embryonic, 1=infant, 2=child, 3=adult)
-     */
-    void setDevelopmentalStage(int stage) { 
-        std::lock_guard<std::mutex> lock(module_mutex_);
-        developmental_stage_ = stage; 
-    }
+    void setDevelopmentalStage(int stage) { developmental_stage_ = stage; }
     
     /**
      * @brief Get current developmental stage
-     * @return Current developmental stage
+     * @return Developmental stage
      */
-    int getDevelopmentalStage() const { 
-        std::lock_guard<std::mutex> lock(module_mutex_);
-        return developmental_stage_; 
+    int getDevelopmentalStage() const { return developmental_stage_; }
+    
+    /**
+     * @brief Apply neuromodulation to the module
+     * @param modulator_type Type of neuromodulator
+     * @param level Modulation level
+     */
+    virtual void applyNeuromodulation(const std::string& modulator_type, float level) override;
+    
+    /**
+     * @brief Process internal feedback loops
+     * @param dt Time step
+     */
+    void processFeedbackLoops(float dt);
+    
+    /**
+     * @brief Add inter-module connection
+     * @param connection Connection specification
+     */
+    void addInterModuleConnection(const InterModuleConnection& connection);
+    
+    /**
+     * @brief Register inter-module connection (alias for addInterModuleConnection)
+     * @param connection Connection specification
+     */
+    void registerInterModuleConnection(const InterModuleConnection& connection) {
+        addInterModuleConnection(connection);
     }
     
     /**
-     * @brief Update developmental plasticity
-     * @param dt Time step for development
+     * @brief Send signal to connected modules
+     * @param signal_data Data to send
+     * @param target_port Target port name
      */
-    virtual void updateDevelopmentalPlasticity(float dt);
+    void sendInterModuleSignal(const std::vector<float>& signal_data, 
+                               const std::string& target_port);
+    
+    /**
+     * @brief Receive signal from other modules
+     * @param signal_data Received data
+     * @param source_port Source port name
+     */
+    void receiveInterModuleSignal(const std::vector<float>& signal_data,
+                                  const std::string& source_port);
+    
+    // ========================================================================
+    // ACTIVITY AND STATUS
+    // ========================================================================
+    
+    /**
+     * @brief Check if module is currently active
+     * @return Activity status
+     */
+    bool isActive() const { return is_active_; }
+    
+    /**
+     * @brief Set module activity status
+     * @param active New activity status
+     */
+    void setActive(bool active) { is_active_ = active; }
+    
+    /**
+     * @brief Get module specialization type
+     * @return Specialization description
+     */
+    virtual std::string getSpecializationType() const { return "general"; }
 
 protected:
-    // Feedback loop structure
-    struct FeedbackLoop {
-        std::string from_port;
-        std::string to_port;
-        float gain;
-        std::vector<float> buffer;  // Activity buffer for delay
-        size_t buffer_index;
-        size_t delay_samples;
-        
-        FeedbackLoop() : gain(1.0f), buffer_index(0), delay_samples(1) {}
-    };
+    // ========================================================================
+    // PROTECTED MEMBER VARIABLES
+    // ========================================================================
     
-    // Communication buffer for delayed signals
-    struct DelayedSignal {
-        std::vector<float> signal;
-        std::string target_module;
-        std::string target_port;
-        std::chrono::steady_clock::time_point send_time;
-        float delay_ms;
-    };
-    
-    // Enhanced state variables
     float attention_weight_;
     bool is_active_;
     int developmental_stage_;
-    
-    // Feedback and communication
-    std::vector<FeedbackLoop> feedback_loops_;
-    std::vector<InterModuleConnection> outgoing_connections_;
-    std::queue<DelayedSignal> delayed_signals_;
     std::chrono::steady_clock::time_point last_feedback_update_;
     
-    // Neuromodulation
+    // Inter-module communication
+    std::vector<InterModuleConnection> connections_;
+    std::map<std::string, std::queue<std::vector<float>>> input_buffers_;
+    std::map<std::string, std::vector<float>> output_buffers_;
+    
+    // Feedback loop state
+    std::vector<float> feedback_state_;
+    float feedback_strength_;
+    
+    // Neuromodulator levels
     std::map<std::string, float> neuromodulator_levels_;
     
-    // Thread safety for enhanced features
-    mutable std::mutex module_mutex_;
-    
     // ========================================================================
-    // HELPER METHODS FOR BIOLOGICALLY-INSPIRED FEATURES
+    // PROTECTED HELPER METHODS
     // ========================================================================
     
     /**
-     * @brief Update synaptic homeostasis
-     * @param dt Time step for homeostasis
+     * @brief Update internal biological processes
+     * @param dt Time step
      */
-    void updateSynapticHomeostasis(float dt);
+    void updateBiologicalProcesses(float dt);
     
     /**
-     * @brief Update structural plasticity
-     * @param dt Time step for structural changes
+     * @brief Compute attention-weighted output
+     * @param raw_output Raw module output
+     * @return Attention-weighted output
      */
-    void updateStructuralPlasticity(float dt);
+    std::vector<float> applyAttentionWeighting(const std::vector<float>& raw_output) const;
     
     /**
-     * @brief Process local inhibition mechanisms
+     * @brief Process developmental changes
+     * @param dt Time step
      */
-    void processLocalInhibition();
+    void updateDevelopmentalState(float dt);
     
     /**
-     * @brief Apply developmental constraints
-     * @param dt Time step for development
+     * @brief Process inter-module communication signals
      */
-    void applyDevelopmentalConstraints(float dt);
-    
-    /**
-     * @brief Process delayed signals in communication buffer
-     */
-    void processDelayedSignals();
-};
-
-/**
- * Central Executive Module - Orchestrates attention and module activation
- */
-class CentralExecutiveModule : public EnhancedNeuralModule {
-public:
-    CentralExecutiveModule(const std::string& name, const NetworkConfig& config);
-    
-    // Override virtual functions with correct signatures
-    bool initialize() override;
-    void update(float dt, const std::vector<float>& inputs = {}, float reward = 0.0f) override;
-    
-    // Executive control functions
-    void allocateAttention(const std::map<std::string, float>& module_priorities);
-    void orchestrateModules(const std::vector<std::string>& active_modules);
-    std::vector<float> computeGlobalControlSignals();
-    
-    // Decision making
-    std::string selectPrimaryModule(const std::map<std::string, float>& activations);
-    void inhibitCompetingModules(const std::string& primary_module);
-    
-private:
-    std::map<std::string, float> module_priorities_;
-    std::string current_primary_module_;
-    float global_inhibition_strength_;
-};
-
-/**
- * Specialized Memory Module - Long-term and working memory
- */
-class MemoryModule : public EnhancedNeuralModule {
-public:
-    MemoryModule(const std::string& name, const NetworkConfig& config);
-    
-    // Override virtual functions
-    bool initialize() override;
-    void update(float dt, const std::vector<float>& inputs = {}, float reward = 0.0f) override;
-    
-    // Memory operations
-    void storeEpisode(const std::vector<float>& episode_data, const std::string& context);
-    std::vector<float> retrieveMemory(const std::vector<float>& cue, float threshold = 0.7f);
-    void consolidateMemories(float dt);
-    
-    // Working memory
-    void updateWorkingMemory(const std::vector<float>& current_input);
-    std::vector<float> getWorkingMemoryContent() const;
-    
-private:
-    struct MemoryTrace {
-        std::vector<float> data;
-        std::string context;
-        float strength;
-        std::chrono::steady_clock::time_point timestamp;
-    };
-    
-    std::vector<MemoryTrace> long_term_memory_;
-    std::vector<float> working_memory_;
-    float consolidation_threshold_;
+    void processInterModuleCommunication();
 };
 
 #endif // ENHANCED_NEURAL_MODULE_H

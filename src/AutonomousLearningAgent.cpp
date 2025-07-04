@@ -1,262 +1,290 @@
 // ============================================================================
-// AUTONOMOUS LEARNING AGENT IMPLEMENTATION - NO REDEFINITION
+// AUTONOMOUS LEARNING AGENT IMPLEMENTATION
 // File: src/AutonomousLearningAgent.cpp
 // ============================================================================
 
-#include <NeuroGen/ControllerModule.h>
-#include <NeuroGen/Network.h>
-#include <NeuroGen/NetworkConfig.h>
-#include <NeuroGen/EnhancedNeuralModule.h>
+#include "NeuroGen/AutonomousLearningAgent.h"
+#include "NeuroGen/ControllerModule.h"
+#include "NeuroGen/Network.h"
+#include "NeuroGen/NetworkConfig.h"
+#include "NeuroGen/EnhancedNeuralModule.h"
 #include <iostream>
 #include <algorithm>
 #include <cmath>
 #include <sstream>
+#include <chrono>
+#include <random>
 
 // ============================================================================
-// MEMORY SYSTEM IMPLEMENTATION
+// AUTONOMOUS LEARNING AGENT IMPLEMENTATION
 // ============================================================================
-
-/**
- * @brief Memory system for the autonomous learning agent
- */
-class MemorySystem {
-public:
-    // Memory trace structure (already defined in ControllerModule.h)
-    using MemoryTrace = ::MemoryTrace;
+AutonomousLearningAgent::AutonomousLearningAgent(const NetworkConfig& config) 
+    : config_(config), is_learning_active_(false), detailed_logging_(false), simulation_time_(0.0f),
+      exploration_rate_(0.2f), global_reward_signal_(0.0f), learning_rate_(0.001f) {
     
-    // Episode storage and retrieval
-    std::vector<MemoryTrace> episodic_memory_;
-    std::map<std::string, std::vector<float>> semantic_memory_;
-    
-    // Memory management
-    size_t max_episodes_;
-    float consolidation_threshold_;
-    
-    MemorySystem(size_t max_episodes = 10000) 
-        : max_episodes_(max_episodes), consolidation_threshold_(0.7f) {}
-    
-    void storeEpisode(const MemoryTrace& trace) {
-        episodic_memory_.push_back(trace);
-        
-        // Maintain memory capacity
-        if (episodic_memory_.size() > max_episodes_) {
-            // Remove oldest memories with low importance
-            auto it = std::min_element(episodic_memory_.begin(), episodic_memory_.end(),
-                [](const MemoryTrace& a, const MemoryTrace& b) {
-                    return a.importance_weight < b.importance_weight;
-                });
-            if (it != episodic_memory_.end() && it->importance_weight < consolidation_threshold_) {
-                episodic_memory_.erase(it);
-            }
-        }
-    }
-    
-    std::vector<MemoryTrace> retrieveSimilarEpisodes(
-        const BrowsingState& current_state, size_t max_results = 10) {
-        std::vector<std::pair<float, MemoryTrace*>> similarities;
-        
-        // Extract features from current state for comparison
-        std::vector<float> current_features = extractStateFeatures(current_state);
-        
-        for (auto& episode : episodic_memory_) {
-            float similarity = computeCosineSimilarity(current_features, episode.state_vector);
-            similarities.emplace_back(similarity, &episode);
-        }
-        
-        // Sort by similarity and return top results
-        std::sort(similarities.begin(), similarities.end(),
-            [](const auto& a, const auto& b) { return a.first > b.first; });
-        
-        std::vector<MemoryTrace> results;
-        size_t count = std::min(max_results, similarities.size());
-        for (size_t i = 0; i < count; ++i) {
-            results.push_back(*similarities[i].second);
-        }
-        
-        return results;
-    }
-    
-private:
-    std::vector<float> extractStateFeatures(const BrowsingState& state) {
-        std::vector<float> features;
-        
-        // URL features (simple hash-based encoding)
-        features.push_back(static_cast<float>(std::hash<std::string>{}(state.current_url) % 1000) / 1000.0f);
-        
-        // Page element features
-        features.push_back(static_cast<float>(state.page_elements.size()) / 100.0f);
-        
-        // Scroll position feature
-        features.push_back(static_cast<float>(state.scroll_position) / 10000.0f);
-        
-        // Window dimensions
-        features.push_back(static_cast<float>(state.window_width) / 2000.0f);
-        features.push_back(static_cast<float>(state.window_height) / 2000.0f);
-        
-        // Loading state
-        features.push_back(state.page_loading ? 1.0f : 0.0f);
-        
-        return features;
-    }
-    
-    float computeCosineSimilarity(const std::vector<float>& a, const std::vector<float>& b) {
-        if (a.size() != b.size()) return 0.0f;
-        
-        float dot_product = 0.0f;
-        float norm_a = 0.0f;
-        float norm_b = 0.0f;
-        
-        for (size_t i = 0; i < a.size(); ++i) {
-            dot_product += a[i] * b[i];
-            norm_a += a[i] * a[i];
-            norm_b += b[i] * b[i];
-        }
-        
-        if (norm_a == 0.0f || norm_b == 0.0f) return 0.0f;
-        
-        return dot_product / (std::sqrt(norm_a) * std::sqrt(norm_b));
-    }
-};
-
-// ============================================================================
-// PERFORMANCE STATISTICS STRUCTURE
-// ============================================================================
-
-/**
- * @brief Performance statistics structure
- */
-struct PerformanceStats {
-    float total_actions_taken;
-    float successful_actions;
-    float average_reward;
-    float exploration_rate;
-    std::map<ActionType, int> action_counts;
-    std::map<std::string, float> context_performance;
-    
-    PerformanceStats() : 
-        total_actions_taken(0.0f),
-        successful_actions(0.0f), 
-        average_reward(0.0f),
-        exploration_rate(0.1f) {}
-};
-
-// ============================================================================
-// AUTONOMOUS LEARNING AGENT METHODS IMPLEMENTATION
-// ============================================================================
-
-// Constructor implementation for AutonomousLearningAgent
-AutonomousLearningAgent::AutonomousLearningAgent(const NetworkConfig& config) {
     // Initialize controller module
-    controller_module_ = std::make_unique<ControllerModule>("controller", config);
+    ControllerConfig controller_config;
+    controller_module_ = std::make_unique<ControllerModule>(controller_config);
     
     // Initialize memory system
     memory_system_ = std::make_unique<MemorySystem>();
     
+    // Initialize visual interface
+    visual_interface_ = std::make_unique<VisualInterface>(1920, 1080);
+    
+    // Initialize attention controller
+    attention_controller_ = std::make_unique<AttentionController>();
+    
+    // Initialize brain module architecture
+    brain_architecture_ = std::make_unique<BrainModuleArchitecture>();
+    
+    // Initialize environmental context
+    environmental_context_.resize(512, 0.0f);
+    
+    // Initialize current goals
+    current_goals_.resize(64, 0.0f);
+    
+    // Initialize global state
+    global_state_.resize(256, 0.0f);
+    
+    // Initialize selected action to default
+    selected_action_.type = ActionType::WAIT;
+    selected_action_.x_coordinate = 0;
+    selected_action_.y_coordinate = 0;
+    selected_action_.confidence = 0.5f;
+    
+    // Initialize learning system (removed to avoid CUDA dependencies)
+    // learning_system_ = nullptr;
+    
     std::cout << "AutonomousLearningAgent created with configuration" << std::endl;
 }
 
-// Initialize method implementation
+AutonomousLearningAgent::~AutonomousLearningAgent() {
+    shutdown();
+}
+
 bool AutonomousLearningAgent::initialize() {
     if (!controller_module_) {
         std::cerr << "Error: Controller module not created" << std::endl;
         return false;
     }
     
-    if (!controller_module_->initialize()) {
-        std::cerr << "Error: Failed to initialize controller module" << std::endl;
-        return false;
+    // Initialize visual interface
+    if (!visual_interface_->initialize_capture()) {
+        std::cerr << "Warning: Failed to initialize visual capture" << std::endl;
+    }
+    
+    // Register basic modules with attention controller
+    attention_controller_->register_module("visual_cortex");
+    attention_controller_->register_module("working_memory");
+    attention_controller_->register_module("decision_making");
+    attention_controller_->register_module("action_execution");
+    
+    // Initialize neural modules and attention system
+    initialize_neural_modules();
+    initialize_attention_system();
+    
+    // Initialize brain module architecture
+    if (brain_architecture_) {
+        if (!brain_architecture_->initialize(1920, 1080)) {
+            std::cerr << "Warning: Failed to initialize brain module architecture" << std::endl;
+        } else {
+            std::cout << "Brain module architecture initialized successfully" << std::endl;
+        }
     }
     
     std::cout << "AutonomousLearningAgent initialized successfully" << std::endl;
     return true;
 }
 
-// Update method implementation
 void AutonomousLearningAgent::update(float dt) {
+    simulation_time_ += dt;
+    
     if (controller_module_) {
         controller_module_->update(dt);
     }
+    
+    if (is_learning_active_) {
+        autonomousLearningStep(dt);
+        update_learning_goals();
+    }
 }
 
-// Shutdown method implementation
 void AutonomousLearningAgent::shutdown() {
-    if (controller_module_) {
-        controller_module_->shutdown();
+    stopAutonomousLearning();
+    
+    if (visual_interface_) {
+        visual_interface_->stop_capture();
     }
+    
     std::cout << "AutonomousLearningAgent shutdown complete" << std::endl;
 }
 
-// Delegate methods to controller module
-std::vector<float> AutonomousLearningAgent::collect_inter_module_signals(const std::string& target_module) {
-    return controller_module_ ? controller_module_->collect_inter_module_signals(target_module) : std::vector<float>();
-}
-
-void AutonomousLearningAgent::distribute_module_output(const std::string& source_module, 
-                                                     const std::vector<float>& output_data) {
-    if (controller_module_) {
-        controller_module_->distribute_module_output(source_module, output_data);
+void AutonomousLearningAgent::startAutonomousLearning() {
+    if (is_learning_active_) return;
+    
+    is_learning_active_ = true;
+    std::cout << "Starting autonomous learning mode..." << std::endl;
+    
+    if (visual_interface_) {
+        visual_interface_->start_continuous_capture();
     }
 }
 
-std::vector<AutonomousLearningAgent::BrowsingAction> AutonomousLearningAgent::generate_action_candidates() {
-    return controller_module_ ? controller_module_->generate_action_candidates() : std::vector<BrowsingAction>();
-}
-
-std::vector<float> AutonomousLearningAgent::evaluate_action_candidates(
-    const std::vector<BrowsingAction>& candidates,
-    const std::vector<MemoryTrace>& similar_episodes) {
-    return controller_module_ ? controller_module_->evaluate_action_candidates(candidates, similar_episodes) : std::vector<float>();
-}
-
-AutonomousLearningAgent::BrowsingAction AutonomousLearningAgent::select_action_with_exploration(
-    const std::vector<BrowsingAction>& candidates,
-    const std::vector<float>& action_values) {
-    return controller_module_ ? controller_module_->select_action_with_exploration(candidates, action_values) : BrowsingAction{};
-}
-
-void AutonomousLearningAgent::execute_action() {
-    if (controller_module_) {
-        controller_module_->execute_action(selected_action_);
+void AutonomousLearningAgent::stopAutonomousLearning() {
+    if (!is_learning_active_) return;
+    
+    is_learning_active_ = false;
+    std::cout << "Stopping autonomous learning mode..." << std::endl;
+    
+    if (visual_interface_) {
+        visual_interface_->stop_capture();
     }
 }
 
-void AutonomousLearningAgent::execute_click_action() {
-    if (controller_module_) {
-        controller_module_->execute_click_action(selected_action_);
+float AutonomousLearningAgent::autonomousLearningStep(float dt) {
+    if (!is_learning_active_) return 0.0f;
+    
+    // Step 1: Process visual input
+    process_visual_input();
+    
+    // Step 2: Update working memory
+    update_working_memory();
+    
+    // Step 3: Make decisions and select actions
+    select_and_execute_action();
+    
+    // Step 4: Learn from outcomes
+    learn_from_feedback();
+    
+    // Return learning progress (simplified)
+    return std::min(1.0f, simulation_time_ / 1000.0f);
+}
+
+void AutonomousLearningAgent::select_and_execute_action() {
+    // Use decision-making system from DecisionAndActionSystems.cpp
+    make_decision();
+    execute_action();
+}
+
+float AutonomousLearningAgent::calculate_immediate_reward() {
+    // Simple reward calculation based on action success and novelty
+    float base_reward = 0.1f; // Small positive reward for any action
+    
+    // Add novelty bonus (simplified)
+    float novelty_bonus = 0.0f;
+    if (memory_system_ && !environmental_context_.empty()) {
+        auto similar_episodes = memory_system_->retrieveSimilarEpisodes(environmental_context_, "default", 3);
+        if (similar_episodes.size() < 2) {
+            novelty_bonus = 0.3f; // High novelty
+        } else {
+            novelty_bonus = 0.1f; // Some novelty
+        }
+    }
+    
+    return base_reward + novelty_bonus;
+}
+
+// ============================================================================
+// ADDITIONAL INTERFACE METHODS
+// ============================================================================
+
+void AutonomousLearningAgent::addLearningGoal(std::unique_ptr<AutonomousGoal> goal) {
+    if (goal) {
+        learning_goals_.push_back(std::move(goal));
+        std::cout << "Added learning goal: " << learning_goals_.back()->description << std::endl;
     }
 }
 
-void AutonomousLearningAgent::execute_scroll_action() {
-    if (controller_module_) {
-        controller_module_->execute_scroll_action(selected_action_);
+BrowsingState AutonomousLearningAgent::getCurrentEnvironmentState() const {
+    if (environment_sensor_) {
+        return environment_sensor_();
+    }
+    
+    // Return default state if no sensor is set
+    BrowsingState default_state;
+    default_state.current_url = "about:blank";
+    return default_state;
+}
+
+std::string AutonomousLearningAgent::getStatusReport() const {
+    std::stringstream ss;
+    ss << "=== Autonomous Learning Agent Status ===\n";
+    ss << "Learning Active: " << (is_learning_active_ ? "Yes" : "No") << "\n";
+    ss << "Simulation Time: " << simulation_time_ << "s\n";
+    ss << "Learning Goals: " << learning_goals_.size() << "\n";
+    ss << "Environmental Context Size: " << environmental_context_.size() << "\n";
+    
+    if (memory_system_) {
+        ss << "Episodic Memories: " << memory_system_->get_episodic_memory_size() << "\n";
+    }
+    
+    return ss.str();
+}
+
+float AutonomousLearningAgent::getLearningProgress() const {
+    // Simple progress calculation based on simulation time and memory accumulation
+    float time_progress = std::min(1.0f, simulation_time_ / 1000.0f);
+    
+    float memory_progress = 0.0f;
+    if (memory_system_ && memory_system_->get_episodic_memory_size() > 0) {
+        memory_progress = std::min(1.0f, static_cast<float>(memory_system_->get_episodic_memory_size()) / 100.0f);
+    }
+    
+    return (time_progress + memory_progress) / 2.0f;
+}
+
+std::map<std::string, float> AutonomousLearningAgent::getAttentionWeights() const {
+    std::map<std::string, float> weights;
+    
+    if (attention_controller_) {
+        // Get weights for all registered modules
+        weights["visual_cortex"] = attention_controller_->get_attention_weight("visual_cortex");
+        weights["working_memory"] = attention_controller_->get_attention_weight("working_memory");
+        weights["decision_making"] = attention_controller_->get_attention_weight("decision_making");
+        weights["action_execution"] = attention_controller_->get_attention_weight("action_execution");
+    }
+    
+    return weights;
+}
+
+void AutonomousLearningAgent::initialize_neural_modules() {
+    // Initialize basic neural module coordination
+    std::cout << "Initializing neural modules..." << std::endl;
+    
+    // This would create and register specialized neural modules
+    // For now, we'll just set up the controller coordination
+}
+
+void AutonomousLearningAgent::initialize_attention_system() {
+    // Set up attention priorities for different contexts
+    if (attention_controller_) {
+        attention_controller_->set_priority("visual_processing", 0.8f);
+        attention_controller_->set_priority("decision_making", 0.7f);
+        attention_controller_->set_priority("memory_consolidation", 0.5f);
     }
 }
 
-void AutonomousLearningAgent::execute_type_action() {
-    if (controller_module_) {
-        controller_module_->execute_type_action(selected_action_);
+void AutonomousLearningAgent::update_learning_goals() {
+    // Update progress on active learning goals
+    for (auto& goal : learning_goals_) {
+        if (goal && goal->is_active) {
+            // Simple goal progress tracking
+            // In a real implementation, this would check success criteria
+        }
     }
 }
 
-void AutonomousLearningAgent::execute_navigate_action() {
-    if (controller_module_) {
-        controller_module_->execute_navigate_action(selected_action_);
-    }
-}
-
-void AutonomousLearningAgent::execute_wait_action() {
-    if (controller_module_) {
-        controller_module_->execute_wait_action(selected_action_);
+void AutonomousLearningAgent::log_action(const std::string& action) {
+    if (detailed_logging_) {
+        std::cout << "[" << simulation_time_ << "s] " << action << std::endl;
     }
 }
 
 // ============================================================================
-// UTILITY FUNCTION IMPLEMENTATIONS - FIX: Use global types
+// UTILITY FUNCTION IMPLEMENTATIONS
 // ============================================================================
 
-/**
- * @brief Converts ActionType enum to string representation
- */
 std::string actionTypeToString(ActionType type) {
     switch (type) {
         case ActionType::CLICK: return "CLICK";
@@ -272,10 +300,6 @@ std::string actionTypeToString(ActionType type) {
     }
 }
 
-/**
- * @brief Converts string to ActionType enum
- * FIX: Use global ActionType, not AutonomousLearningAgent::ActionType
- */
 ActionType stringToActionType(const std::string& type_str) {
     if (type_str == "CLICK") return ActionType::CLICK;
     if (type_str == "SCROLL") return ActionType::SCROLL;
@@ -289,79 +313,24 @@ ActionType stringToActionType(const std::string& type_str) {
     return ActionType::OBSERVE; // Default fallback
 }
 
-/**
- * @brief Computes similarity between two browsing states
- * FIX: Use global BrowsingState, not AutonomousLearningAgent::BrowsingState
- */
-float computeBrowsingStateSimilarity(const BrowsingState& state1,
-                                   const BrowsingState& state2) {
+float computeBrowsingStateSimilarity(const BrowsingState& state1, const BrowsingState& state2) {
     float similarity = 0.0f;
     float weight_sum = 0.0f;
     
-    // URL similarity (exact match or domain match)
-    float url_weight = 0.3f;
+    // URL similarity (exact match)
+    float url_weight = 0.4f;
     if (state1.current_url == state2.current_url) {
-        similarity += url_weight * 1.0f;
-    } else {
-        // Extract domain and compare
-        auto extractDomain = [](const std::string& url) {
-            size_t start = url.find("://");
-            if (start != std::string::npos) {
-                start += 3;
-                size_t end = url.find("/", start);
-                return (end != std::string::npos) ? url.substr(start, end - start) : url.substr(start);
-            }
-            return url;
-        };
-        
-        if (extractDomain(state1.current_url) == extractDomain(state2.current_url)) {
-            similarity += url_weight * 0.5f;
-        }
+        similarity += url_weight;
     }
     weight_sum += url_weight;
     
-    // Page structure similarity (number of elements)
-    float structure_weight = 0.2f;
-    float element_diff = std::abs(static_cast<float>(state1.page_elements.size()) - 
-                                 static_cast<float>(state2.page_elements.size()));
-    float max_elements = std::max(state1.page_elements.size(), state2.page_elements.size());
-    if (max_elements > 0) {
-        similarity += structure_weight * (1.0f - element_diff / max_elements);
-    }
-    weight_sum += structure_weight;
-    
-    // Scroll position similarity
-    float scroll_weight = 0.1f;
-    float scroll_diff = std::abs(state1.scroll_position - state2.scroll_position);
-    float max_scroll = std::max(std::abs(state1.scroll_position), std::abs(state2.scroll_position));
-    if (max_scroll > 0) {
-        similarity += scroll_weight * (1.0f - std::min(1.0f, scroll_diff / max_scroll));
-    } else {
-        similarity += scroll_weight; // Both at same position
-    }
-    weight_sum += scroll_weight;
-    
-    // Window dimensions similarity
-    float window_weight = 0.1f;
-    float width_diff = std::abs(state1.window_width - state2.window_width);
-    float height_diff = std::abs(state1.window_height - state2.window_height);
-    float max_width = std::max(state1.window_width, state2.window_width);
-    float max_height = std::max(state1.window_height, state2.window_height);
-    
-    float window_sim = 0.0f;
-    if (max_width > 0) window_sim += 0.5f * (1.0f - width_diff / max_width);
-    if (max_height > 0) window_sim += 0.5f * (1.0f - height_diff / max_height);
-    similarity += window_weight * window_sim;
-    weight_sum += window_weight;
-    
     // Visual features similarity (if available)
-    float visual_weight = 0.3f;
+    float visual_weight = 0.4f;
     if (!state1.visual_features.empty() && !state2.visual_features.empty() &&
         state1.visual_features.size() == state2.visual_features.size()) {
         
         float dot_product = 0.0f;
-        float norm1 = 0.0f;
-        float norm2 = 0.0f;
+        float norm1 = 0.0f, norm2 = 0.0f;
         
         for (size_t i = 0; i < state1.visual_features.size(); ++i) {
             dot_product += state1.visual_features[i] * state2.visual_features[i];
@@ -376,160 +345,40 @@ float computeBrowsingStateSimilarity(const BrowsingState& state1,
     }
     weight_sum += visual_weight;
     
+    // Scroll position similarity
+    float scroll_weight = 0.2f;
+    float scroll_diff = std::abs(state1.scroll_position - state2.scroll_position);
+    float scroll_sim = std::max(0.0f, 1.0f - scroll_diff / 1000.0f); // Normalize by typical scroll range
+    similarity += scroll_weight * scroll_sim;
+    weight_sum += scroll_weight;
+    
     return (weight_sum > 0.0f) ? similarity / weight_sum : 0.0f;
 }
 
-/**
- * @brief Extracts features from a browsing action for learning
- */
-std::vector<float> extractActionFeatures(const BrowsingAction& action) {
-    std::vector<float> features;
+float computeActionValue(const BrowsingAction& action, const BrowsingState& state) {
+    float value = action.expected_reward;
     
-    // Action type (one-hot encoding)
-    for (int i = 0; i <= static_cast<int>(ActionType::REFRESH); ++i) {
-        features.push_back((static_cast<int>(action.type) == i) ? 1.0f : 0.0f);
+    // Bonus for high confidence actions
+    value += action.confidence * 0.2f;
+    
+    // Penalty for risky actions without clear benefit
+    if (action.type == ActionType::NAVIGATE && action.target_url.empty()) {
+        value -= 0.3f;
     }
     
-    // Spatial features (normalized coordinates)
-    features.push_back(static_cast<float>(action.parameters.x) / 1920.0f); // Assume max 1920px
-    features.push_back(static_cast<float>(action.parameters.y) / 1080.0f); // Assume max 1080px
-    
-    // Scroll amount (normalized)
-    features.push_back(std::tanh(action.parameters.scroll_amount / 1000.0f));
-    
-    // Wait duration (normalized)
-    features.push_back(std::tanh(action.parameters.wait_duration / 10.0f));
-    
-    // Text length (if applicable)
-    features.push_back(std::tanh(static_cast<float>(action.parameters.text.length()) / 100.0f));
-    
-    // Confidence and expected reward
-    features.push_back(action.confidence);
-    features.push_back(std::tanh(action.expected_reward));
-    
-    // Priority (normalized)
-    features.push_back(std::tanh(static_cast<float>(action.priority) / 10.0f));
-    
-    // Binary features
-    features.push_back(action.requires_confirmation ? 1.0f : 0.0f);
-    features.push_back(action.followup_actions.empty() ? 0.0f : 1.0f);
-    
-    return features;
+    return std::max(0.0f, std::min(1.0f, value));
 }
 
-// ============================================================================
-// PERFORMANCE OPTIMIZATION HELPERS
-// ============================================================================
-
-namespace PerformanceUtils {
-    /**
-     * @brief Compute action value using temporal difference learning
-     */
-    float computeActionValue(const BrowsingAction& action, 
-                           const std::vector<MemoryTrace>& similar_episodes,
-                           float discount_factor = 0.95f) {
-        if (similar_episodes.empty()) {
-            return action.expected_reward;
-        }
-        
-        float total_value = 0.0f;
-        float weight_sum = 0.0f;
-        
-        for (const auto& episode : similar_episodes) {
-            // Compute similarity weight based on action features
-            std::vector<float> action_features = extractActionFeatures(action);
-            float similarity = 1.0f; // Simplified - would need action comparison
-            
-            // Discounted future reward
-            float discounted_reward = episode.reward_received * 
-                std::pow(discount_factor, episode.temporal_discount);
-            
-            total_value += similarity * discounted_reward;
-            weight_sum += similarity;
-        }
-        
-        return (weight_sum > 0.0f) ? total_value / weight_sum : action.expected_reward;
-    }
+float updateExplorationRate(float current_rate, float recent_performance, float target_performance) {
+    const float min_rate = 0.01f;
+    const float max_rate = 0.5f;
+    const float adaptation_speed = 0.01f;
     
-    /**
-     * @brief Update exploration rate based on performance
-     */
-    float updateExplorationRate(float current_rate, float recent_performance, 
-                              float target_performance = 0.8f) {
-        const float min_rate = 0.01f;
-        const float max_rate = 0.5f;
-        const float adaptation_speed = 0.01f;
-        
-        if (recent_performance < target_performance) {
-            // Increase exploration if performance is low
-            return std::min(max_rate, current_rate + adaptation_speed);
-        } else {
-            // Decrease exploration if performance is good
-            return std::max(min_rate, current_rate - adaptation_speed * 0.5f);
-        }
-    }
-}
-
-// ============================================================================
-// NETWORK INTEGRATION HELPERS
-// ============================================================================
-
-namespace NetworkIntegration {
-    /**
-     * @brief Create a specialized neural module for specific tasks
-     */
-    std::unique_ptr<EnhancedNeuralModule> createSpecializedModule(
-        const std::string& module_name,
-        const NetworkConfig& config,
-        const std::string& specialization) {
-        
-        auto module = std::make_unique<EnhancedNeuralModule>(module_name, config);
-        
-        if (!module->initialize()) {
-            std::cerr << "Failed to initialize specialized module: " << module_name << std::endl;
-            return nullptr;
-        }
-        
-        // Set up specialization-specific parameters
-        if (specialization == "vision") {
-            module->setDevelopmentalStage(3); // Mature visual processing
-            module->setAttentionWeight(0.8f); // High attention for vision
-        } else if (specialization == "memory") {
-            module->setDevelopmentalStage(2); // Developing memory systems
-            module->setAttentionWeight(0.6f); // Moderate attention for memory
-        } else if (specialization == "motor") {
-            module->setDevelopmentalStage(3); // Mature motor control
-            module->setAttentionWeight(0.9f); // Very high attention for motor actions
-        }
-        
-        std::cout << "Created specialized " << specialization 
-                  << " module: " << module_name << std::endl;
-        
-        return module;
-    }
-    
-    /**
-     * @brief Establish connections between neural modules
-     */
-    void connectModules(EnhancedNeuralModule& source_module,
-                       EnhancedNeuralModule& target_module,
-                       const std::string& source_port,
-                       const std::string& target_port,
-                       float connection_strength = 1.0f) {
-        
-        EnhancedNeuralModule::InterModuleConnection connection;
-        connection.source_port = source_port;
-        connection.target_module = target_module.get_name();
-        connection.target_port = target_port;
-        connection.connection_strength = connection_strength;
-        connection.is_feedback = false;
-        connection.delay_ms = 5.0f; // 5ms transmission delay
-        
-        source_module.registerInterModuleConnection(connection);
-        
-        std::cout << "Connected " << source_module.get_name() 
-                  << ":" << source_port << " -> " 
-                  << target_module.get_name() << ":" << target_port
-                  << " (strength: " << connection_strength << ")" << std::endl;
+    if (recent_performance < target_performance) {
+        // Increase exploration if performance is low
+        return std::min(max_rate, current_rate + adaptation_speed);
+    } else {
+        // Decrease exploration if performance is good
+        return std::max(min_rate, current_rate - adaptation_speed * 0.5f);
     }
 }
