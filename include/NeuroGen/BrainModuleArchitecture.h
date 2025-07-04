@@ -256,6 +256,20 @@ public:
      */
     float getTotalActivity() const;
 
+    /**
+     * @brief Save full architecture and module states
+     * @param directory Directory path for saved files
+     * @return Success status
+     */
+    bool saveState(const std::string& directory) const;
+
+    /**
+     * @brief Load architecture and module states
+     * @param directory Directory path containing saved files
+     * @return Success status
+     */
+    bool loadState(const std::string& directory);
+
 private:
     // ========================================================================
     // INTERNAL STATE

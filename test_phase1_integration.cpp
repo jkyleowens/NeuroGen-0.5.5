@@ -33,6 +33,8 @@ int main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     agent.stopAutonomousLearning();
+    agent.saveAgentState("agent_state");
+    agent.loadAgentState("agent_state");
     std::cout << agent.getStatusReport() << std::endl;
     return 0;
 }

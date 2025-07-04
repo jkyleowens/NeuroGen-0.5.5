@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <fstream>
+#include <filesystem>
 
 // ============================================================================
 // CONSTRUCTION AND INITIALIZATION
@@ -844,4 +846,70 @@ std::map<std::string, std::map<std::string, float>> BrainModuleArchitecture::get
     }
     
     return stats;
+}
+
+bool BrainModuleArchitecture::saveState(const std::string& directory) const {
+    if (!modular_network_) return false;
+
+    std::filesystem::create_directories(directory);
+
+    // Save each module state
+    for (const auto& name : modular_network_->get_module_names()) {
+        auto mod = modular_network_->get_module(name);
+        if (mod) {
+            mod->save_state(directory + "/" + name + ".bin");
+        }
+    }
+
+    // Save architecture metadata
+    std::ofstream meta(directory + "/architecture.meta", std::ios::binary);
+    if (!meta.is_open()) return false;
+
+    meta.write(reinterpret_cast<const char*>(&visual_input_width_), sizeof(visual_input_width_));
+    meta.write(reinterpret_cast<const char*>(&visual_input_height_), sizeof(visual_input_height_));
+
+    size_t map_size = attention_weights_.size();
+    meta.write(reinterpret_cast<const char*>(&map_size), sizeof(map_size));
+    for (const auto& [name, weight] : attention_weights_) {
+        size_t len = name.size();
+        meta.write(reinterpret_cast<const char*>(&len), sizeof(len));
+        meta.write(name.c_str(), len);
+        meta.write(reinterpret_cast<const char*>(&weight), sizeof(weight));
+    }
+
+    return true;
+}
+
+bool BrainModuleArchitecture::loadState(const std::string& directory) {
+    if (!modular_network_) return false;
+
+    // Load architecture metadata
+    std::ifstream meta(directory + "/architecture.meta", std::ios::binary);
+    if (!meta.is_open()) return false;
+
+    meta.read(reinterpret_cast<char*>(&visual_input_width_), sizeof(visual_input_width_));
+    meta.read(reinterpret_cast<char*>(&visual_input_height_), sizeof(visual_input_height_));
+
+    size_t map_size = 0;
+    meta.read(reinterpret_cast<char*>(&map_size), sizeof(map_size));
+    attention_weights_.clear();
+    for (size_t i = 0; i < map_size; ++i) {
+        size_t len = 0;
+        meta.read(reinterpret_cast<char*>(&len), sizeof(len));
+        std::string name(len, '\0');
+        meta.read(name.data(), len);
+        float weight = 0.0f;
+        meta.read(reinterpret_cast<char*>(&weight), sizeof(weight));
+        attention_weights_[name] = weight;
+    }
+
+    // Load each module
+    for (const auto& name : modular_network_->get_module_names()) {
+        auto mod = modular_network_->get_module(name);
+        if (mod) {
+            mod->load_state(directory + "/" + name + ".bin");
+        }
+    }
+
+    return true;
 }

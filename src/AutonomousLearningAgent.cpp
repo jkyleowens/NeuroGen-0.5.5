@@ -8,6 +8,7 @@
 #include "NeuroGen/Network.h"
 #include "NeuroGen/NetworkConfig.h"
 #include "NeuroGen/EnhancedNeuralModule.h"
+#include <filesystem>
 #include <iostream>
 #include <algorithm>
 #include <cmath>
@@ -264,6 +265,29 @@ std::map<std::string, float> AutonomousLearningAgent::getAttentionWeights() cons
     }
     
     return weights;
+}
+
+bool AutonomousLearningAgent::saveAgentState(const std::string& directory) const {
+    std::filesystem::create_directories(directory);
+    bool ok = true;
+    if (brain_architecture_) {
+        ok &= brain_architecture_->saveState(directory + "/brain");
+    }
+    if (memory_system_) {
+        ok &= memory_system_->saveMemoryState(directory + "/memory.bin");
+    }
+    return ok;
+}
+
+bool AutonomousLearningAgent::loadAgentState(const std::string& directory) {
+    bool ok = true;
+    if (brain_architecture_) {
+        ok &= brain_architecture_->loadState(directory + "/brain");
+    }
+    if (memory_system_) {
+        ok &= memory_system_->loadMemoryState(directory + "/memory.bin");
+    }
+    return ok;
 }
 
 void AutonomousLearningAgent::initialize_neural_modules() {

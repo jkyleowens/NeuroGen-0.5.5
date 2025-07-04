@@ -381,6 +381,18 @@ public:
      * @return Map of module attention weights
      */
     std::map<std::string, float> getAttentionWeights() const;
+
+    /**
+     * @brief Save agent neural state and memory
+     * @param directory Base directory to store state files
+     */
+    bool saveAgentState(const std::string& directory) const;
+
+    /**
+     * @brief Load agent neural state and memory
+     * @param directory Base directory with saved state files
+     */
+    bool loadAgentState(const std::string& directory);
     
     /**
      * @brief Enable/disable detailed logging
