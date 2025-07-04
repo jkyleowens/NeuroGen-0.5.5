@@ -4,7 +4,126 @@
 #include "NeuroGen/NeuralConstants.h"
 
 // ============================================================================
-// COMPLETE GPU NEURON STATE STRUCTURE
+// COMPLETE GPU PLASTICITY STATE STRUCTURE - MISSING DEFINITION
+// ============================================================================
+
+struct GPUPlasticityState {
+    // === CORE PLASTICITY PARAMETERS ===
+    float stdp_learning_rate;               // STDP learning rate
+    float bcm_learning_rate;                // BCM learning rate
+    float homeostatic_rate;                 // Homeostatic scaling rate
+    float metaplasticity_rate;              // Meta-plasticity modulation rate
+    
+    // === TIMING AND THRESHOLDS ===
+    float stdp_window_ltp;                  // LTP time window (ms)
+    float stdp_window_ltd;                  // LTD time window (ms)
+    float bcm_threshold;                    // BCM sliding threshold
+    float plasticity_threshold;             // General plasticity threshold
+    
+    // === ACTIVITY TRACKING ===
+    float total_weight_change;              // Cumulative weight changes
+    float plasticity_events_count;          // Number of plasticity events
+    float average_eligibility_trace;        // Mean eligibility trace
+    float last_update_time;                 // Last plasticity update time
+    
+    // === CALCIUM AND PROTEIN SYNTHESIS ===
+    float calcium_threshold_ltp;            // Calcium threshold for LTP
+    float calcium_threshold_ltd;            // Calcium threshold for LTD
+    float protein_synthesis_rate;           // Rate of protein synthesis
+    float late_phase_threshold;             // Threshold for late-phase plasticity
+    
+    // === ELIGIBILITY TRACES ===
+    float trace_decay_rate;                 // Eligibility trace decay rate
+    float trace_amplitude;                  // Maximum trace amplitude
+    float trace_integration_window;         // Integration time window
+    
+    // === META-PLASTICITY ===
+    float recent_activity_level;            // Recent synaptic activity
+    float metaplasticity_threshold;         // Meta-plasticity activation threshold
+    float sliding_threshold_rate;           // BCM threshold adaptation rate
+    
+    // === CONSTRAINTS AND BOUNDS ===
+    float min_weight_change;                // Minimum detectable weight change
+    float max_weight_change;                // Maximum single-step weight change
+    float saturation_factor;                // Weight saturation factor
+    
+    // === STATE FLAGS ===
+    bool stdp_enabled;                      // STDP mechanism enabled
+    bool bcm_enabled;                       // BCM mechanism enabled
+    bool homeostatic_enabled;               // Homeostatic scaling enabled
+    bool metaplasticity_enabled;            // Meta-plasticity enabled
+    bool late_phase_plasticity_enabled;     // Late-phase LTP/LTD enabled
+};
+
+// ============================================================================
+// COMPLETE GPU NEUROMODULATOR STATE STRUCTURE - MISSING DEFINITION
+// ============================================================================
+
+struct GPUNeuromodulatorState {
+    // === PRIMARY NEUROMODULATORS ===
+    float dopamine_concentration;           // Global dopamine level
+    float acetylcholine_concentration;      // Global acetylcholine level
+    float serotonin_concentration;          // Global serotonin level
+    float norepinephrine_concentration;     // Global norepinephrine level
+    float gaba_concentration;               // Global GABA level
+    float glutamate_concentration;          // Global glutamate level
+    
+    // === RECEPTOR DENSITIES ===
+    float dopamine_d1_density;              // D1 receptor density
+    float dopamine_d2_density;              // D2 receptor density
+    float acetylcholine_nic_density;        // Nicotinic receptor density
+    float acetylcholine_musc_density;       // Muscarinic receptor density
+    float serotonin_5ht1a_density;          // 5-HT1A receptor density
+    float serotonin_5ht2a_density;          // 5-HT2A receptor density
+    
+    // === RELEASE AND UPTAKE DYNAMICS ===
+    float dopamine_release_rate;            // Dopamine release rate
+    float dopamine_uptake_rate;             // Dopamine reuptake rate
+    float acetylcholine_release_rate;       // ACh release rate
+    float acetylcholine_degradation_rate;   // ACh degradation rate
+    float serotonin_release_rate;           // Serotonin release rate
+    float serotonin_uptake_rate;            // Serotonin reuptake rate
+    
+    // === MODULATION PARAMETERS ===
+    float learning_modulation_strength;     // Learning rate modulation
+    float attention_modulation_strength;    // Attention gating strength
+    float memory_consolidation_strength;    // Memory consolidation modulation
+    float plasticity_gating_threshold;      // Plasticity gating threshold
+    
+    // === TIMING AND DYNAMICS ===
+    float modulation_time_constant;         // Modulation dynamics time constant
+    float baseline_recovery_rate;           // Return to baseline rate
+    float peak_modulation_duration;         // Duration of peak modulation
+    float last_modulation_time;             // Time of last significant modulation
+    
+    // === SPATIAL DISTRIBUTION ===
+    float cortical_modulation_level;        // Cortical modulation strength
+    float hippocampal_modulation_level;     // Hippocampal modulation strength
+    float striatal_modulation_level;        // Striatal modulation strength
+    float thalamic_modulation_level;        // Thalamic modulation strength
+    
+    // === REWARD AND PREDICTION ===
+    float reward_prediction_error;          // Current RPE signal
+    float expected_reward;                  // Expected reward value
+    float actual_reward;                    // Actual received reward
+    float reward_sensitivity;               // Sensitivity to reward signals
+    
+    // === HOMEOSTATIC REGULATION ===
+    float baseline_dopamine;                // Baseline dopamine level
+    float baseline_acetylcholine;           // Baseline acetylcholine level
+    float baseline_serotonin;               // Baseline serotonin level
+    float homeostatic_recovery_rate;        // Rate of return to baseline
+    
+    // === STATE FLAGS ===
+    bool dopamine_system_active;            // Dopamine system active
+    bool acetylcholine_system_active;       // Acetylcholine system active
+    bool serotonin_system_active;           // Serotonin system active
+    bool modulation_enabled;                // Overall modulation enabled
+    bool reward_prediction_enabled;         // Reward prediction active
+};
+
+// ============================================================================
+// EXISTING STRUCTURES (keeping for completeness)
 // ============================================================================
 
 struct GPUNeuronState {
@@ -19,7 +138,7 @@ struct GPUNeuronState {
     float previous_spike_time;          // Previous spike time
     float average_firing_rate;          // Running average firing rate
     float average_activity;             // Average activity level
-    float activity_level;               // CRITICAL FIX: Added missing member
+    float activity_level;               // Current activity level
     
     // === PLASTICITY AND ADAPTATION ===
     float excitability;                 // Intrinsic excitability
@@ -37,8 +156,8 @@ struct GPUNeuronState {
     float na_m, na_h;                   // Sodium channel states
     float k_n;                          // Potassium channel state
     float ca_channel_state;             // Calcium channel state
-    float channel_expression[NUM_RECEPTOR_TYPES]; // CRITICAL FIX: Added missing array
-    float channel_maturation[NUM_RECEPTOR_TYPES]; // CRITICAL FIX: Added missing array
+    float channel_expression[NUM_RECEPTOR_TYPES]; // Channel expression levels
+    float channel_maturation[NUM_RECEPTOR_TYPES]; // Channel maturation states
     
     // === MULTI-COMPARTMENT SUPPORT ===
     float V_compartments[MAX_COMPARTMENTS];        // Compartment voltages
@@ -69,10 +188,6 @@ struct GPUNeuronState {
     float glucose_uptake;               // Glucose consumption rate
 };
 
-// ============================================================================
-// ENHANCED GPU SYNAPSE STRUCTURE
-// ============================================================================
-
 struct GPUSynapse {
     // === CONNECTIVITY ===
     int pre_neuron_idx;                 // Presynaptic neuron index
@@ -90,7 +205,7 @@ struct GPUSynapse {
     // === PLASTICITY ===
     float eligibility_trace;            // Eligibility trace
     float plasticity_modulation;        // Plasticity modulation
-    bool is_plastic;                    // CRITICAL FIX: Added missing member
+    bool is_plastic;                    // Plasticity enabled flag
     float learning_rate;                // Synapse-specific learning rate
     float metaplasticity_factor;        // Meta-plasticity scaling
     
@@ -134,117 +249,35 @@ struct GPUSynapse {
 };
 
 // ============================================================================
-// FORWARD DECLARATIONS FOR COMPLEX TYPES
+// GPU NETWORK CONFIGURATION STRUCTURE
 // ============================================================================
 
-// Value function approximation structure
-struct ValueFunction {
-    float state_features[64];           // State feature representation
-    float value_weights[64];            // Value function weights
-    float state_value;                  // Current state value estimate
-    float td_error;                     // Temporal difference error
-    float learning_rate;                // Value function learning rate
-    float eligibility_trace;            // Eligibility trace for TD learning
-    int feature_dimensions;             // Number of active features
-    bool is_active;                     // Whether this function is active
+struct GPUNetworkConfig {
+    // === LEARNING PARAMETERS ===
+    float global_learning_rate;         // Overall learning rate
+    float stdp_learning_rate;           // STDP-specific rate
+    float bcm_learning_rate;            // BCM-specific rate
+    float homeostatic_rate;             // Homeostatic scaling rate
+    
+    // === TIMING PARAMETERS ===
+    float simulation_dt;                // Simulation time step
+    float plasticity_update_interval;   // Plasticity update frequency
+    float monitoring_interval;          // Monitoring frequency
+    
+    // === NETWORK DIMENSIONS ===
+    int num_neurons;                    // Total neuron count
+    int num_synapses;                   // Total synapse count
+    int num_modules;                    // Number of neural modules
+    
+    // === ACTIVATION PARAMETERS ===
+    float noise_amplitude;              // Background noise level
+    float input_scaling;                // Input signal scaling
+    float output_scaling;               // Output signal scaling
+    
+    // === STABILITY PARAMETERS ===
+    float max_weight_change;            // Maximum weight change per step
+    float stability_threshold;          // Network stability threshold
+    float convergence_criterion;        // Learning convergence criterion
 };
-
-// Actor-critic learning structure
-struct ActorCriticState {
-    float policy_parameters[32];        // Policy parameters
-    float action_probabilities[32];     // Action probabilities
-    float action_preferences[32];       // Action preferences
-    float action_eligibility[32];       // Action eligibility traces
-    float state_value;                  // State value estimate
-    float baseline_estimate;            // Baseline for advantage
-    float advantage_estimate;           // Advantage estimate
-    float exploration_bonus;            // Exploration bonus
-    float uncertainty_estimate;         // Epistemic uncertainty
-    int num_actions;                    // Number of possible actions
-    bool is_learning;                   // Learning flag
-};
-
-// Curiosity-driven exploration system
-struct CuriosityState {
-    float novelty_detector[32];         // Novelty detection features
-    float surprise_level;               // Current surprise level
-    float familiarity_level;            // Familiarity with current state
-    float information_gain;             // Expected information gain
-    float competence_progress;          // Learning progress measure
-    float mastery_level;                // Current mastery level
-    float random_exploration;           // Random exploration drive
-    float directed_exploration;         // Directed exploration drive
-    float goal_exploration;             // Goal-directed exploration
-    bool is_exploring;                  // Exploration flag
-};
-
-// Neural progenitor cell structure
-struct NeuralProgenitor {
-    // === PROGENITOR IDENTITY ===
-    int progenitor_id;                  // Unique identifier
-    int progenitor_type;                // Type of progenitor
-    int developmental_stage;            // Current stage
-    
-    // === SPATIAL PROPERTIES ===
-    float position_x, position_y, position_z;     // 3D coordinates
-    float migration_vector_x, migration_vector_y, migration_vector_z; // Migration direction
-    
-    // === TEMPORAL PROPERTIES ===
-    float birth_time;                   // Time of creation
-    float differentiation_time;         // Time of differentiation
-    float last_division_time;           // Last division time
-    
-    // === PROLIFERATION ===
-    int division_count;                 // Number of divisions
-    int max_divisions;                  // Maximum allowed divisions
-    float division_probability;         // Probability of division
-    bool can_divide;                    // Division capability
-    
-    // === DIFFERENTIATION ===
-    float differentiation_probability;  // Probability of differentiation
-    float excitatory_bias;              // Bias toward excitatory fate
-    float inhibitory_bias;              // Bias toward inhibitory fate
-    float interneuron_probability;      // Probability of interneuron fate
-    
-    // === ENVIRONMENTAL SENSING ===
-    float local_activity_level;         // Local network activity
-    float local_neuron_density;         // Local neuron density
-    float growth_factor_concentration;  // Growth factor levels
-    float competition_pressure;         // Competition from other cells
-    
-    // === MOLECULAR STATE ===
-    float transcription_factors[8];     // Key transcription factors
-    float growth_signals[4];            // Growth signaling molecules
-    float apoptosis_signals[4];         // Cell death signals
-    
-    // === FATE SPECIFICATION ===
-    int target_layer;                   // Target cortical layer
-    int target_column;                  // Target cortical column
-    int target_neuron_type;             // Target neuron type
-    bool fate_committed;                // Whether fate is determined
-    
-    // === ACTIVITY STATE ===
-    bool is_active;                     // Whether progenitor is active
-    bool is_migrating;                  // Currently migrating
-    bool is_differentiating;            // Currently differentiating
-    bool marked_for_deletion;           // Scheduled for removal
-};
-
-// Additional forward declarations
-struct DevelopmentalTrajectory;
-struct SynapticProgenitor;
-struct SynapticCompetition;
-struct PruningAssessment;
-struct CompetitiveElimination;
-struct NeuralHomeostasis;
-struct SynapticHomeostasis;
-struct NetworkHomeostasis;
-struct STDPRuleConfig;
-struct NeurogenesisController;
-struct SynaptogenesisController;
-struct PruningController;
-struct CoordinationController;
-struct PlasticityState;
-struct DopamineNeuron;
 
 #endif // GPU_NEURAL_STRUCTURES_H

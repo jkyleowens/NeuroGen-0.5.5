@@ -312,7 +312,8 @@ ControllerModule::ControllerModule(const ControllerConfig& config)
     , system_coherence_level_(0.5f)
     , neuron_activity_ratio_(0.5f)
     , is_running_(false)
-    , detailed_logging_enabled_(false) {
+    , detailed_logging_enabled_(false)
+    , creativity_mode_factor_(1.0f) {
     
     initialize_neuromodulators();
     last_update_time_ = std::chrono::high_resolution_clock::now();
@@ -406,62 +407,107 @@ std::string to_string(RewardSignalType type) {
 // MISSING METHOD IMPLEMENTATIONS
 // ============================================================================
 
-void ControllerModule::apply_reward(const std::string& context, float reward, RewardSignalType signal_type) {
-    // Apply reward signal to the system
-    RewardSignal signal;
-    signal.magnitude = reward;
-    signal.signal_type = signal_type;
-    signal.context = context;
-    signal.timestamp = std::chrono::steady_clock::now();
-    
-    // Update neuromodulators based on reward
-    if (reward > 0.0f) {
-        // Positive reward increases dopamine
-        release_neuromodulator(NeuromodulatorType::DOPAMINE, reward * 0.5f, context);
-    } else {
-        // Negative reward can increase stress markers
-        release_neuromodulator(NeuromodulatorType::NOREPINEPHRINE, std::abs(reward) * 0.3f, context);
-    }
-    
-    // Store reward signal for learning
-    reward_history_.push_back(signal);
-    if (reward_history_.size() > 1000) {
-        reward_history_.erase(reward_history_.begin());
-    }
-    
-    if (detailed_logging_enabled_) {
-        log_action("Applied reward: " + std::to_string(reward) + " (" + to_string(signal_type) + ")");
+void ControllerModule::enable_detailed_logging(bool enable) {
+    detailed_logging_enabled_ = enable;
+    if (enable) {
+        log_action("Detailed logging enabled");
     }
 }
 
-float ControllerModule::get_concentration(NeuromodulatorType type) const {
-    auto it = neuromodulators_.find(type);
-    if (it != neuromodulators_.end()) {
-        return it->second->concentration;
+void ControllerModule::enable_focus_mode(const std::string& target_module, float intensity) {
+    // Set high attention on target module, reduce others
+    attention_weights_[target_module] = std::min(1.0f, intensity);
+    
+    // Reduce attention on other modules proportionally
+    float reduction_factor = 1.0f - (intensity * 0.3f);
+    for (auto& [module_name, weight] : attention_weights_) {
+        if (module_name != target_module) {
+            weight *= reduction_factor;
+        }
     }
-    return 0.0f;
+    
+    if (detailed_logging_enabled_) {
+        log_action("Focus mode enabled for " + target_module + " with intensity " + std::to_string(intensity));
+    }
+}
+
+void ControllerModule::enable_creative_mode(float creativity_factor) {
+    // Increase exploration and reduce strict optimization
+    creativity_mode_factor_ = std::clamp(creativity_factor, 0.0f, 2.0f);
+    
+    // Release small amounts of dopamine and norepinephrine to encourage exploration
+    release_neuromodulator(NeuromodulatorType::DOPAMINE, creativity_factor * 0.2f);
+    release_neuromodulator(NeuromodulatorType::NOREPINEPHRINE, creativity_factor * 0.15f);
+    
+    if (detailed_logging_enabled_) {
+        log_action("Creative mode enabled with factor " + std::to_string(creativity_factor));
+    }
+}
+
+std::string ControllerModule::generate_status_report() {
+    std::stringstream report;
+    
+    report << "=== ControllerModule Status Report ===\n";
+    report << "Active Modules: " << attention_weights_.size() << "\n";
+    report << "Total Reward Signals: " << reward_history_.size() << "\n";
+    report << "Detailed Logging: " << (detailed_logging_enabled_ ? "Enabled" : "Disabled") << "\n";
+    
+    report << "\nNeuromodulator Levels:\n";
+    for (const auto& [type, modulator] : neuromodulators_) {
+        report << "  " << static_cast<int>(type) << ": " 
+               << std::fixed << std::setprecision(3) << modulator->concentration << "\n";
+    }
+    
+    report << "\nAttention Weights:\n";
+    for (const auto& [module, weight] : attention_weights_) {
+        report << "  " << module << ": " 
+               << std::fixed << std::setprecision(3) << weight << "\n";
+    }
+    
+    float performance = calculate_overall_system_performance();
+    report << "\nOverall Performance: " << std::fixed << std::setprecision(3) << performance << "\n";
+    
+    return report.str();
+}
+
+// ============================================================================
+// ADDITIONAL MISSING METHOD IMPLEMENTATIONS
+// ============================================================================
+
+void ControllerModule::apply_reward(const std::string& module_name, float reward_magnitude, RewardSignalType reward_type) {
+    RewardSignal signal;
+    signal.signal_type = reward_type;
+    signal.magnitude = reward_magnitude;
+    signal.source_module = module_name;
+    signal.timestamp = std::chrono::steady_clock::now();
+    
+    pending_rewards_.push(signal);
+    
+    if (detailed_logging_enabled_) {
+        log_action("Applied reward " + std::to_string(reward_magnitude) + " to " + module_name);
+    }
 }
 
 void ControllerModule::emergency_stop() {
-    // Emergency shutdown procedure
-    for (auto& [type, neuromod] : neuromodulators_) {
-        neuromod->concentration = neuromod->baseline_level;
-    }
+    is_running_ = false;
     
     // Clear all pending operations
-    reward_history_.clear();
-    
-    // Reset system state
-    system_performance_metrics_.overall_performance = 0.0f;
-    system_performance_metrics_.learning_efficiency = 0.0f;
+    while (!pending_rewards_.empty()) {
+        pending_rewards_.pop();
+    }
+    while (!pending_commands_.empty()) {
+        pending_commands_.pop();
+    }
     
     if (detailed_logging_enabled_) {
-        log_action("Emergency stop executed - system reset to baseline");
+        log_action("Emergency stop executed");
     }
 }
 
 void ControllerModule::register_module(const std::string& module_name, std::shared_ptr<NeuralModule> module) {
     registered_modules_[module_name] = module;
+    attention_weights_[module_name] = 1.0f; // Default attention weight
+    module_performance_history_[module_name] = 0.5f; // Default performance
     
     if (detailed_logging_enabled_) {
         log_action("Registered module: " + module_name);
@@ -476,127 +522,158 @@ std::shared_ptr<NeuralModule> ControllerModule::get_module(const std::string& mo
     return nullptr;
 }
 
-std::vector<std::string> ControllerModule::get_registered_modules() const {
-    std::vector<std::string> module_names;
-    module_names.reserve(registered_modules_.size());
+void ControllerModule::coordinate_module_activities() {
+    // Simple coordination strategy: balance attention across modules
+    float total_performance = 0.0f;
+    int active_modules = 0;
     
     for (const auto& [name, module] : registered_modules_) {
-        module_names.push_back(name);
+        if (module) {
+            total_performance += module_performance_history_[name];
+            active_modules++;
+        }
     }
     
-    return module_names;
-}
-
-void ControllerModule::coordinate_module_activities() {
-    // Coordinate activity between registered modules
-    for (auto& [name, module] : registered_modules_) {
-        if (module) {
-            // Apply current neuromodulator levels to modules
-            // This would typically involve calling module-specific methods
-            // For now, we'll just track that coordination occurred
+    if (active_modules > 0) {
+        float avg_performance = total_performance / active_modules;
+        
+        // Adjust attention based on performance
+        for (auto& [name, weight] : attention_weights_) {
+            float performance = module_performance_history_[name];
+            if (performance < avg_performance * 0.8f) {
+                weight = std::min(1.0f, weight * 1.1f); // Increase attention for poor performers
+            } else if (performance > avg_performance * 1.2f) {
+                weight = std::max(0.1f, weight * 0.95f); // Slightly reduce attention for good performers
+            }
         }
     }
     
     if (detailed_logging_enabled_) {
-        log_action("Coordinated activities for " + std::to_string(registered_modules_.size()) + " modules");
+        log_action("Coordinated module activities");
     }
+}
+
+float ControllerModule::get_concentration(NeuromodulatorType type) const {
+    auto it = neuromodulators_.find(type);
+    if (it != neuromodulators_.end()) {
+        return it->second->concentration;
+    }
+    return 0.0f;
+}
+
+std::vector<std::string> ControllerModule::get_registered_modules() const {
+    std::vector<std::string> module_names;
+    for (const auto& [name, module] : registered_modules_) {
+        module_names.push_back(name);
+    }
+    return module_names;
 }
 
 float ControllerModule::calculate_overall_system_performance() {
-    // Calculate performance based on recent history
-    if (reward_history_.empty()) {
-        return 0.5f; // Default neutral performance
+    if (registered_modules_.empty()) {
+        return 0.5f;
     }
     
-    float total_reward = 0.0f;
-    int recent_count = std::min(static_cast<int>(reward_history_.size()), 50);
-    
-    for (int i = reward_history_.size() - recent_count; i < reward_history_.size(); ++i) {
-        total_reward += reward_history_[i].magnitude;
+    float total_performance = 0.0f;
+    for (const auto& [name, performance] : module_performance_history_) {
+        total_performance += performance;
     }
     
-    return std::clamp(total_reward / recent_count + 0.5f, 0.0f, 1.0f);
+    return total_performance / registered_modules_.size();
 }
 
-void ControllerModule::set_baseline_level(NeuromodulatorType type, float level) {
+void ControllerModule::set_baseline_level(NeuromodulatorType type, float baseline) {
     auto it = neuromodulators_.find(type);
     if (it != neuromodulators_.end()) {
-        it->second->baseline_level = std::clamp(level, 0.0f, 1.0f);
-        
-        if (detailed_logging_enabled_) {
-            log_action("Set baseline level for " + to_string(type) + " to " + std::to_string(level));
-        }
+        it->second->baseline_level = std::clamp(baseline, 0.0f, 1.0f);
     }
 }
 
 void ControllerModule::update_neuromodulator_dynamics(float dt) {
-    // Update neuromodulator levels over time
-    for (auto& [type, neuromod] : neuromodulators_) {
-        // Decay towards baseline
-        float decay_rate = 0.1f; // Adjust as needed
-        float target = neuromod->baseline_level;
-        float current = neuromod->concentration;
+    for (auto& [type, modulator] : neuromodulators_) {
+        // Natural decay towards baseline
+        float decay_factor = 0.95f;
+        modulator->concentration = modulator->concentration * decay_factor + 
+                                  modulator->baseline_level * (1.0f - decay_factor);
         
-        neuromod->concentration = current + (target - current) * decay_rate * dt;
-        neuromod->concentration = std::clamp(neuromod->concentration, 0.0f, 1.0f);
+        // Bound concentration
+        modulator->concentration = std::clamp(modulator->concentration, 0.0f, 1.0f);
     }
 }
 
 void ControllerModule::process_pending_rewards() {
-    // Process any rewards that need delayed processing
-    // For now, this is a placeholder as rewards are processed immediately
+    while (!pending_rewards_.empty()) {
+        RewardSignal signal = pending_rewards_.front();
+        pending_rewards_.pop();
+        
+        // Apply reward to dopamine system
+        release_neuromodulator(NeuromodulatorType::DOPAMINE, signal.magnitude * 0.5f);
+        
+        // Update module performance history
+        if (module_performance_history_.find(signal.source_module) != module_performance_history_.end()) {
+            module_performance_history_[signal.source_module] = 
+                module_performance_history_[signal.source_module] * 0.9f + signal.magnitude * 0.1f;
+        }
+        
+        // Store in reward history
+        reward_history_.push_back(signal);
+        if (reward_history_.size() > 1000) {
+            reward_history_.erase(reward_history_.begin());
+        }
+    }
 }
 
 void ControllerModule::execute_pending_commands() {
-    // Execute any queued commands
-    // For now, this is a placeholder for future command queuing system
+    while (!pending_commands_.empty()) {
+        NeuromodulationCommand command = pending_commands_.front();
+        pending_commands_.pop();
+        
+        // Execute the command
+        release_neuromodulator(command.modulator, command.intensity);
+    }
 }
 
 void ControllerModule::assess_system_state() {
-    // Assess overall system health and performance
+    // Update system performance metrics
     system_performance_metrics_.overall_performance = calculate_overall_system_performance();
-    system_performance_metrics_.learning_efficiency = calculate_learning_efficiency();
     
-    // Check for any system issues that need attention
-    if (system_performance_metrics_.overall_performance < 0.2f) {
-        // Low performance - increase learning-related neuromodulators
-        release_neuromodulator(NeuromodulatorType::ACETYLCHOLINE, 0.2f, "performance_boost");
+    // Calculate system coherence based on attention distribution
+    float attention_variance = 0.0f;
+    float attention_mean = 0.0f;
+    
+    if (!attention_weights_.empty()) {
+        for (const auto& [name, weight] : attention_weights_) {
+            attention_mean += weight;
+        }
+        attention_mean /= attention_weights_.size();
+        
+        for (const auto& [name, weight] : attention_weights_) {
+            attention_variance += (weight - attention_mean) * (weight - attention_mean);
+        }
+        attention_variance /= attention_weights_.size();
+        
+        system_coherence_level_ = 1.0f / (1.0f + attention_variance);
     }
 }
 
 void ControllerModule::generate_automatic_responses() {
-    // Generate automatic responses based on current state
-    float current_performance = system_performance_metrics_.overall_performance;
+    // Generate automatic neuromodulator responses based on system state
     
-    if (current_performance > 0.8f) {
-        // High performance - maintain current state
-        release_neuromodulator(NeuromodulatorType::SEROTONIN, 0.1f, "maintenance");
-    } else if (current_performance < 0.3f) {
-        // Low performance - activate learning and attention
-        release_neuromodulator(NeuromodulatorType::NOREPINEPHRINE, 0.3f, "activation");
-        release_neuromodulator(NeuromodulatorType::ACETYLCHOLINE, 0.2f, "attention");
-    }
-}
-
-float ControllerModule::calculate_learning_efficiency() {
-    // Calculate learning efficiency based on recent performance trends
-    if (reward_history_.size() < 10) {
-        return 0.5f; // Default value
+    // Stress response
+    if (system_performance_metrics_.overall_performance < 0.3f) {
+        release_neuromodulator(NeuromodulatorType::NOREPINEPHRINE, 0.3f);
+        release_neuromodulator(NeuromodulatorType::SEROTONIN, 0.2f);
     }
     
-    // Calculate trend in recent performance
-    float recent_sum = 0.0f;
-    float older_sum = 0.0f;
-    int half_size = std::min(static_cast<int>(reward_history_.size()), 20) / 2;
-    
-    for (int i = reward_history_.size() - half_size; i < reward_history_.size(); ++i) {
-        recent_sum += reward_history_[i].magnitude;
+    // Learning enhancement
+    if (system_performance_metrics_.learning_efficiency > 0.7f) {
+        release_neuromodulator(NeuromodulatorType::ACETYLCHOLINE, 0.2f);
     }
     
-    for (int i = reward_history_.size() - half_size * 2; i < reward_history_.size() - half_size; ++i) {
-        older_sum += reward_history_[i].magnitude;
+    // Activity regulation
+    if (neuron_activity_ratio_ > 0.8f) {
+        release_neuromodulator(NeuromodulatorType::GABA, 0.15f);
+    } else if (neuron_activity_ratio_ < 0.2f) {
+        release_neuromodulator(NeuromodulatorType::GLUTAMATE, 0.1f);
     }
-    
-    float improvement = (recent_sum / half_size) - (older_sum / half_size);
-    return std::clamp(improvement + 0.5f, 0.0f, 1.0f);
 }

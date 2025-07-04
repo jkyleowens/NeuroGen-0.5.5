@@ -8,6 +8,7 @@
 #include <iostream>
 #include <fstream>
 #include <cstring>
+#include <cmath>
 #include <algorithm>
 #include <chrono>
 
@@ -447,6 +448,60 @@ void EnhancedLearningSystem::get_detailed_learning_statistics(std::vector<float>
         detailed_stats.push_back(module.attention_weight);
         detailed_stats.push_back(module.activity_level);
         detailed_stats.push_back(module.total_weight_change);
+    }
+}
+
+// ============================================================================
+// REWARD AND PROTEIN SYNTHESIS METHODS
+// ============================================================================
+
+void EnhancedLearningSystem::setRewardSignal(float reward_value) {
+    std::lock_guard<std::mutex> lock(learning_mutex_);
+    
+    // Update baseline dopamine based on reward
+    baseline_dopamine_ = baseline_dopamine_ * 0.99f + reward_value * reward_scaling_ * 0.01f;
+    
+    // Clamp baseline dopamine to reasonable range
+    baseline_dopamine_ = std::max(0.0f, std::min(baseline_dopamine_, 1.0f));
+    
+    // If CUDA is initialized, update GPU reward signals
+    if (cuda_initialized_ && d_reward_signals_ptr_) {
+        // Copy reward signal to GPU memory
+        float* d_reward_signals = static_cast<float*>(d_reward_signals_ptr_);
+        cudaMemcpy(d_reward_signals, &reward_value, sizeof(float), cudaMemcpyHostToDevice);
+    }
+    
+    std::cout << "Enhanced Learning System: Set reward signal to " << reward_value 
+              << ", baseline dopamine: " << baseline_dopamine_ << std::endl;
+}
+
+void EnhancedLearningSystem::triggerProteinSynthesis(float stimulus_strength) {
+    std::lock_guard<std::mutex> lock(learning_mutex_);
+    
+    // Trigger protein synthesis only if stimulus exceeds threshold
+    if (stimulus_strength > PROTEIN_SYNTHESIS_THRESHOLD) {
+        
+        // Enhance learning rates temporarily for consolidation
+        float consolidation_factor = 1.5f * stimulus_strength;
+        
+        for (auto& module_state : module_states_) {
+            if (module_state.is_active) {
+                // Temporarily boost learning rate for this module
+                float original_lr = module_state.learning_rate;
+                module_state.learning_rate = std::min(original_lr * consolidation_factor, 0.1f);
+                
+                std::cout << "Enhanced Learning System: Triggered protein synthesis for module " 
+                          << module_state.module_id 
+                          << " - Enhanced LR from " << original_lr 
+                          << " to " << module_state.learning_rate << std::endl;
+            }
+        }
+        
+        // Update learning progress to reflect consolidation
+        learning_progress_ = std::min(1.0f, learning_progress_ + 0.1f * stimulus_strength);
+        
+        std::cout << "Enhanced Learning System: Protein synthesis triggered with strength " 
+                  << stimulus_strength << ", learning progress: " << learning_progress_ << std::endl;
     }
 }
 

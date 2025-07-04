@@ -18,12 +18,35 @@
 #include <NeuroGen/NetworkStats.h>
 
 // ============================================================================
+// STANDARD LIBRARY HEADERS (CUDA-COMPATIBLE)
+// ============================================================================
+#include <vector>
+#include <string>
+#include <utility>  // For std::pair
+
+// ============================================================================
 // FORWARD DECLARATIONS - CONSISTENT WITH CPU CODE
 // ============================================================================
 class Neuron;       // FIX: Use class to match Neuron.h
 struct Synapse;     // Use struct to match Synapse.h
 class Network;
 class NeuralModule;
+
+// ============================================================================
+// PERFORMANCE METRICS STRUCTURE
+// ============================================================================
+struct PerformanceMetrics {
+    float simulation_fps;              // Simulation frames per second
+    float biological_time_factor;      // Biological time scaling factor
+    float memory_bandwidth_gbps;       // Memory bandwidth in GB/s
+    float gpu_utilization_percent;     // GPU utilization percentage
+    float neuron_update_time_ms;       // Time to update neurons (ms)
+    float synapse_update_time_ms;      // Time to update synapses (ms)
+    float plasticity_update_time_ms;   // Time for plasticity updates (ms)
+    float kernel_execution_time_ms;    // Kernel execution time (ms)
+    size_t total_memory_used_mb;       // Total GPU memory used (MB)
+    size_t peak_memory_used_mb;        // Peak GPU memory used (MB)
+};
 
 /**
  * @brief GPU-accelerated Neural Network Manager
@@ -207,10 +230,10 @@ public:
     NetworkStats getNetworkStats() const;
     
     /**
-     * @brief Get GPU performance metrics
-     * @return Map of performance metric names to values
+     * @brief Get GPU performance metrics  
+     * @return Performance metrics structure
      */
-    std::map<std::string, float> getPerformanceMetrics() const;
+    PerformanceMetrics getPerformanceMetrics() const;
     
     /**
      * @brief Reset performance counters
@@ -255,46 +278,89 @@ public:
      * @return Load success status
      */
     bool loadGPUState(const std::string& filename);
+    
+    // ========================================================================
+    // CUDA INTERFACE METHODS (PUBLIC ACCESS REQUIRED)
+    // ========================================================================
+    
+    /**
+     * @brief Copy data to GPU
+     */
+    void copy_to_gpu(const std::vector<GPUNeuronState>& neurons, 
+                     const std::vector<GPUSynapse>& synapses);
+    
+    /**
+     * @brief Copy data from GPU
+     */
+    void copy_from_gpu(std::vector<GPUNeuronState>& neurons, 
+                       std::vector<GPUSynapse>& synapses);
+    
+    /**
+     * @brief Simulate one step
+     */
+    void simulate_step(float current_time, float dt, float reward, 
+                       const std::vector<float>& inputs);
+    
+    /**
+     * @brief Get network statistics (snake_case version)
+     */
+    void get_stats(NetworkStats& stats) const;
 
 private:
     // ========================================================================
     // INTERNAL GPU DATA STRUCTURES
     // ========================================================================
     
-    // Network configuration
+    // Network configuration and state
     NetworkConfig config_;
-    bool is_initialized_;
+    bool system_initialized_;
     
-    // GPU memory pointers
+    // Network dimensions
+    int num_neurons_;
+    int num_synapses_;
+    
+    // Simulation state
+    float current_simulation_time_;
+    size_t simulation_step_count_;
+    
+    // GPU memory pointers - Core neural structures
     GPUNeuronState* d_neurons_;
     GPUSynapse* d_synapses_;
     float* d_input_currents_;
     float* d_output_activations_;
     curandState* d_random_states_;
     
-    // Module management
+    // GPU memory pointers - Statistics and monitoring
+    int* d_spike_count_;
+    NetworkStats* d_network_stats_;
+    
+    // Memory tracking
+    float allocated_memory_mb_;
+    size_t total_gpu_memory_;
+    size_t allocated_memory_;
+    
+    // Module management (using vectors instead of STL maps for CUDA compatibility)
     struct ModuleInfo {
+        size_t module_id;
         size_t start_neuron;
         size_t end_neuron;
         NetworkConfig config;
         float* d_module_inputs;
         float* d_module_outputs;
     };
-    std::map<size_t, ModuleInfo> registered_modules_;
+    std::vector<ModuleInfo> registered_modules_;
+    
+    // Performance tracking
+    mutable PerformanceMetrics performance_metrics_;
     
     // Performance tracking
     mutable NetworkStats gpu_stats_;
-    std::map<std::string, float> performance_metrics_;
     
     // CUDA handles
     cublasHandle_t cublas_handle_;
     cusparseHandle_t cusparse_handle_;
     cudaStream_t computation_stream_;
     cudaStream_t memory_stream_;
-    
-    // Memory management
-    size_t total_gpu_memory_;
-    size_t allocated_memory_;
     
     // ========================================================================
     // INTERNAL HELPER METHODS
@@ -339,6 +405,80 @@ private:
      * @brief Check for CUDA errors and handle them
      */
     bool checkCudaErrors(const std::string& operation) const;
+    
+    // ========================================================================
+    // ADDITIONAL MISSING METHODS FROM IMPLEMENTATION
+    // ========================================================================
+    
+    /**
+     * @brief Calculate neuron firing rate from GPU neuron state
+     */
+    float calculateNeuronFiringRate(const GPUNeuronState& gpu_neuron) const;
+    
+    /**
+     * @brief Update synaptic plasticity for a specific synapse
+     */
+    void updateSynapticPlasticity(GPUSynapse& gpu_synapse, float dt, float reward);
+    
+    /**
+     * @brief Get incoming synapses for a neuron
+     */
+    std::vector<size_t> getIncomingSynapses(size_t neuron_id) const;
+    
+    /**
+     * @brief Synchronize with CPU network
+     */
+    void synchronize_with_cpu_network(void* cpu_network_ptr, const std::string& sync_direction);
+    
+    /**
+     * @brief Get network output (alternative method name)
+     */
+    std::vector<float> get_output() const;
+    
+    /**
+     * @brief Allocate GPU memory (snake_case version)
+     */
+    void allocate_gpu_memory();
+    
+    /**
+     * @brief Initialize GPU state (snake_case version)
+     */
+    void initialize_gpu_state();
+    
+    /**
+     * @brief Cleanup resources (snake_case version)
+     */
+    void cleanup_resources();
+    
+    /**
+     * @brief Check if synapse exists
+     */
+    bool synapseExists(size_t pre_id, size_t post_id) const;
+    
+    /**
+     * @brief Check if neuron is active
+     */
+    bool isNeuronActive(size_t neuron_id) const;
+    
+    /**
+     * @brief Get performance metrics (snake_case version)
+     */
+    PerformanceMetrics get_performance_metrics() const;
+    
+    /**
+     * @brief Synchronize configurations
+     */
+    void synchronize_configurations(const NetworkConfig& cpu_config, NetworkConfig& gpu_config);
+    
+    /**
+     * @brief Save GPU state (snake_case version)
+     */
+    bool save_gpu_state(const std::string& filename) const;
+    
+    /**
+     * @brief Load GPU state (snake_case version)
+     */
+    bool load_gpu_state(const std::string& filename);
 };
 
 // ============================================================================

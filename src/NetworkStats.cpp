@@ -48,7 +48,7 @@ std::string NetworkStats::toString() const {
     oss << "\nMean Weight: " << mean_synaptic_weight << " ± " << synaptic_weight_std << "\n";
     oss << "E/I Ratio: " << excitation_inhibition_ratio << "\n";
     oss << "Plasticity Rate: " << plasticity_rate << "\n";
-    oss << "Connectivity: " << mean_connectivity << "\n\n";
+    oss << "Connection Density: " << connection_density << "\n\n";
     
     // Neuromodulation
     oss << "--- Neuromodulation ---\n";
@@ -56,59 +56,45 @@ std::string NetworkStats::toString() const {
     oss << "Acetylcholine: " << acetylcholine_level << "\n";
     oss << "Serotonin: " << serotonin_level << "\n";
     oss << "Norepinephrine: " << norepinephrine_level << "\n";
-    oss << "Modulation Strength: " << modulation_strength << "\n\n";
+    oss << "GABA: " << gaba_level << "\n";
+    oss << "Glutamate: " << glutamate_level << "\n";
+    oss << "Neuromod Balance: " << neuromod_balance << "\n\n";
     
     // Learning and Adaptation
     oss << "--- Learning System ---\n";
     oss << "Current Reward: " << current_reward << " (Avg: " << average_reward << ")\n";
     oss << "Cumulative Reward: " << cumulative_reward << "\n";
     oss << "Learning Rate: " << learning_rate << "\n";
-    oss << "Hebbian Activity: " << hebbian_activity << "\n";
-    oss << "Homeostatic Scaling: " << homeostatic_scaling << "\n";
-    oss << "Structural Changes: " << structural_changes << "\n";
-    oss << "Network Entropy: " << network_entropy << "\n\n";
+    oss << "Network Entropy: " << network_entropy << "\n";
+    oss << "Adaptation Rate: " << adaptation_rate << "\n\n";
     
     // Cortical Columns (if present)
-    if (num_columns > 0) {
+    if (!column_activity.empty()) {
         oss << "--- Cortical Architecture ---\n";
-        oss << "Columns: " << num_columns << "\n";
-        oss << "Inter-column Sync: " << inter_column_sync << "\n";
-        if (!column_activity.empty()) {
-            float mean_col_activity = 0.0f;
-            for (float activity : column_activity) {
-                mean_col_activity += activity;
-            }
-            mean_col_activity /= column_activity.size();
-            oss << "Mean Column Activity: " << mean_col_activity << "\n";
+        oss << "Columns: " << column_activity.size() << "\n";
+        float mean_col_activity = 0.0f;
+        for (float activity : column_activity) {
+            mean_col_activity += activity;
         }
-        oss << "\n";
+        mean_col_activity /= column_activity.size();
+        oss << "Mean Column Activity: " << mean_col_activity << "\n\n";
     }
-    
-    // Biological Realism
-    oss << "--- Biological Metrics ---\n";
-    oss << "Calcium Level: " << mean_calcium_level << "\n";
-    oss << "Vesicle Depletion: " << vesicle_depletion_rate << "\n";
-    oss << "Criticality Index: " << criticality_index << "\n";
-    oss << "Oscillation Power - Theta: " << theta_power << ", Alpha: " << alpha_power;
-    oss << ", Beta: " << beta_power << ", Gamma: " << gamma_power << "\n";
-    oss << "Phase Coherence: " << phase_coherence << "\n\n";
     
     // Performance and Stability
     oss << "--- Performance ---\n";
-    oss << "Computation Time: " << computation_time_us << " μs\n";
-    oss << "CUDA Kernel Time: " << cuda_kernel_time_us << " μs\n";
-    oss << "Memory Transfer: " << memory_transfer_time_us << " μs\n";
+    oss << "Kernel Time: " << kernel_execution_time << " ms\n";
+    oss << "Memory Transfer: " << memory_transfer_time << " ms\n";
     oss << "Simulation Speed: " << simulation_speed_factor << "x real-time\n";
     oss << "Memory Usage: " << (memory_usage_bytes / (1024.0f * 1024.0f)) << " MB\n";
-    oss << "GPU Utilization: " << gpu_memory_utilization << "%\n";
+    oss << "GPU Utilization: " << gpu_utilization << "%\n";
     oss << "Numerical Stability: " << numerical_stability << "\n";
-    oss << "Network Health: " << (isNetworkHealthy() ? "HEALTHY" : "WARNING") << "\n";
+    oss << "Network Health: " << (getHealthScore() > 0.7f ? "HEALTHY" : "WARNING") << "\n";
     oss << "CUDA Errors: " << cuda_error_count << "\n\n";
     
     // Efficiency Scores
     oss << "--- Efficiency Metrics ---\n";
-    oss << "Network Efficiency: " << (getNetworkEfficiency() * 100.0f) << "%\n";
     oss << "Performance Score: " << (getPerformanceScore() * 100.0f) << "%\n";
+    oss << "Health Score: " << (getHealthScore() * 100.0f) << "%\n";
     
     return oss.str();
 }
@@ -142,7 +128,7 @@ std::string NetworkStats::toJSON() const {
     json << "    \"synaptic_weight_std\": " << synaptic_weight_std << ",\n";
     json << "    \"plasticity_rate\": " << plasticity_rate << ",\n";
     json << "    \"excitation_inhibition_ratio\": " << excitation_inhibition_ratio << ",\n";
-    json << "    \"mean_connectivity\": " << mean_connectivity << ",\n";
+    json << "    \"connection_density\": " << connection_density << ",\n";
     json << "    \"clustering_coefficient\": " << clustering_coefficient << ",\n";
     json << "    \"average_path_length\": " << average_path_length << "\n";
     json << "  },\n";
@@ -152,8 +138,9 @@ std::string NetworkStats::toJSON() const {
     json << "    \"acetylcholine_level\": " << acetylcholine_level << ",\n";
     json << "    \"serotonin_level\": " << serotonin_level << ",\n";
     json << "    \"norepinephrine_level\": " << norepinephrine_level << ",\n";
-    json << "    \"neuromodulator_release_rate\": " << neuromodulator_release_rate << ",\n";
-    json << "    \"modulation_strength\": " << modulation_strength << "\n";
+    json << "    \"gaba_level\": " << gaba_level << ",\n";
+    json << "    \"glutamate_level\": " << glutamate_level << ",\n";
+    json << "    \"neuromod_balance\": " << neuromod_balance << "\n";
     json << "  },\n";
     
     json << "  \"learning\": {\n";
@@ -161,16 +148,14 @@ std::string NetworkStats::toJSON() const {
     json << "    \"cumulative_reward\": " << cumulative_reward << ",\n";
     json << "    \"average_reward\": " << average_reward << ",\n";
     json << "    \"learning_rate\": " << learning_rate << ",\n";
-    json << "    \"hebbian_activity\": " << hebbian_activity << ",\n";
-    json << "    \"homeostatic_scaling\": " << homeostatic_scaling << ",\n";
-    json << "    \"structural_changes\": " << structural_changes << ",\n";
-    json << "    \"metaplasticity_factor\": " << metaplasticity_factor << ",\n";
-    json << "    \"network_entropy\": " << network_entropy << "\n";
+    json << "    \"prediction_error\": " << prediction_error << ",\n";
+    json << "    \"information_capacity\": " << information_capacity << ",\n";
+    json << "    \"network_entropy\": " << network_entropy << ",\n";
+    json << "    \"mutual_information\": " << mutual_information << ",\n";
+    json << "    \"adaptation_rate\": " << adaptation_rate << "\n";
     json << "  },\n";
     
     json << "  \"cortical_columns\": {\n";
-    json << "    \"num_columns\": " << num_columns << ",\n";
-    json << "    \"inter_column_sync\": " << inter_column_sync << ",\n";
     json << "    \"column_activity\": [";
     for (size_t i = 0; i < column_activity.size(); ++i) {
         if (i > 0) json << ", ";
@@ -182,55 +167,40 @@ std::string NetworkStats::toJSON() const {
         if (i > 0) json << ", ";
         json << column_frequencies[i];
     }
+    json << "],\n";
+    json << "    \"column_specialization\": [";
+    for (size_t i = 0; i < column_specialization.size(); ++i) {
+        if (i > 0) json << ", ";
+        json << column_specialization[i];
+    }
     json << "]\n";
     json << "  },\n";
     
-    json << "  \"biological\": {\n";
-    json << "    \"mean_calcium_level\": " << mean_calcium_level << ",\n";
-    json << "    \"vesicle_depletion_rate\": " << vesicle_depletion_rate << ",\n";
-    json << "    \"criticality_index\": " << criticality_index << ",\n";
-    json << "    \"avalanche_exponent\": " << avalanche_exponent << ",\n";
-    json << "    \"oscillations\": {\n";
-    json << "      \"theta_power\": " << theta_power << ",\n";
-    json << "      \"alpha_power\": " << alpha_power << ",\n";
-    json << "      \"beta_power\": " << beta_power << ",\n";
-    json << "      \"gamma_power\": " << gamma_power << "\n";
-    json << "    },\n";
-    json << "    \"phase_coherence\": " << phase_coherence << "\n";
-    json << "  },\n";
-    
     json << "  \"performance\": {\n";
-    json << "    \"cuda_kernel_time_us\": " << cuda_kernel_time_us << ",\n";
-    json << "    \"memory_transfer_time_us\": " << memory_transfer_time_us << ",\n";
-    json << "    \"computation_time_us\": " << computation_time_us << ",\n";
+    json << "    \"kernel_execution_time\": " << kernel_execution_time << ",\n";
+    json << "    \"memory_transfer_time\": " << memory_transfer_time << ",\n";
     json << "    \"memory_usage_bytes\": " << memory_usage_bytes << ",\n";
-    json << "    \"gpu_memory_utilization\": " << gpu_memory_utilization << ",\n";
+    json << "    \"gpu_utilization\": " << gpu_utilization << ",\n";
     json << "    \"simulation_speed_factor\": " << simulation_speed_factor << ",\n";
-    json << "    \"cuda_blocks_launched\": " << cuda_blocks_launched << ",\n";
-    json << "    \"avg_threads_per_block\": " << avg_threads_per_block << "\n";
+    json << "    \"energy_consumption\": " << energy_consumption << "\n";
     json << "  },\n";
     
     json << "  \"stability\": {\n";
     json << "    \"numerical_stability\": " << numerical_stability << ",\n";
-    json << "    \"max_voltage_deviation\": " << max_voltage_deviation << ",\n";
-    json << "    \"weight_saturation\": " << weight_saturation << ",\n";
     json << "    \"simulation_stable\": " << (simulation_stable ? "true" : "false") << ",\n";
     json << "    \"cuda_error_count\": " << cuda_error_count << "\n";
     json << "  },\n";
     
-    json << "  \"timing_profile\": {\n";
-    json << "    \"neuron_update_time\": " << timing_profile.neuron_update_time << ",\n";
-    json << "    \"synapse_update_time\": " << timing_profile.synapse_update_time << ",\n";
-    json << "    \"plasticity_update_time\": " << timing_profile.plasticity_update_time << ",\n";
-    json << "    \"spike_processing_time\": " << timing_profile.spike_processing_time << ",\n";
-    json << "    \"memory_copy_time\": " << timing_profile.memory_copy_time << ",\n";
-    json << "    \"total_time\": " << timing_profile.total_time << "\n";
-    json << "  },\n";
+    json << "  \"performance_history\": [";
+    for (size_t i = 0; i < performance_history.size(); ++i) {
+        if (i > 0) json << ", ";
+        json << performance_history[i];
+    }
+    json << "],\n";
     
     json << "  \"analysis\": {\n";
-    json << "    \"network_efficiency\": " << getNetworkEfficiency() << ",\n";
-    json << "    \"performance_score\": " << getPerformanceScore() << ",\n";
-    json << "    \"is_healthy\": " << (isNetworkHealthy() ? "true" : "false") << "\n";
+    json << "    \"health_score\": " << getHealthScore() << ",\n";
+    json << "    \"performance_score\": " << getPerformanceScore() << "\n";
     json << "  }\n";
     
     json << "}";
@@ -360,13 +330,13 @@ float calculateNetworkEntropy(const NetworkStats& stats) {
  * Assess metabolic efficiency of the network
  */
 float calculateMetabolicEfficiency(const NetworkStats& stats) {
-    if (stats.computation_time_us <= 0.0f) {
+    if (stats.kernel_execution_time <= 0.0f) {
         return 0.0f;
     }
     
     // Efficiency = Information processed per unit energy (computational time)
     float information_rate = stats.network_entropy * stats.mean_firing_rate;
-    float energy_cost = stats.computation_time_us / 1000.0f; // Convert to ms
+    float energy_cost = stats.kernel_execution_time; // Already in ms
     
     return information_rate / (energy_cost + 1e-6f); // Avoid division by zero
 }
@@ -380,7 +350,7 @@ float calculateLearningEfficiency(const NetworkStats& stats) {
     }
     
     // Learning efficiency = Cumulative reward per plasticity event
-    float plasticity_events = stats.structural_changes + (stats.hebbian_activity * stats.simulation_steps);
+    float plasticity_events = stats.plasticity_rate * stats.simulation_steps;
     if (plasticity_events <= 0.0f) {
         return 0.0f;
     }

@@ -202,6 +202,7 @@ private:
     // Module registry
     std::unordered_map<std::string, std::shared_ptr<NeuralModule>> registered_modules_;
     std::unordered_map<std::string, float> module_performance_history_;
+    std::unordered_map<std::string, float> attention_weights_;
     
     // Neuromodulator system
     std::unordered_map<NeuromodulatorType, std::unique_ptr<NeuromodulatorState>> neuromodulators_;
@@ -221,6 +222,7 @@ private:
     // State flags
     bool is_running_;
     bool detailed_logging_enabled_;
+    float creativity_mode_factor_;
     
     // Action history for debugging
     std::vector<std::string> action_history_;

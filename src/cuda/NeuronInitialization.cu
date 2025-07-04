@@ -12,7 +12,7 @@ __global__ void neuronInitializationKernel(GPUNeuronState* neurons, int num_neur
 
     // 1. Set Membrane Potential to Resting Potential
     // This establishes the baseline voltage of the neuron when it is not active.
-    neuron.V = NeuronModelConstants::RESTING_POTENTIAL;
+    neuron.V = NeuronModelConstants::RESET_POTENTIAL;
 
     // 2. Initialize the Izhikevich model Recovery Variable 'u'
     // This value counteracts the membrane potential's rise, contributing to spike adaptation.
@@ -33,7 +33,7 @@ __global__ void neuronInitializationKernel(GPUNeuronState* neurons, int num_neur
     // 5. Initialize Homeostatic Variables to a neutral, baseline state
     // These variables track long-term activity and should start at zero or a neutral value.
     neuron.average_firing_rate = 0.0f;
-    neuron.average_activity = NeuronModelConstants::RESTING_POTENTIAL;
+    neuron.average_activity = NeuronModelConstants::RESET_POTENTIAL;
     neuron.excitability = 1.0f; // Start with no excitability modulation
     neuron.synaptic_scaling_factor = 1.0f; // Start with no synaptic scaling
 }

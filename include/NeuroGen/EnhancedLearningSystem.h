@@ -211,6 +211,18 @@ public:
      */
     void update_modular_learning(int module_id, float module_reward, float dt);
     
+    /**
+     * Set reward signal for learning system
+     * @param reward_value Reward signal value
+     */
+    void setRewardSignal(float reward_value);
+    
+    /**
+     * Trigger protein synthesis for long-term memory consolidation
+     * @param stimulus_strength Strength of stimulus triggering synthesis
+     */
+    void triggerProteinSynthesis(float stimulus_strength);
+    
     // ====================================================================
     // STATE MANAGEMENT
     // ====================================================================
@@ -238,6 +250,18 @@ public:
     // PERFORMANCE MONITORING AND STATISTICS
     // ====================================================================
     
+    /**
+     * Learning system statistics structure
+     */
+    struct LearningStats {
+        float total_weight_change;
+        float average_trace_activity;
+        float current_dopamine_level;
+        float prediction_error;
+        float network_activity;
+        int plasticity_updates;
+    };
+
     /**
      * Get average eligibility trace across network
      * @return Average eligibility trace value
@@ -275,6 +299,37 @@ public:
     void get_detailed_learning_statistics(std::vector<float>& detailed_stats) const;
     
     // ====================================================================
+    // GPU-SPECIFIC LEARNING METHODS
+    // ====================================================================
+    
+    /**
+     * Update learning on GPU with direct GPU memory access
+     * @param synapses GPU synapse array
+     * @param neurons GPU neuron state array
+     * @param current_time Current simulation time
+     * @param dt Time step
+     * @param external_reward External reward signal
+     */
+    void updateLearningGPU(struct GPUSynapse* synapses, 
+                          struct GPUNeuronState* neurons,
+                          float current_time, 
+                          float dt,
+                          float external_reward);
+    
+    /**
+     * Reset episode on GPU
+     * @param reset_traces Reset eligibility traces
+     * @param reset_rewards Reset reward signals
+     */
+    void resetEpisodeGPU(bool reset_traces, bool reset_rewards);
+    
+    /**
+     * Get learning statistics from GPU
+     * @return Learning statistics structure
+     */
+    LearningStats getStatisticsGPU() const;
+
+    // ====================================================================
     // LEGACY INTERFACE METHODS
     // ====================================================================
     
@@ -286,30 +341,11 @@ public:
                        GPUNeuronState* neurons,
                        float current_time, 
                        float dt,
-                       float external_reward = 0.0f);
-    
-    /**
-     * Set external reward signal for the network
-     */
-    void setRewardSignal(float reward);
-    
-    /**
-     * Trigger protein synthesis for late-phase plasticity
-     */
-    void triggerProteinSynthesis(float strength = 1.0f);
+                       float external_reward);
     
     /**
      * Get learning system statistics
      */
-    struct LearningStats {
-        float total_weight_change;
-        float average_trace_activity;
-        float current_dopamine_level;
-        float prediction_error;
-        float network_activity;
-        int plasticity_updates;
-    };
-    
     LearningStats getStatistics() const;
     
     /**
@@ -339,9 +375,24 @@ private:
     void launch_eligibility_reset();
     
     /**
+     * Launch eligibility trace reset kernels on GPU
+     */
+    void launch_eligibility_reset_gpu();
+    
+    /**
      * Update performance metrics tracking
      */
     void update_performance_metrics();
+    
+    /**
+     * Update performance metrics from GPU data
+     */
+    void update_performance_metrics_gpu();
+    
+    /**
+     * Reset eligibility traces on GPU
+     */
+    void reset_eligibility_traces_gpu();
 };
 
 #endif // ENHANCED_LEARNING_SYSTEM_H

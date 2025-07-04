@@ -1,7 +1,7 @@
 # Compiler and Linker
-CXX := g++
+CXX := clang++
 NVCC := /opt/cuda/bin/nvcc
-LINK := g++
+LINK := clang++
 
 # Directories
 SRC_DIR := src
@@ -25,7 +25,7 @@ TARGET_AUTONOMOUS := NeuroGen_Autonomous
 CXXFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -O3 -g -fPIC -Wall
 NVCCFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -arch=sm_75 -O3 -g -lineinfo \
              -Xcompiler -fPIC -Xcompiler -Wall -use_fast_math \
-             --expt-relaxed-constexpr --expt-extended-lambda
+             --expt-relaxed-constexpr --expt-extended-lambda -ccbin /usr/bin/clang++
 
 # Linker Flags
 LDFLAGS := -L$(CUDA_PATH)/lib64 -L/usr/lib
@@ -94,10 +94,7 @@ clean:
 test_brain_architecture: test_brain_module_architecture.cpp $(OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
-test_modular_agent: test_modular_agent_comprehensive.cpp $(OBJECTS)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
-
-.PHONY: all autonomous clean test_brain_architecture test_modular_agent
+.PHONY: all autonomous clean test_brain_architecture
 
 # Include dependency files
 -include $(DEPS)

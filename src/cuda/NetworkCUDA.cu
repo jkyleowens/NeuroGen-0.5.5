@@ -624,7 +624,7 @@ bool NetworkCUDA::isNeuronActive(size_t neuron_id) const {
 // PERFORMANCE OPTIMIZATION METHODS
 // ============================================================================
 
-NetworkCUDA::PerformanceMetrics NetworkCUDA::get_performance_metrics() const {
+PerformanceMetrics NetworkCUDA::get_performance_metrics() const {
     PerformanceMetrics metrics;
     
     // Calculate simulation performance

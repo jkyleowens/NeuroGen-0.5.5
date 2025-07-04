@@ -12,7 +12,7 @@ __global__ void ionChannelInitializationKernel(GPUNeuronState* neurons, int num_
 
     // 1. Set Membrane Potential to Resting Potential
     // This is the baseline voltage of the neuron when it is not active.
-    neuron.V = NeuronModelConstants::RESTING_POTENTIAL;
+    neuron.V = NeuronModelConstants::RESET_POTENTIAL;
 
     // 2. Initialize the Recovery Variable
     // For Izhikevich neurons, u = b * V. This sets its initial value consistent with the resting potential.
@@ -32,7 +32,7 @@ __global__ void ionChannelInitializationKernel(GPUNeuronState* neurons, int num_
     // 5. Initialize Homeostatic Variables to a neutral state
     // These values represent the neuron's baseline long-term activity.
     neuron.average_firing_rate = 0.0f;
-    neuron.average_activity = NeuronModelConstants::RESTING_POTENTIAL;
+    neuron.average_activity = NeuronModelConstants::RESET_POTENTIAL;
     neuron.excitability = 1.0f; // Start with no modulation
     neuron.synaptic_scaling_factor = 1.0f; // Start with no scaling
 }

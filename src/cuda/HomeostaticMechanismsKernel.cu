@@ -39,7 +39,7 @@ __global__ void intrinsicPlasticityKernel(GPUNeuronState* neurons, int num_neuro
     neuron.average_activity = neuron.average_activity * decay + neuron.V * (1.0f - decay);
 
     // --- 2. Adjust Intrinsic Excitability ---
-    float activity_error = neuron.average_activity - NeuronModelConstants::RESTING_POTENTIAL;
+    float activity_error = neuron.average_activity - NeuronModelConstants::RESET_POTENTIAL;
     float excitability_change = -activity_error * 0.00005f; // Very slow adjustment
 
     neuron.excitability = fmaxf(0.8f, fminf(1.2f, neuron.excitability + excitability_change));

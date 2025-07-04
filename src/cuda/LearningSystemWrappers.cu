@@ -26,7 +26,7 @@ __global__ void eligibility_trace_reset_kernel(GPUSynapse* synapses, int num_syn
     
     // Biological eligibility trace reset with protein degradation
     synapse.eligibility_trace *= 0.95f; // Rapid degradation
-    synapse.protein_synthesis_rate *= 0.99f; // Slower protein degradation
+    // Note: protein_synthesis_rate is not available in GPUSynapse, skip this line
     
     // Reset dopamine sensitivity if below threshold
     if (synapse.dopamine_sensitivity < 0.1f) {
@@ -50,16 +50,16 @@ __global__ void enhanced_stdp_kernel(
     GPUSynapse& synapse = synapses[idx];
     
     // Validate neuron indices
-    if (synapse.pre_neuron_id >= 0 && synapse.post_neuron_id >= 0) {
-        const GPUNeuronState& pre_neuron = neurons[synapse.pre_neuron_id];
-        const GPUNeuronState& post_neuron = neurons[synapse.post_neuron_id];
+    if (synapse.pre_neuron_idx >= 0 && synapse.post_neuron_idx >= 0) {
+        const GPUNeuronState& pre_neuron = neurons[synapse.pre_neuron_idx];
+        const GPUNeuronState& post_neuron = neurons[synapse.post_neuron_idx];
         
         // Calculate spike timing difference
         float delta_t = post_neuron.last_spike_time - pre_neuron.last_spike_time;
         
         // Biological STDP with calcium-dependent modulation
         float stdp_window = 20.0f; // 20ms STDP window
-        float calcium_factor = post_neuron.calcium_concentration / 1.0f; // Normalize
+        float calcium_factor = post_neuron.ca_conc[0] / 1.0f; // Use first compartment calcium
         
         if (fabsf(delta_t) < stdp_window) {
             float stdp_magnitude;
@@ -105,12 +105,12 @@ __global__ void eligibility_trace_update_kernel(
     synapse.eligibility_trace *= decay_factor;
     
     // Update based on recent synaptic activity
-    if (synapse.pre_neuron_id >= 0 && synapse.post_neuron_id >= 0) {
-        const GPUNeuronState& pre_neuron = neurons[synapse.pre_neuron_id];
-        const GPUNeuronState& post_neuron = neurons[synapse.post_neuron_id];
+    if (synapse.pre_neuron_idx >= 0 && synapse.post_neuron_idx >= 0) {
+        const GPUNeuronState& pre_neuron = neurons[synapse.pre_neuron_idx];
+        const GPUNeuronState& post_neuron = neurons[synapse.post_neuron_idx];
         
         // Add contribution from recent activity
-        float activity_contribution = pre_neuron.membrane_potential * post_neuron.membrane_potential;
+        float activity_contribution = pre_neuron.V * post_neuron.V; // Use membrane potential V
         synapse.eligibility_trace += activity_contribution * 0.001f * dt;
     }
     
@@ -214,13 +214,13 @@ __global__ void hebbian_learning_kernel(
     
     GPUSynapse& synapse = synapses[idx];
     
-    if (synapse.pre_neuron_id >= 0 && synapse.post_neuron_id >= 0) {
-        const GPUNeuronState& pre_neuron = neurons[synapse.pre_neuron_id];
-        const GPUNeuronState& post_neuron = neurons[synapse.post_neuron_id];
+    if (synapse.pre_neuron_idx >= 0 && synapse.post_neuron_idx >= 0) {
+        const GPUNeuronState& pre_neuron = neurons[synapse.pre_neuron_idx];
+        const GPUNeuronState& post_neuron = neurons[synapse.post_neuron_idx];
         
         // BCM-like plasticity with sliding threshold
-        float pre_activity = pre_neuron.membrane_potential / 70.0f; // Normalize
-        float post_activity = post_neuron.membrane_potential / 70.0f;
+        float pre_activity = pre_neuron.V / 70.0f; // Normalize membrane potential
+        float post_activity = post_neuron.V / 70.0f;
         
         // Sliding threshold based on recent activity
         float activity_threshold = post_neuron.average_activity;
@@ -252,13 +252,13 @@ __global__ void bcm_learning_kernel(
     
     GPUSynapse& synapse = synapses[idx];
     
-    if (synapse.pre_neuron_id >= 0 && synapse.post_neuron_id >= 0) {
-        const GPUNeuronState& pre_neuron = neurons[synapse.pre_neuron_id];
-        const GPUNeuronState& post_neuron = neurons[synapse.post_neuron_id];
+    if (synapse.pre_neuron_idx >= 0 && synapse.post_neuron_idx >= 0) {
+        const GPUNeuronState& pre_neuron = neurons[synapse.pre_neuron_idx];
+        const GPUNeuronState& post_neuron = neurons[synapse.post_neuron_idx];
         
         // BCM plasticity with homeostatic threshold
-        float pre_rate = pre_neuron.firing_rate;
-        float post_rate = post_neuron.firing_rate;
+        float pre_rate = pre_neuron.average_firing_rate; // Use available member
+        float post_rate = post_neuron.average_firing_rate;
         float threshold = post_neuron.bcm_threshold;
         
         // BCM learning rule
@@ -286,15 +286,15 @@ __global__ void correlation_learning_kernel(
     
     GPUSynapse& synapse = synapses[idx];
     
-    if (synapse.pre_neuron_id >= 0 && synapse.post_neuron_id >= 0 && 
-        synapse.pre_neuron_id < matrix_size && synapse.post_neuron_id < matrix_size) {
+    if (synapse.pre_neuron_idx >= 0 && synapse.post_neuron_idx >= 0 && 
+        synapse.pre_neuron_idx < matrix_size && synapse.post_neuron_idx < matrix_size) {
         
-        const GPUNeuronState& pre_neuron = neurons[synapse.pre_neuron_id];
-        const GPUNeuronState& post_neuron = neurons[synapse.post_neuron_id];
+        const GPUNeuronState& pre_neuron = neurons[synapse.pre_neuron_idx];
+        const GPUNeuronState& post_neuron = neurons[synapse.post_neuron_idx];
         
         // Update correlation matrix
-        int matrix_idx = synapse.post_neuron_id * matrix_size + synapse.pre_neuron_id;
-        float correlation = pre_neuron.membrane_potential * post_neuron.membrane_potential;
+        int matrix_idx = synapse.post_neuron_idx * matrix_size + synapse.pre_neuron_idx;
+        float correlation = pre_neuron.V * post_neuron.V; // Use membrane potential V
         
         // Exponential moving average of correlations
         correlation_matrix[matrix_idx] = correlation_matrix[matrix_idx] * 0.99f + correlation * 0.01f;
@@ -331,190 +331,9 @@ __global__ void reward_prediction_error_kernel(
 }
 
 // ============================================================================
-// C++ WRAPPER FUNCTIONS (called from CPU code)
+// C++ WRAPPER FUNCTIONS - Note: Main wrappers are in CudaKernelWrappers.cu
+// This file focuses on internal learning system coordination functions
 // ============================================================================
 
-extern "C" {
-
-void launch_eligibility_reset_wrapper(void* d_synapses, int num_synapses) {
-    dim3 block(256);
-    dim3 grid((num_synapses + block.x - 1) / block.x);
-    
-    eligibility_trace_reset_kernel<<<grid, block>>>(
-        static_cast<GPUSynapse*>(d_synapses), num_synapses);
-    
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess) {
-        printf("CUDA Error in eligibility_reset: %s\n", cudaGetErrorString(error));
-    }
-}
-
-void launch_enhanced_stdp_wrapper(
-    void* d_synapses, 
-    const void* d_neurons,
-    float current_time, 
-    float dt, 
-    int num_synapses
-) {
-    dim3 block(256);
-    dim3 grid((num_synapses + block.x - 1) / block.x);
-    
-    enhanced_stdp_kernel<<<grid, block>>>(
-        static_cast<GPUSynapse*>(d_synapses),
-        static_cast<const GPUNeuronState*>(d_neurons),
-        current_time, dt, num_synapses);
-    
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess) {
-        printf("CUDA Error in enhanced_stdp: %s\n", cudaGetErrorString(error));
-    }
-}
-
-void launch_eligibility_update_wrapper(
-    void* d_synapses,
-    const void* d_neurons,
-    float current_time,
-    float dt,
-    int num_synapses
-) {
-    dim3 block(256);
-    dim3 grid((num_synapses + block.x - 1) / block.x);
-    
-    eligibility_trace_update_kernel<<<grid, block>>>(
-        static_cast<GPUSynapse*>(d_synapses),
-        static_cast<const GPUNeuronState*>(d_neurons),
-        current_time, dt, num_synapses);
-    
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess) {
-        printf("CUDA Error in eligibility_update: %s\n", cudaGetErrorString(error));
-    }
-}
-
-void launch_trace_monitoring_wrapper(
-    const void* d_synapses,
-    int num_synapses,
-    void* d_trace_stats
-) {
-    dim3 block(256);
-    dim3 grid((num_synapses + block.x - 1) / block.x);
-    
-    trace_monitoring_kernel<<<grid, block>>>(
-        static_cast<const GPUSynapse*>(d_synapses),
-        num_synapses,
-        static_cast<float*>(d_trace_stats));
-    
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess) {
-        printf("CUDA Error in trace_monitoring: %s\n", cudaGetErrorString(error));
-    }
-}
-
-void launch_reward_modulation_wrapper(
-    void* d_synapses,
-    void* d_neurons,
-    float reward,
-    float current_time,
-    float dt,
-    int num_synapses
-) {
-    dim3 block(256);
-    dim3 grid((num_synapses + block.x - 1) / block.x);
-    
-    reward_modulation_kernel<<<grid, block>>>(
-        static_cast<GPUSynapse*>(d_synapses),
-        static_cast<GPUNeuronState*>(d_neurons),
-        reward, current_time, dt, num_synapses);
-    
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess) {
-        printf("CUDA Error in reward_modulation: %s\n", cudaGetErrorString(error));
-    }
-}
-
-void launch_hebbian_learning_wrapper(
-    void* d_synapses,
-    const void* d_neurons,
-    float current_time,
-    float dt,
-    int num_synapses
-) {
-    dim3 block(256);
-    dim3 grid((num_synapses + block.x - 1) / block.x);
-    
-    hebbian_learning_kernel<<<grid, block>>>(
-        static_cast<GPUSynapse*>(d_synapses),
-        static_cast<const GPUNeuronState*>(d_neurons),
-        current_time, dt, num_synapses);
-    
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess) {
-        printf("CUDA Error in hebbian_learning: %s\n", cudaGetErrorString(error));
-    }
-}
-
-void launch_bcm_learning_wrapper(
-    void* d_synapses,
-    const void* d_neurons,
-    float learning_rate,
-    float dt,
-    int num_synapses
-) {
-    dim3 block(256);
-    dim3 grid((num_synapses + block.x - 1) / block.x);
-    
-    bcm_learning_kernel<<<grid, block>>>(
-        static_cast<GPUSynapse*>(d_synapses),
-        static_cast<const GPUNeuronState*>(d_neurons),
-        learning_rate, dt, num_synapses);
-    
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess) {
-        printf("CUDA Error in bcm_learning: %s\n", cudaGetErrorString(error));
-    }
-}
-
-void launch_correlation_learning_wrapper(
-    void* d_synapses,
-    const void* d_neurons,
-    void* d_correlation_matrix,
-    float learning_rate,
-    float dt,
-    int num_synapses,
-    int matrix_size
-) {
-    dim3 block(256);
-    dim3 grid((num_synapses + block.x - 1) / block.x);
-    
-    correlation_learning_kernel<<<grid, block>>>(
-        static_cast<GPUSynapse*>(d_synapses),
-        static_cast<const GPUNeuronState*>(d_neurons),
-        static_cast<float*>(d_correlation_matrix),
-        learning_rate, dt, num_synapses, matrix_size);
-    
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess) {
-        printf("CUDA Error in correlation_learning: %s\n", cudaGetErrorString(error));
-    }
-}
-
-void launch_reward_prediction_error_wrapper(
-    const void* d_actual_reward,
-    void* d_predicted_rewards,
-    int num_timesteps
-) {
-    dim3 block(256);
-    dim3 grid((num_timesteps + block.x - 1) / block.x);
-    
-    reward_prediction_error_kernel<<<grid, block>>>(
-        static_cast<const float*>(d_actual_reward),
-        static_cast<float*>(d_predicted_rewards),
-        num_timesteps);
-    
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess) {
-        printf("CUDA Error in reward_prediction_error: %s\n", cudaGetErrorString(error));
-    }
-}
-
-} // extern "C"
+// Additional utility functions specific to the learning system can be added here
+// if needed, but main wrapper functions are handled in CudaKernelWrappers.cu
