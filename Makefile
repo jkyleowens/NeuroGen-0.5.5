@@ -32,7 +32,7 @@ LDFLAGS := -L/usr/lib
 LDLIBS := -ljsoncpp \
           -lX11 -lXext -lXfixes -lXtst \
           -lopencv_core -lopencv_imgproc -lopencv_imgcodecs -lopencv_objdetect \
-          -ltesseract -llept
+          -ltesseract -lleptonica
 
 # --- Source Files ---
 
