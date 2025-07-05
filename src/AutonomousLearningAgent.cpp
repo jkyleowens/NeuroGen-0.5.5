@@ -31,6 +31,10 @@ AutonomousLearningAgent::AutonomousLearningAgent(const NetworkConfig& config)
     
     // Initialize visual interface
     visual_interface_ = std::make_unique<VisualInterface>(1920, 1080);
+    real_screen_capture_ = std::make_unique<RealScreenCapture>();
+    input_controller_ = std::make_unique<InputController>();
+    ocr_processor_ = std::make_unique<OCRProcessor>();
+    gui_detector_ = std::make_unique<GUIElementDetector>();
     
     // Initialize attention controller
     attention_controller_ = std::make_unique<AttentionController>();
@@ -69,9 +73,20 @@ bool AutonomousLearningAgent::initialize() {
         return false;
     }
     
-    // Initialize visual interface
     if (!visual_interface_->initialize_capture()) {
         std::cerr << "Warning: Failed to initialize visual capture" << std::endl;
+    }
+    if (real_screen_capture_ && !real_screen_capture_->initialize(1920,1080)) {
+        std::cerr << "Failed to initialize screen capture" << std::endl;
+    }
+    if (input_controller_ && !input_controller_->initialize()) {
+        std::cerr << "Failed to initialize input controller" << std::endl;
+    }
+    if (ocr_processor_ && !ocr_processor_->initialize()) {
+        std::cerr << "Failed to initialize OCR" << std::endl;
+    }
+    if (gui_detector_ && !gui_detector_->initialize()) {
+        std::cerr << "Failed to initialize GUI detector" << std::endl;
     }
     
     // Register basic modules with attention controller
@@ -116,6 +131,9 @@ void AutonomousLearningAgent::shutdown() {
     if (visual_interface_) {
         visual_interface_->stop_capture();
     }
+    if (real_screen_capture_) real_screen_capture_->shutdown();
+    if (input_controller_) input_controller_->shutdown();
+    if (ocr_processor_) ocr_processor_->shutdown();
     
     std::cout << "AutonomousLearningAgent shutdown complete" << std::endl;
 }

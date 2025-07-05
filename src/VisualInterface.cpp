@@ -4,6 +4,7 @@
 // ============================================================================
 
 #include "NeuroGen/VisualInterface.h"
+#include <memory>
 #include <iostream>
 #include <algorithm>
 #include <cmath>
@@ -16,20 +17,23 @@
 #include <opencv2/highgui.hpp>
 #endif
 
-// Forward declaration for specialized module
-class SpecializedModule {
-public:
-    virtual void process(const std::vector<float>& input, float attention_weight) = 0;
-    virtual ~SpecializedModule() = default;
-};
-
 // ============================================================================
 // VISUAL INTERFACE IMPLEMENTATION
 // ============================================================================
 
-VisualInterface::VisualInterface(int width, int height) 
+VisualInterface::VisualInterface(int width, int height)
     : target_width_(width), target_height_(height), detection_threshold_(0.5f),
       enable_preprocessing_(true), capture_active_(false) {
+
+    real_screen_capture_ = std::make_unique<RealScreenCapture>();
+    gui_detector_ = std::make_unique<GUIElementDetector>();
+    ocr_processor_ = std::make_unique<OCRProcessor>();
+    NetworkConfig cfg;
+    cfg.input_size = width * height;
+    cfg.output_size = 128;
+    cfg.num_neurons = 128;
+    visual_processor_ = std::make_unique<BioVisualProcessor>("bio_visual_processor", cfg, 128);
+    visual_processor_->initialize();
     
     std::cout << "Visual Interface: Initializing visual processing system..." << std::endl;
     std::cout << "  - Target resolution: " << width << "x" << height << std::endl;
@@ -38,15 +42,23 @@ VisualInterface::VisualInterface(int width, int height)
 
 VisualInterface::~VisualInterface() {
     stop_capture();
+    if (real_screen_capture_) real_screen_capture_->shutdown();
+    if (ocr_processor_) ocr_processor_->shutdown();
     std::cout << "Visual Interface: Visual processing system shutdown complete." << std::endl;
 }
 
 bool VisualInterface::initialize_capture() {
-    // Initialize screen capture system
     std::cout << "Initializing screen capture system..." << std::endl;
-    
-    // Platform-specific initialization would go here
-    // For now, return success for simulation
+    if (real_screen_capture_ && !real_screen_capture_->initialize(target_width_, target_height_)) {
+        std::cerr << "Failed to initialize RealScreenCapture" << std::endl;
+        return false;
+    }
+    if (ocr_processor_ && !ocr_processor_->initialize()) {
+        std::cerr << "Failed to initialize OCR processor" << std::endl;
+    }
+    if (gui_detector_ && !gui_detector_->initialize()) {
+        std::cerr << "Failed to initialize GUI detector" << std::endl;
+    }
     return true;
 }
 
@@ -73,29 +85,24 @@ void VisualInterface::stop_capture() {
 
 std::vector<float> VisualInterface::capture_and_process_screen() {
 #ifdef USE_OPENCV
-    // Real OpenCV implementation would go here
-    current_screen_ = cv::Mat::zeros(target_height_, target_width_, CV_8UC3);
+    if (real_screen_capture_) {
+        current_screen_ = real_screen_capture_->captureScreen();
+    }
     
-    // Generate some test UI elements
-    cv::rectangle(current_screen_, cv::Point(100, 100), cv::Point(220, 140), cv::Scalar(100, 200, 100), -1);
-    cv::putText(current_screen_, "Button", cv::Point(120, 125), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255));
-    
-    cv::rectangle(current_screen_, cv::Point(100, 200), cv::Point(300, 230), cv::Scalar(255, 255, 255), 2);
-    cv::putText(current_screen_, "Text Input", cv::Point(110, 220), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0, 0, 0));
-    
-    cv::rectangle(current_screen_, cv::Point(300, 150), cv::Point(380, 170), cv::Scalar(0, 100, 200), -1);
-    cv::putText(current_screen_, "Link", cv::Point(310, 165), cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 255));
-    
-    // Preprocess the image
     if (enable_preprocessing_) {
         preprocess_image();
     }
-    
-    // Extract visual features
-    visual_features_ = extract_visual_features();
-    
-    // Update element detection
-    update_element_detection();
+
+    if (visual_processor_) {
+        visual_features_ = visual_processor_->processPixels(current_screen_);
+    }
+
+    if (gui_detector_) {
+        detected_elements_ = gui_detector_->detectElements(current_screen_);
+    }
+
+    extract_text_elements();
+    detect_interactive_elements();
     
 #else
     // Simulated visual processing without OpenCV
@@ -124,69 +131,16 @@ std::vector<float> VisualInterface::capture_and_process_screen() {
 
 std::vector<ScreenElement> VisualInterface::detect_screen_elements() {
     std::lock_guard<std::mutex> lock(screen_mutex_);
-    
-    // Simulate detection of screen elements
-    detected_elements_.clear();
-    
-    // Add some example elements
-    ScreenElement button(1, "button", 100, 100, 120, 40, "Click Me", true, 0.9f);
-    detected_elements_.push_back(button);
-    
-    ScreenElement textbox(2, "textbox", 100, 200, 200, 30, "", false, 0.8f);
-    detected_elements_.push_back(textbox);
-    
-    ScreenElement link(3, "link", 300, 150, 80, 20, "Link", true, 0.7f);
-    detected_elements_.push_back(link);
-    
+    if (gui_detector_ && !current_screen_.empty()) {
+        detected_elements_ = gui_detector_->detectElements(current_screen_);
+    }
     return detected_elements_;
 }
 
 void VisualInterface::update_element_detection() {
-#ifdef USE_OPENCV
-    detected_elements_.clear();
-    
-    if (current_screen_.empty()) return;
-    
-    // Convert to grayscale for edge detection
-    cv::Mat gray;
-    cv::cvtColor(current_screen_, gray, cv::COLOR_BGR2GRAY);
-    
-    // Detect edges using Canny
-    cv::Mat edges;
-    cv::Canny(gray, edges, 50, 150);
-    
-    // Find contours (potential UI elements)
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(edges, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-    
-    // Process contours into screen elements
-    int element_id = 1;
-    for (const auto& contour : contours) {
-        cv::Rect rect = cv::boundingRect(contour);
-        
-        // Filter by size to avoid noise
-        if (rect.width > 20 && rect.height > 10) {
-            ScreenElement element(element_id++, "unknown", rect.x, rect.y, 
-                                rect.width, rect.height, "", false, 0.5f);
-            
-            // Simple classification based on dimensions
-            float aspect_ratio = static_cast<float>(rect.width) / rect.height;
-            if (aspect_ratio > 2.0f && rect.height < 50) {
-                element.type = "button";
-                element.is_clickable = true;
-                element.confidence = 0.7f;
-            } else if (aspect_ratio > 3.0f && rect.height < 40) {
-                element.type = "textbox";
-                element.confidence = 0.6f;
-            }
-            
-            detected_elements_.push_back(element);
-        }
+    if (gui_detector_ && !current_screen_.empty()) {
+        detected_elements_ = gui_detector_->detectElements(current_screen_);
     }
-#else
-    // Simulated element detection
-    detect_screen_elements();
-#endif
 }
 
 std::vector<float> VisualInterface::extract_visual_features() const {
@@ -288,7 +242,7 @@ void VisualInterface::send_to_visual_cortex(SpecializedModule* visual_cortex) {
     }
     
     // Process through visual cortex
-    visual_cortex->process(attended_features, 1.0f);
+    visual_cortex->process(attended_features);
 }
 
 ScreenElement VisualInterface::find_element_by_type(const std::string& type) const {
@@ -337,14 +291,14 @@ void VisualInterface::preprocess_image() {
 }
 
 void VisualInterface::extract_text_elements() {
-    // Text extraction would use OCR here (Tesseract, etc.)
-    // For now, simulated based on element detection
+    if (!ocr_processor_ || current_screen_.empty()) return;
     for (auto& element : detected_elements_) {
-        if (element.type == "button") {
-            element.text = "Button_" + std::to_string(element.id);
-        } else if (element.type == "link") {
-            element.text = "Link_" + std::to_string(element.id);
-        }
+        cv::Rect r(element.x, element.y, element.width, element.height);
+        r &= cv::Rect(0,0,current_screen_.cols, current_screen_.rows);
+        if (r.width <=0 || r.height <=0) continue;
+        cv::Mat roi = current_screen_(r);
+        element.text = ocr_processor_->extractText(roi);
+        element.confidence *= ocr_processor_->getConfidence();
     }
 }
 

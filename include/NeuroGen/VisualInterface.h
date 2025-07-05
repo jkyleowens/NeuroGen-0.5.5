@@ -7,6 +7,10 @@
 #define VISUAL_INTERFACE_H
 
 #include "NeuroGen/ScreenElement.h"
+#include "NeuroGen/RealScreenCapture.h"
+#include "NeuroGen/GUIElementDetector.h"
+#include "NeuroGen/OCRProcessor.h"
+#include "NeuroGen/BioVisualProcessor.h"
 #include <vector>
 #include <string>
 #include <thread>
@@ -64,10 +68,13 @@ private:
     std::thread capture_thread_;
     mutable std::mutex screen_mutex_;
     
-#ifdef USE_OPENCV
     cv::Mat current_screen_;
-#endif
     
+    std::unique_ptr<RealScreenCapture> real_screen_capture_;
+    std::unique_ptr<GUIElementDetector> gui_detector_;
+    std::unique_ptr<OCRProcessor> ocr_processor_;
+    std::unique_ptr<BioVisualProcessor> visual_processor_;
+
     // Internal methods
     void capture_loop();
     void preprocess_image();
