@@ -338,7 +338,7 @@ void runAutonomousLearningSimulation() {
     }
     
     // Environment sensor function that returns BrowsingState
-    auto environment_sensor = [&]() -> BrowsingState {
+    /* auto environment_sensor = [&]() -> BrowsingState {
         // Update environment dynamics
         environment_phase++;
         
@@ -372,13 +372,48 @@ void runAutonomousLearningSimulation() {
         state.page_loading = false;
         
         return state;
+    };*/
+    
+    // Environment action executor function - REAL COMPUTER CONTROL
+    auto action_executor = [&](const BrowsingAction& action) {
+        // This is now integrated into the agent itself for real-time control
+        std::cout << "🎬 Real Computer Action: " << actionTypeToString(action.type) 
+                  << " (confidence: " << action.confidence << ")";
+        
+        switch(action.type) {
+            case ActionType::CLICK:
+                std::cout << " at (" << action.x_coordinate << ", " << action.y_coordinate << ")";
+                break;
+            case ActionType::TYPE:
+                std::cout << " with text: \"" << action.text_content << "\"";
+                break;
+            case ActionType::SCROLL:
+                std::cout << " " << (action.scroll_direction == ScrollDirection::UP ? "UP" : "DOWN")
+                          << " by " << action.scroll_amount;
+                break;
+            case ActionType::ENTER:
+            case ActionType::BACKSPACE:
+                // No extra details needed for these actions
+                break;
+        }
+        
+        std::cout << " [REAL COMPUTER CONTROL ACTIVE]" << std::endl;
     };
     
-    // Environment action executor function
-    auto action_executor = [&](const BrowsingAction& action) {
-        // Simple action processing for simulation
-        std::cout << "🎬 Executing action: " << actionTypeToString(action.type) 
-                  << " (confidence: " << action.confidence << ")" << std::endl;
+    // Setup environment interaction - REAL SCREEN MONITORING
+    auto environment_sensor = [&]() -> BrowsingState {
+        // Real screen capture and analysis
+        BrowsingState state;
+        state.current_url = "real://computer_screen";
+        
+        // The agent now captures real screen data internally
+        // This is just for compatibility with the existing interface
+        state.scroll_position = environment_phase % 1000;
+        state.page_loading = false;
+        state.window_width = 1920;
+        state.window_height = 1080;
+        
+        return state;
     };
     
     // Setup environment interaction
@@ -413,6 +448,13 @@ void runAutonomousLearningSimulation() {
     prediction_goal->priority = 0.8f;
     prediction_goal->is_active = true;
     agent.addLearningGoal(std::move(prediction_goal));
+
+    // Goal 4: Information Gathering
+    auto info_goal = std::make_unique<AutonomousGoal>();
+    info_goal->description = "Information Gathering";
+    info_goal->priority = 0.7f; // High priority for seeking knowledge
+    info_goal->is_active = true;
+    agent.addLearningGoal(std::move(info_goal));
     
     std::cout << "✅ Learning goals established!" << std::endl;
     
@@ -430,47 +472,73 @@ void runAutonomousLearningSimulation() {
         return;
     }
     
-    int max_learning_steps = 1000; // Reduced for simpler demo
+    // Enable detailed logging for better monitoring
+    agent.enableDetailedLogging(true);
+    
+    int max_learning_steps = 2000; // Increased for more comprehensive learning
     std::cout << "🔄 Running " << max_learning_steps << " autonomous learning steps..." << std::endl;
+    std::cout << "🖥️  The agent will now interact with the real computer screen!" << std::endl;
+    std::cout << "⚠️  Safety bounds are enabled to prevent dangerous actions." << std::endl;
     
     auto learning_start = std::chrono::high_resolution_clock::now();
     
     agent.startAutonomousLearning();
     
-    // Manual learning loop for detailed monitoring
+    // Enhanced learning loop with real-time monitoring
+    float total_reward = 0.0f;
+    float best_performance = 0.0f;
+    
     for (int step = 0; step < max_learning_steps; ++step) {
         float learning_progress = agent.autonomousLearningStep(1.0f);
         
         // Update the agent
         agent.update(1.0f);
         
-        // Detailed monitoring every 200 steps
-        if (step % 200 == 0) {
+        // Detailed monitoring every 100 steps
+        if (step % 100 == 0) {
             std::cout << "\n📈 Learning Progress Report (Step " << step << "):" << std::endl;
             std::cout << "   🧠 Learning Progress: " << std::fixed << std::setprecision(2) 
                       << learning_progress * 100 << "%" << std::endl;
             
-            // Get status report
+            // Get comprehensive status report
             std::string status = agent.getStatusReport();
-            std::cout << "   📊 Agent Status: " << status << std::endl;
+            std::cout << status << std::endl;
             
-            // Check for early completion
-            if (learning_progress > 0.9f) {
-                std::cout << "\n🎉 High learning competence achieved early!" << std::endl;
+            // Track best performance
+            if (learning_progress > best_performance) {
+                best_performance = learning_progress;
+                std::cout << "🎉 New best performance achieved: " << best_performance * 100 << "%!" << std::endl;
+            }
+            
+            // Check for high competence achievement
+            if (learning_progress > 0.8f) {
+                std::cout << "\n🎉 High learning competence achieved!" << std::endl;
+                std::cout << "The agent has demonstrated significant learning capability." << std::endl;
                 break;
             }
         }
         
-        // Introduce environmental challenges periodically
-        if (step % 200 == 0 && step > 0) {
-            environment_complexity = std::min(1.0f, environment_complexity + 0.05f);
-            std::cout << "\n🌊 Environmental challenge increased! Complexity: " 
-                      << environment_complexity << std::endl;
+        // Periodic performance evaluation
+        if (step % 500 == 0 && step > 0) {
+            auto attention_weights = agent.getAttentionWeights();
+            std::cout << "\n🔍 Attention Analysis:" << std::endl;
+            for (const auto& [module, weight] : attention_weights) {
+                std::cout << "   " << module << ": " << weight << std::endl;
+            }
         }
         
-        // Brief pause to prevent CPU overload
-        if (step % 50 == 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        // Brief pause to allow observation and prevent overwhelming the system
+        if (step % 25 == 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        
+        // Emergency stop check (user can stop by creating a stop file)
+        if (step % 100 == 0) {
+            std::ifstream stop_file("/tmp/stop_neurogen");
+            if (stop_file.good()) {
+                std::cout << "\n🛑 Emergency stop detected. Shutting down safely..." << std::endl;
+                break;
+            }
         }
     }
     

@@ -243,11 +243,24 @@ protected:
     std::vector<float> synaptic_weights_;
     std::vector<float> neuron_outputs_;
 
-private:
-    // Learning and plasticity
+    // Configuration
+    std::string module_id_;
+    std::string module_type_;
+    size_t num_neurons_;
+    size_t num_synapses_;
     float learning_rate_;
     float plasticity_strength_;
     float homeostatic_target_;
+
+    // State
+    float average_activity_;
+    size_t update_count_;
+
+    // Thread safety
+    mutable std::mutex module_mutex_;
+
+private:
+    // Learning and plasticity
     bool plasticity_enabled_;
     
     // Biological parameters
@@ -257,16 +270,14 @@ private:
     float refractory_period_;
     
     // Performance metrics
-    float average_activity_;
     float firing_rate_;
     float connection_strength_;
     float plasticity_events_;
     float last_update_time_;
-    size_t update_count_;
     
-    // Thread safety
-    mutable std::mutex module_mutex_;
-
+    // Internal methods
+    void calculateAverageActivity();
+    
 protected:
     // ========================================================================
     // INTERNAL PROCESSING METHODS

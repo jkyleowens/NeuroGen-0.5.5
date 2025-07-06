@@ -137,6 +137,11 @@ std::vector<ScreenElement> VisualInterface::detect_screen_elements() {
     return detected_elements_;
 }
 
+cv::Mat VisualInterface::get_last_frame() const {
+    std::lock_guard<std::mutex> lock(screen_mutex_);
+    return current_screen_;
+}
+
 void VisualInterface::update_element_detection() {
     if (gui_detector_ && !current_screen_.empty()) {
         detected_elements_ = gui_detector_->detectElements(current_screen_);

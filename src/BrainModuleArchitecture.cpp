@@ -1,847 +1,625 @@
-// ============================================================================
-// BRAIN MODULE ARCHITECTURE IMPLEMENTATION
-// File: src/BrainModuleArchitecture.cpp
-// ============================================================================
-
 #include "NeuroGen/BrainModuleArchitecture.h"
-#include "NeuroGen/EnhancedNeuralModule.h"
-#include "NeuroGen/SpecializedModule.h"
+#include "NeuroGen/LearningState.h"
+#include "NeuroGen/cuda/NetworkCUDA.cuh"
+#include <string>
+#include <vector>
+#include <map>
+#include <fstream>
 #include <iostream>
+#include <filesystem>
+#include <numeric>
 #include <algorithm>
-#include <cmath>
-#include <random>
 
-// ============================================================================
-// CONSTRUCTION AND INITIALIZATION
-// ============================================================================
-
-BrainModuleArchitecture::BrainModuleArchitecture() 
-    : visual_input_width_(1920), visual_input_height_(1080),
-      visual_feature_size_(0), context_size_(512), goal_size_(64), action_size_(32),
-      global_reward_signal_(0.0f), is_initialized_(false), total_activity_(0.0f),
-      update_count_(0) {
-    
-    modular_network_ = std::make_unique<ModularNeuralNetwork>();
-    global_context_.resize(context_size_, 0.0f);
-    
-    std::cout << "BrainModuleArchitecture created" << std::endl;
+BrainModuleArchitecture::BrainModuleArchitecture(const ArchitectureConfig& config)
+    : architecture_config_(config),
+      modular_network_(std::make_unique<ModularNeuralNetwork>()),
+      creation_time_(std::chrono::steady_clock::now()) {
+    // Initialization logic here
 }
 
 BrainModuleArchitecture::~BrainModuleArchitecture() {
-    shutdown();
+    // Cleanup logic here
 }
 
-bool BrainModuleArchitecture::initialize(int screen_width, int screen_height) {
-    if (is_initialized_) {
-        std::cout << "Architecture already initialized" << std::endl;
-        return true;
-    }
-    
-    visual_input_width_ = screen_width;
-    visual_input_height_ = screen_height;
-    
-    // Calculate dynamic sizes based on input dimensions
-    calculateDynamicSizes();
-    
-    // Initialize the modular network
-    if (!modular_network_->initialize()) {
-        std::cerr << "Failed to initialize modular network" << std::endl;
+bool BrainModuleArchitecture::initialize(int visual_input_width, int visual_input_height) {
+    visual_input_width_ = visual_input_width;
+    visual_input_height_ = visual_input_height;
+    visual_feature_size_ = visual_input_width * visual_input_height;
+
+    if (!initializeDefaultModules()) {
         return false;
     }
-    
-    // Create default module configurations
-    createDefaultConfigurations();
-    
-    // Create all brain modules
-    if (!createVisualCortex()) return false;
-    if (!createComprehensionModule()) return false;
-    if (!createExecutiveFunction()) return false;
-    if (!createMemoryModule()) return false;
-    if (!createCentralController()) return false;
-    if (!createOutputModule()) return false;
-    if (!createMotorCortex()) return false;
-    if (!createRewardSystem()) return false;
-    if (!createAttentionSystem()) return false;
-    
-    // Initialize inter-module connections
-    initializeConnections();
-    
-    is_initialized_ = true;
-    std::cout << "BrainModuleArchitecture initialized successfully" << std::endl;
-    std::cout << "Visual input: " << visual_input_width_ << "x" << visual_input_height_ << std::endl;
-    std::cout << "Visual features: " << visual_feature_size_ << std::endl;
-    std::cout << "Context size: " << context_size_ << std::endl;
-    std::cout << "Total modules: " << modular_network_->get_module_count() << std::endl;
-    
+    initializeInterModuleConnections();
     return true;
 }
 
-void BrainModuleArchitecture::shutdown() {
-    if (!is_initialized_) return;
-    
-    if (modular_network_) {
-        modular_network_->shutdown();
+std::shared_ptr<EnhancedNeuralModule> BrainModuleArchitecture::getModule(const std::string& module_name) const {
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    auto it = modules_.find(module_name);
+    if (it != modules_.end()) {
+        return it->second;
     }
-    
-    module_configs_.clear();
-    connections_.clear();
-    attention_weights_.clear();
-    
-    is_initialized_ = false;
-    std::cout << "BrainModuleArchitecture shutdown complete" << std::endl;
+    return nullptr;
 }
+
+void BrainModuleArchitecture::update(float dt, float global_reward) {
+    // Update logic here
+}
+
+// Remaining Key Methods for BrainModuleArchitecture
+// Add these to the end of BrainModuleArchitecture.cpp
 
 // ============================================================================
-// DYNAMIC SIZE CALCULATION
+// STATE PERSISTENCE METHODS
 // ============================================================================
 
-void BrainModuleArchitecture::calculateDynamicSizes() {
-    // Calculate visual feature size based on input dimensions
-    // Using a hierarchical reduction approach similar to CNNs
-    int reduced_width = visual_input_width_ / 8;  // 8x reduction
-    int reduced_height = visual_input_height_ / 8;
-    visual_feature_size_ = reduced_width * reduced_height / 4; // Further compression
+bool BrainModuleArchitecture::saveLearningState(const std::string& save_directory, const std::string& checkpoint_name) {
+    // Create directory if it doesn't exist
+    std::filesystem::create_directories(save_directory);
     
-    // Ensure minimum and maximum sizes
-    visual_feature_size_ = std::max(static_cast<size_t>(256), visual_feature_size_);
-    visual_feature_size_ = std::min(static_cast<size_t>(2048), visual_feature_size_);
-    
-    // Adjust other sizes based on visual features
-    context_size_ = visual_feature_size_ + 256; // Visual + additional context
-    goal_size_ = 64; // Fixed goal representation size
-    action_size_ = 32; // Fixed action space size
-    
-    std::cout << "Dynamic sizes calculated:" << std::endl;
-    std::cout << "  Visual features: " << visual_feature_size_ << std::endl;
-    std::cout << "  Context: " << context_size_ << std::endl;
-    std::cout << "  Goals: " << goal_size_ << std::endl;
-    std::cout << "  Actions: " << action_size_ << std::endl;
-}
-
-// ============================================================================
-// MODULE CREATION METHODS
-// ============================================================================
-
-bool BrainModuleArchitecture::createVisualCortex() {
-    ModuleConfig config;
-    config.type = ModuleType::VISUAL_CORTEX;
-    config.name = "visual_cortex";
-    config.input_size = visual_input_width_ * visual_input_height_ / 16; // Downsampled input
-    config.output_size = visual_feature_size_;
-    config.internal_neurons = 2048;
-    config.cortical_columns = 64;
-    config.learning_rate = 0.001f;
-    config.plasticity_strength = 0.8f;
-    config.enable_stdp = true;
-    config.enable_homeostasis = true;
-    config.output_connections = {"comprehension_module", "executive_function", "attention_system"};
-    
-    return createModule(config);
-}
-
-bool BrainModuleArchitecture::createComprehensionModule() {
-    ModuleConfig config;
-    config.type = ModuleType::COMPREHENSION_MODULE;
-    config.name = "comprehension_module";
-    config.input_size = visual_feature_size_ + 256; // Visual + text features
-    config.output_size = 512;
-    config.internal_neurons = 1024;
-    config.cortical_columns = 32;
-    config.learning_rate = 0.001f;
-    config.plasticity_strength = 0.7f;
-    config.enable_stdp = true;
-    config.enable_homeostasis = true;
-    config.input_connections = {"visual_cortex"};
-    config.output_connections = {"executive_function", "memory_module"};
-    
-    return createModule(config);
-}
-
-bool BrainModuleArchitecture::createExecutiveFunction() {
-    ModuleConfig config;
-    config.type = ModuleType::EXECUTIVE_FUNCTION;
-    config.name = "executive_function";
-    config.input_size = visual_feature_size_ + 512 + goal_size_; // Visual + comprehension + goals
-    config.output_size = 256;
-    config.internal_neurons = 1536;
-    config.cortical_columns = 48;
-    config.learning_rate = 0.002f;
-    config.plasticity_strength = 0.9f;
-    config.enable_stdp = true;
-    config.enable_homeostasis = true;
-    config.input_connections = {"visual_cortex", "comprehension_module", "memory_module"};
-    config.output_connections = {"motor_cortex", "memory_module", "attention_system"};
-    
-    return createModule(config);
-}
-
-bool BrainModuleArchitecture::createMemoryModule() {
-    ModuleConfig config;
-    config.type = ModuleType::MEMORY_MODULE;
-    config.name = "memory_module";
-    config.input_size = 512 + 256; // Comprehension + executive
-    config.output_size = 384;
-    config.internal_neurons = 2048;
-    config.cortical_columns = 64;
-    config.learning_rate = 0.0005f;
-    config.plasticity_strength = 0.6f;
-    config.enable_stdp = true;
-    config.enable_homeostasis = true;
-    config.input_connections = {"comprehension_module", "executive_function"};
-    config.output_connections = {"executive_function", "central_controller"};
-    
-    return createModule(config);
-}
-
-bool BrainModuleArchitecture::createCentralController() {
-    ModuleConfig config;
-    config.type = ModuleType::CENTRAL_CONTROLLER;
-    config.name = "central_controller";
-    config.input_size = 384 + 128; // Memory + reward
-    config.output_size = 128;
-    config.internal_neurons = 512;
-    config.cortical_columns = 16;
-    config.learning_rate = 0.003f;
-    config.plasticity_strength = 1.0f;
-    config.enable_stdp = true;
-    config.enable_homeostasis = true;
-    config.input_connections = {"memory_module", "reward_system"};
-    config.output_connections = {"attention_system", "reward_system"};
-    
-    return createModule(config);
-}
-
-bool BrainModuleArchitecture::createOutputModule() {
-    ModuleConfig config;
-    config.type = ModuleType::OUTPUT_MODULE;
-    config.name = "output_module";
-    config.input_size = action_size_;
-    config.output_size = action_size_;
-    config.internal_neurons = 256;
-    config.cortical_columns = 8;
-    config.learning_rate = 0.001f;
-    config.plasticity_strength = 0.5f;
-    config.enable_stdp = false; // Output module uses different learning
-    config.enable_homeostasis = false;
-    config.input_connections = {"motor_cortex"};
-    
-    return createModule(config);
-}
-
-bool BrainModuleArchitecture::createMotorCortex() {
-    ModuleConfig config;
-    config.type = ModuleType::MOTOR_CORTEX;
-    config.name = "motor_cortex";
-    config.input_size = 256; // From executive function
-    config.output_size = action_size_;
-    config.internal_neurons = 512;
-    config.cortical_columns = 16;
-    config.learning_rate = 0.002f;
-    config.plasticity_strength = 0.8f;
-    config.enable_stdp = true;
-    config.enable_homeostasis = true;
-    config.input_connections = {"executive_function"};
-    config.output_connections = {"output_module"};
-    
-    return createModule(config);
-}
-
-bool BrainModuleArchitecture::createRewardSystem() {
-    ModuleConfig config;
-    config.type = ModuleType::REWARD_SYSTEM;
-    config.name = "reward_system";
-    config.input_size = 256 + action_size_; // Executive + action feedback
-    config.output_size = 128;
-    config.internal_neurons = 256;
-    config.cortical_columns = 8;
-    config.learning_rate = 0.005f;
-    config.plasticity_strength = 1.2f;
-    config.enable_stdp = true;
-    config.enable_homeostasis = false; // Reward system has different dynamics
-    config.input_connections = {"executive_function", "output_module"};
-    config.output_connections = {"central_controller"};
-    
-    return createModule(config);
-}
-
-bool BrainModuleArchitecture::createAttentionSystem() {
-    ModuleConfig config;
-    config.type = ModuleType::ATTENTION_SYSTEM;
-    config.name = "attention_system";
-    config.input_size = visual_feature_size_ + 256 + 128; // Visual + executive + controller
-    config.output_size = 9; // Attention weights for 9 modules
-    config.internal_neurons = 256;
-    config.cortical_columns = 8;
-    config.learning_rate = 0.003f;
-    config.plasticity_strength = 0.7f;
-    config.enable_stdp = true;
-    config.enable_homeostasis = true;
-    config.input_connections = {"visual_cortex", "executive_function", "central_controller"};
-    
-    return createModule(config);
-}
-
-// ============================================================================
-// MODULE MANAGEMENT
-// ============================================================================
-
-bool BrainModuleArchitecture::createModule(const ModuleConfig& config) {
-    if (!validateModuleConfig(config)) {
-        std::cerr << "Invalid module configuration for: " << config.name << std::endl;
-        return false;
-    }
-    
-    // Create network configuration for this module
-    NetworkConfig net_config;
-    
-    // Set basic network parameters
-    net_config.input_size = static_cast<int>(config.input_size);
-    net_config.output_size = static_cast<int>(config.output_size);
-    net_config.hidden_size = static_cast<int>(config.internal_neurons);
-    net_config.num_neurons = config.internal_neurons;
-    
-    // Set cortical column organization
-    net_config.numColumns = static_cast<int>(config.cortical_columns);
-    net_config.neuronsPerColumn = static_cast<int>(config.internal_neurons / config.cortical_columns);
-    
-    // Set learning parameters
-    net_config.enable_stdp = config.enable_stdp;
-    net_config.stdp_learning_rate = config.learning_rate;
-    net_config.reward_learning_rate = config.learning_rate;
-    net_config.A_plus = config.plasticity_strength * 0.01f;
-    net_config.A_minus = config.plasticity_strength * 0.012f;
-    
-    // Set homeostatic parameters
-    if (config.enable_homeostasis) {
-        net_config.homeostatic_strength = 0.001f;
-    } else {
-        net_config.homeostatic_strength = 0.0f;
-    }
-    
-    // Set connectivity parameters based on module type
-    switch (config.type) {
-        case ModuleType::VISUAL_CORTEX:
-            net_config.input_hidden_prob = 0.9f;
-            net_config.hidden_hidden_prob = 0.2f;
-            net_config.hidden_output_prob = 0.8f;
-            net_config.localFanOut = 50;
-            net_config.localFanIn = 50;
-            break;
-        case ModuleType::COMPREHENSION_MODULE:
-            net_config.input_hidden_prob = 0.8f;
-            net_config.hidden_hidden_prob = 0.3f;
-            net_config.hidden_output_prob = 0.9f;
-            net_config.localFanOut = 40;
-            net_config.localFanIn = 40;
-            break;
-        case ModuleType::EXECUTIVE_FUNCTION:
-            net_config.input_hidden_prob = 0.7f;
-            net_config.hidden_hidden_prob = 0.4f;
-            net_config.hidden_output_prob = 0.9f;
-            net_config.localFanOut = 60;
-            net_config.localFanIn = 60;
-            break;
-        case ModuleType::MEMORY_MODULE:
-            net_config.input_hidden_prob = 0.6f;
-            net_config.hidden_hidden_prob = 0.5f;
-            net_config.hidden_output_prob = 0.7f;
-            net_config.localFanOut = 80;
-            net_config.localFanIn = 80;
-            break;
-        case ModuleType::CENTRAL_CONTROLLER:
-            net_config.input_hidden_prob = 0.9f;
-            net_config.hidden_hidden_prob = 0.6f;
-            net_config.hidden_output_prob = 1.0f;
-            net_config.localFanOut = 30;
-            net_config.localFanIn = 30;
-            break;
-        case ModuleType::OUTPUT_MODULE:
-            net_config.input_hidden_prob = 1.0f;
-            net_config.hidden_hidden_prob = 0.1f;
-            net_config.hidden_output_prob = 1.0f;
-            net_config.localFanOut = 20;
-            net_config.localFanIn = 20;
-            break;
-        case ModuleType::MOTOR_CORTEX:
-            net_config.input_hidden_prob = 0.8f;
-            net_config.hidden_hidden_prob = 0.3f;
-            net_config.hidden_output_prob = 0.9f;
-            net_config.localFanOut = 35;
-            net_config.localFanIn = 35;
-            break;
-        case ModuleType::REWARD_SYSTEM:
-            net_config.input_hidden_prob = 0.9f;
-            net_config.hidden_hidden_prob = 0.2f;
-            net_config.hidden_output_prob = 0.8f;
-            net_config.localFanOut = 25;
-            net_config.localFanIn = 25;
-            break;
-        case ModuleType::ATTENTION_SYSTEM:
-            net_config.input_hidden_prob = 0.7f;
-            net_config.hidden_hidden_prob = 0.4f;
-            net_config.hidden_output_prob = 1.0f;
-            net_config.localFanOut = 30;
-            net_config.localFanIn = 30;
-            break;
-    }
-    
-    // Finalize configuration
-    net_config.finalizeConfig();
-    
-    // Validate configuration
-    if (!net_config.validate()) {
-        std::cerr << "Invalid network configuration for module: " << config.name << std::endl;
-        return false;
-    }
-    
-    // Create the neural module
-    auto module = std::make_unique<EnhancedNeuralModule>(config.name, net_config);
-    
-    if (!module->initialize()) {
-        std::cerr << "Failed to initialize module: " << config.name << std::endl;
-        return false;
-    }
-    
-    // Register input and output ports
-    std::vector<size_t> input_neurons, output_neurons;
-    
-    // Create input port
-    for (size_t i = 0; i < config.input_size && i < config.internal_neurons; ++i) {
-        input_neurons.push_back(i);
-    }
-    module->register_neuron_port("input", input_neurons);
-    
-    // Create output port
-    size_t output_start = config.internal_neurons - config.output_size;
-    for (size_t i = output_start; i < config.internal_neurons; ++i) {
-        output_neurons.push_back(i);
-    }
-    module->register_neuron_port("output", output_neurons);
-    
-    // Store configuration
-    module_configs_[config.name] = config;
-    
-    // Add to modular network
-    modular_network_->add_module(std::move(module));
-    
-    // Initialize attention weight
-    attention_weights_[config.name] = 1.0f / 9.0f; // Equal initial attention
-    
-    std::cout << "Created module: " << config.name 
-              << " (neurons: " << config.internal_neurons 
-              << ", input: " << config.input_size 
-              << ", output: " << config.output_size << ")" << std::endl;
-    
-    return true;
-}
-
-bool BrainModuleArchitecture::connectModules(const InterModuleConnection& connection) {
-    auto source_module = modular_network_->get_module(connection.source_module);
-    auto target_module = modular_network_->get_module(connection.target_module);
-    
-    if (!source_module || !target_module) {
-        std::cerr << "Cannot connect modules: " << connection.source_module 
-                  << " -> " << connection.target_module << " (module not found)" << std::endl;
-        return false;
-    }
-    
-    // Store connection for later processing
-    connections_.push_back(connection);
-    
-    std::cout << "Connected: " << connection.source_module 
-              << ":" << connection.source_port << " -> " 
-              << connection.target_module << ":" << connection.target_port << std::endl;
-    
-    return true;
-}
-
-// ============================================================================
-// CONNECTION INITIALIZATION
-// ============================================================================
-
-void BrainModuleArchitecture::initializeConnections() {
-    std::cout << "Initializing inter-module connections..." << std::endl;
-    
-    // Visual Cortex -> Comprehension Module
-    InterModuleConnection conn1;
-    conn1.source_module = "visual_cortex";
-    conn1.source_port = "output";
-    conn1.target_module = "comprehension_module";
-    conn1.target_port = "input";
-    conn1.connection_strength = 0.8f;
-    conn1.plastic = true;
-    conn1.connection_size = visual_feature_size_;
-    connectModules(conn1);
-    
-    // Visual Cortex -> Executive Function
-    InterModuleConnection conn2;
-    conn2.source_module = "visual_cortex";
-    conn2.source_port = "output";
-    conn2.target_module = "executive_function";
-    conn2.target_port = "input";
-    conn2.connection_strength = 0.7f;
-    conn2.plastic = true;
-    conn2.connection_size = visual_feature_size_;
-    connectModules(conn2);
-    
-    // Comprehension -> Executive Function
-    InterModuleConnection conn3;
-    conn3.source_module = "comprehension_module";
-    conn3.source_port = "output";
-    conn3.target_module = "executive_function";
-    conn3.target_port = "input";
-    conn3.connection_strength = 0.9f;
-    conn3.plastic = true;
-    conn3.connection_size = 512;
-    connectModules(conn3);
-    
-    // Executive Function -> Motor Cortex
-    InterModuleConnection conn4;
-    conn4.source_module = "executive_function";
-    conn4.source_port = "output";
-    conn4.target_module = "motor_cortex";
-    conn4.target_port = "input";
-    conn4.connection_strength = 0.9f;
-    conn4.plastic = true;
-    conn4.connection_size = 256;
-    connectModules(conn4);
-    
-    // Motor Cortex -> Output Module
-    InterModuleConnection conn5;
-    conn5.source_module = "motor_cortex";
-    conn5.source_port = "output";
-    conn5.target_module = "output_module";
-    conn5.target_port = "input";
-    conn5.connection_strength = 1.0f;
-    conn5.plastic = false; // Direct motor output
-    conn5.connection_size = action_size_;
-    connectModules(conn5);
-    
-    // Memory connections
-    InterModuleConnection conn6;
-    conn6.source_module = "comprehension_module";
-    conn6.source_port = "output";
-    conn6.target_module = "memory_module";
-    conn6.target_port = "input";
-    conn6.connection_strength = 0.6f;
-    conn6.plastic = true;
-    conn6.connection_size = 512;
-    connectModules(conn6);
-    
-    InterModuleConnection conn7;
-    conn7.source_module = "memory_module";
-    conn7.source_port = "output";
-    conn7.target_module = "executive_function";
-    conn7.target_port = "input";
-    conn7.connection_strength = 0.7f;
-    conn7.plastic = true;
-    conn7.connection_size = 384;
-    connectModules(conn7);
-    
-    // Reward system connections
-    InterModuleConnection conn8;
-    conn8.source_module = "executive_function";
-    conn8.source_port = "output";
-    conn8.target_module = "reward_system";
-    conn8.target_port = "input";
-    conn8.connection_strength = 0.8f;
-    conn8.plastic = true;
-    conn8.connection_size = 256;
-    connectModules(conn8);
-    
-    InterModuleConnection conn9;
-    conn9.source_module = "reward_system";
-    conn9.source_port = "output";
-    conn9.target_module = "central_controller";
-    conn9.target_port = "input";
-    conn9.connection_strength = 1.0f;
-    conn9.plastic = false; // Direct reward signal
-    conn9.connection_size = 128;
-    connectModules(conn9);
-    
-    // Attention system connections
-    InterModuleConnection conn10;
-    conn10.source_module = "visual_cortex";
-    conn10.source_port = "output";
-    conn10.target_module = "attention_system";
-    conn10.target_port = "input";
-    conn10.connection_strength = 0.5f;
-    conn10.plastic = true;
-    conn10.connection_size = visual_feature_size_;
-    connectModules(conn10);
-    
-    std::cout << "Initialized " << connections_.size() << " inter-module connections" << std::endl;
-}
-
-// ============================================================================
-// PROCESSING PIPELINE
-// ============================================================================
-
-std::vector<float> BrainModuleArchitecture::processVisualInput(const std::vector<float>& visual_input) {
-    if (!is_initialized_) return {};
-    
-    auto visual_cortex = modular_network_->get_module("visual_cortex");
-    if (!visual_cortex) return {};
-    
-    // Process through visual cortex
-    auto visual_features = visual_cortex->process(visual_input);
-    
-    // Update global context with visual information
-    size_t copy_size = std::min(visual_features.size(), global_context_.size() / 2);
-    std::copy(visual_features.begin(), visual_features.begin() + copy_size, 
-              global_context_.begin());
-    
-    return visual_features;
-}
-
-std::vector<float> BrainModuleArchitecture::processTextInput(const std::vector<float>& text_input) {
-    if (!is_initialized_) return {};
-    
-    auto comprehension = modular_network_->get_module("comprehension_module");
-    if (!comprehension) return {};
-    
-    return comprehension->process(text_input);
-}
-
-std::vector<float> BrainModuleArchitecture::executeDecisionMaking(const std::vector<float>& context_input,
-                                                                 const std::vector<float>& goals) {
-    if (!is_initialized_) return {};
-    
-    auto executive = modular_network_->get_module("executive_function");
-    if (!executive) return {};
-    
-    // Combine context and goals
-    std::vector<float> combined_input = context_input;
-    combined_input.insert(combined_input.end(), goals.begin(), goals.end());
-    
-    return executive->process(combined_input);
-}
-
-std::vector<float> BrainModuleArchitecture::generateMotorOutput(const std::vector<float>& decision_input) {
-    if (!is_initialized_) return {};
-    
-    auto motor_cortex = modular_network_->get_module("motor_cortex");
-    auto output_module = modular_network_->get_module("output_module");
-    
-    if (!motor_cortex || !output_module) return {};
-    
-    // Process through motor cortex then output module
-    auto motor_output = motor_cortex->process(decision_input);
-    return output_module->process(motor_output);
-}
-
-void BrainModuleArchitecture::update(float dt) {
-    if (!is_initialized_) return;
-    
-    // Update all modules
-    modular_network_->update(dt);
-    
-    // Process inter-module signals
-    processInterModuleSignals();
-    
-    // Update attention
-    updateAttention(global_context_);
-    
-    // Update performance metrics
-    updatePerformanceMetrics();
-    
-    update_count_++;
-}
-
-// ============================================================================
-// UTILITY METHODS
-// ============================================================================
-
-void BrainModuleArchitecture::createDefaultConfigurations() {
-    // Default configurations are created in individual create methods
-    std::cout << "Default module configurations created" << std::endl;
-}
-
-bool BrainModuleArchitecture::validateModuleConfig(const ModuleConfig& config) const {
-    if (config.name.empty()) return false;
-    if (config.input_size == 0 || config.output_size == 0) return false;
-    if (config.internal_neurons < config.output_size) return false;
-    if (config.cortical_columns == 0) return false;
-    if (config.learning_rate <= 0.0f || config.learning_rate > 1.0f) return false;
-    return true;
-}
-
-void BrainModuleArchitecture::updatePerformanceMetrics() {
-    if (!modular_network_) return;
-    
-    total_activity_ = modular_network_->get_total_activity();
-}
-
-void BrainModuleArchitecture::processInterModuleSignals() {
-    // Process signals between connected modules
-    for (const auto& connection : connections_) {
-        auto source = modular_network_->get_module(connection.source_module);
-        auto target = modular_network_->get_module(connection.target_module);
+    try {
+        // Get current global state
+        SessionLearningState global_state = getGlobalLearningState();
+        global_state.session_id = checkpoint_name;
         
-        if (source && target) {
-            auto output = source->get_output();
-            if (!output.empty()) {
-                // Apply connection strength
-                for (auto& val : output) {
-                    val *= connection.connection_strength;
-                }
-                
-                // Send signal to target
-                target->receive_signal(output, connection.source_module, connection.source_port);
+        // Save global state
+        std::string global_state_path = save_directory + "/" + checkpoint_name + "_global.learningstate";
+        std::ofstream global_file(global_state_path, std::ios::binary);
+        if (!global_file.is_open()) {
+            std::cerr << "❌ Cannot open global state file: " << global_state_path << std::endl;
+            return false;
+        }
+        
+        // Write global state header
+        std::string header = "NEUREGEN_GLOBAL_STATE_V1";
+        global_file.write(header.c_str(), header.size());
+        
+        // Write global state data
+        global_file.write(reinterpret_cast<const char*>(&global_state.total_learning_steps), sizeof(uint64_t));
+        global_file.write(reinterpret_cast<const char*>(&global_state.cumulative_reward), sizeof(float));
+        global_file.write(reinterpret_cast<const char*>(&global_state.total_modules), sizeof(uint32_t));
+        global_file.write(reinterpret_cast<const char*>(&global_state.total_neurons), sizeof(uint32_t));
+        global_file.write(reinterpret_cast<const char*>(&global_state.total_synapses), sizeof(uint32_t));
+        global_file.write(reinterpret_cast<const char*>(&global_state.average_performance), sizeof(float));
+        
+        // Write architecture hash
+        size_t hash_size = global_state.architecture_hash.size();
+        global_file.write(reinterpret_cast<const char*>(&hash_size), sizeof(size_t));
+        global_file.write(global_state.architecture_hash.c_str(), hash_size);
+        
+        // Write session metadata
+        auto session_start_time = std::chrono::duration_cast<std::chrono::seconds>(
+            global_state.session_start.time_since_epoch()).count();
+        global_file.write(reinterpret_cast<const char*>(&session_start_time), sizeof(int64_t));
+        
+        global_file.close();
+        
+        // Save individual module states
+        auto module_names = getModuleNames();
+        bool all_modules_saved = true;
+        
+        for (const auto& module_name : module_names) {
+            if (!saveModuleLearningState(module_name, save_directory)) {
+                std::cerr << "⚠️  Failed to save learning state for module: " << module_name << std::endl;
+                all_modules_saved = false;
             }
         }
-    }
-}
-
-// ============================================================================
-// INTERFACE METHODS
-// ============================================================================
-
-NeuralModule* BrainModuleArchitecture::getModule(const std::string& name) {
-    if (!modular_network_) return nullptr;
-    return modular_network_->get_module(name);
-}
-
-const NeuralModule* BrainModuleArchitecture::getModule(const std::string& name) const {
-    if (!modular_network_) return nullptr;
-    return modular_network_->get_module(name);
-}
-
-std::vector<std::string> BrainModuleArchitecture::getModuleNames() const {
-    if (!modular_network_) return {};
-    return modular_network_->get_module_names();
-}
-
-void BrainModuleArchitecture::updateAttention(const std::vector<float>& context) {
-    auto attention_system = modular_network_->get_module("attention_system");
-    if (!attention_system) return;
-    
-    auto attention_output = attention_system->process(context);
-    
-    // Update attention weights for all modules
-    auto module_names = getModuleNames();
-    for (size_t i = 0; i < module_names.size() && i < attention_output.size(); ++i) {
-        attention_weights_[module_names[i]] = std::max(0.1f, attention_output[i]);
-    }
-}
-
-void BrainModuleArchitecture::applyNeuromodulation(float reward_signal, 
-                                                  const std::vector<float>& attention_signal) {
-    global_reward_signal_ = reward_signal;
-    
-    // Apply neuromodulation to all modules
-    for (const auto& module_name : getModuleNames()) {
-        auto module = getModule(module_name);
-        if (module) {
-            module->applyNeuromodulation("dopamine", reward_signal);
+        
+        // Save inter-module connections
+        std::string connections_path = save_directory + "/" + checkpoint_name + "_connections.state";
+        std::ofstream connections_file(connections_path, std::ios::binary);
+        if (connections_file.is_open()) {
+            std::string conn_header = "NEUREGEN_CONNECTIONS_V1";
+            connections_file.write(conn_header.c_str(), conn_header.size());
             
-            // Apply attention modulation
-            auto it = attention_weights_.find(module_name);
-            if (it != attention_weights_.end()) {
-                module->applyNeuromodulation("attention", it->second);
+            size_t num_connections = inter_module_connections_.size();
+            connections_file.write(reinterpret_cast<const char*>(&num_connections), sizeof(size_t));
+            
+            for (const auto& [connection_pair, connection_state] : inter_module_connections_) {
+                // Write source module name
+                size_t source_size = connection_pair.first.size();
+                connections_file.write(reinterpret_cast<const char*>(&source_size), sizeof(size_t));
+                connections_file.write(connection_pair.first.c_str(), source_size);
+                
+                // Write target module name
+                size_t target_size = connection_pair.second.size();
+                connections_file.write(reinterpret_cast<const char*>(&target_size), sizeof(size_t));
+                connections_file.write(connection_pair.second.c_str(), target_size);
+                
+                // Write connection state data
+                connections_file.write(reinterpret_cast<const char*>(&connection_state.connection_strength), sizeof(float));
+                connections_file.write(reinterpret_cast<const char*>(&connection_state.base_strength), sizeof(float));
+                connections_file.write(reinterpret_cast<const char*>(&connection_state.plasticity_rate), sizeof(float));
+                connections_file.write(reinterpret_cast<const char*>(&connection_state.usage_frequency), sizeof(float));
+                connections_file.write(reinterpret_cast<const char*>(&connection_state.correlation_strength), sizeof(float));
+                connections_file.write(reinterpret_cast<const char*>(&connection_state.activation_count), sizeof(uint64_t));
+                connections_file.write(reinterpret_cast<const char*>(&connection_state.information_transfer_rate), sizeof(float));
+                connections_file.write(reinterpret_cast<const char*>(&connection_state.mutual_information), sizeof(float));
+                
+                // Write connection type
+                size_t type_size = connection_state.connection_type.size();
+                connections_file.write(reinterpret_cast<const char*>(&type_size), sizeof(size_t));
+                connections_file.write(connection_state.connection_type.c_str(), type_size);
+            }
+            connections_file.close();
+        }
+        
+        // Save attention weights
+        std::string attention_path = save_directory + "/" + checkpoint_name + "_attention.state";
+        std::ofstream attention_file(attention_path, std::ios::binary);
+        if (attention_file.is_open()) {
+            size_t num_modules = attention_weights_.size();
+            attention_file.write(reinterpret_cast<const char*>(&num_modules), sizeof(size_t));
+            
+            for (const auto& [module_name, weight] : attention_weights_) {
+                size_t name_size = module_name.size();
+                attention_file.write(reinterpret_cast<const char*>(&name_size), sizeof(size_t));
+                attention_file.write(module_name.c_str(), name_size);
+                attention_file.write(reinterpret_cast<const char*>(&weight), sizeof(float));
+            }
+            attention_file.close();
+        }
+        
+        std::cout << "✅ Saved learning state: " << checkpoint_name << std::endl;
+        return all_modules_saved;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Error saving learning state: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool BrainModuleArchitecture::loadLearningState(const std::string& save_directory, const std::string& checkpoint_name) {
+    try {
+        std::string target_checkpoint = checkpoint_name;
+        
+        // If no specific checkpoint specified, find the latest
+        if (target_checkpoint.empty()) {
+            std::vector<std::string> available_checkpoints;
+            
+            for (const auto& entry : std::filesystem::directory_iterator(save_directory)) {
+                if (entry.path().extension() == ".learningstate" && 
+                    entry.path().filename().string().find("_global") != std::string::npos) {
+                    std::string filename = entry.path().stem().string();
+                    size_t pos = filename.find("_global");
+                    if (pos != std::string::npos) {
+                        available_checkpoints.push_back(filename.substr(0, pos));
+                    }
+                }
+            }
+            
+            if (available_checkpoints.empty()) {
+                std::cerr << "❌ No checkpoints found in directory: " << save_directory << std::endl;
+                return false;
+            }
+            
+            // Use the latest checkpoint (assume lexicographically sorted)
+            std::sort(available_checkpoints.begin(), available_checkpoints.end());
+            target_checkpoint = available_checkpoints.back();
+        }
+        
+        // Load global state
+        std::string global_state_path = save_directory + "/" + target_checkpoint + "_global.learningstate";
+        std::ifstream global_file(global_state_path, std::ios::binary);
+        if (!global_file.is_open()) {
+            std::cerr << "❌ Cannot open global state file: " << global_state_path << std::endl;
+            return false;
+        }
+        
+        // Verify header
+        std::string header = "NEUREGEN_GLOBAL_STATE_V1";
+        std::vector<char> file_header(header.size());
+        global_file.read(file_header.data(), header.size());
+        if (std::string(file_header.begin(), file_header.end()) != header) {
+            std::cerr << "❌ Invalid global state file format" << std::endl;
+            return false;
+        }
+        
+        // Read global state data
+        uint64_t total_learning_steps;
+        float cumulative_reward;
+        uint32_t total_modules, total_neurons, total_synapses;
+        float average_performance;
+        
+        global_file.read(reinterpret_cast<char*>(&total_learning_steps), sizeof(uint64_t));
+        global_file.read(reinterpret_cast<char*>(&cumulative_reward), sizeof(float));
+        global_file.read(reinterpret_cast<char*>(&total_modules), sizeof(uint32_t));
+        global_file.read(reinterpret_cast<char*>(&total_neurons), sizeof(uint32_t));
+        global_file.read(reinterpret_cast<char*>(&total_synapses), sizeof(uint32_t));
+        global_file.read(reinterpret_cast<char*>(&average_performance), sizeof(float));
+        
+        // Read architecture hash
+        size_t hash_size;
+        global_file.read(reinterpret_cast<char*>(&hash_size), sizeof(size_t));
+        std::vector<char> hash_buffer(hash_size);
+        global_file.read(hash_buffer.data(), hash_size);
+        std::string loaded_hash(hash_buffer.begin(), hash_buffer.end());
+        
+        // Validate architecture compatibility
+        if (!validateArchitectureCompatibility(loaded_hash).first) {
+            std::cerr << "⚠️  Architecture compatibility warning" << std::endl;
+        }
+        
+        // Read session metadata
+        int64_t session_start_time;
+        global_file.read(reinterpret_cast<char*>(&session_start_time), sizeof(int64_t));
+        
+        global_file.close();
+        
+        // Apply loaded global state
+        {
+            std::lock_guard<std::mutex> lock(learning_state_mutex_);
+            global_learning_steps_ = total_learning_steps;
+            global_reward_accumulator_ = cumulative_reward;
+        }
+        
+        // Load individual module states
+        auto module_names = getModuleNames();
+        bool all_modules_loaded = true;
+        
+        for (const auto& module_name : module_names) {
+            if (!loadModuleLearningState(module_name, save_directory)) {
+                std::cerr << "⚠️  Failed to load learning state for module: " << module_name << std::endl;
+                all_modules_loaded = false;
             }
         }
-    }
-}
-
-std::map<std::string, float> BrainModuleArchitecture::getAttentionWeights() const {
-    return attention_weights_;
-}
-
-void BrainModuleArchitecture::applyLearning(float reward, float prediction_error) {
-    // Apply learning signals to all modules
-    for (const auto& module_name : getModuleNames()) {
-        auto module = getModule(module_name);
-        if (module) {
-            // Update with reward and prediction error
-            std::vector<float> learning_signal = {reward, prediction_error};
-            module->update(0.1f, learning_signal, reward);
+        
+        // Load inter-module connections
+        std::string connections_path = save_directory + "/" + target_checkpoint + "_connections.state";
+        std::ifstream connections_file(connections_path, std::ios::binary);
+        if (connections_file.is_open()) {
+            // Verify header
+            std::string conn_header = "NEUREGEN_CONNECTIONS_V1";
+            std::vector<char> conn_header_buffer(conn_header.size());
+            connections_file.read(conn_header_buffer.data(), conn_header.size());
+            
+            if (std::string(conn_header_buffer.begin(), conn_header_buffer.end()) == conn_header) {
+                size_t num_connections;
+                connections_file.read(reinterpret_cast<char*>(&num_connections), sizeof(size_t));
+                
+                for (size_t i = 0; i < num_connections; ++i) {
+                    // Read source module name
+                    size_t source_size;
+                    connections_file.read(reinterpret_cast<char*>(&source_size), sizeof(size_t));
+                    std::vector<char> source_buffer(source_size);
+                    connections_file.read(source_buffer.data(), source_size);
+                    std::string source_name(source_buffer.begin(), source_buffer.end());
+                    
+                    // Read target module name
+                    size_t target_size;
+                    connections_file.read(reinterpret_cast<char*>(&target_size), sizeof(size_t));
+                    std::vector<char> target_buffer(target_size);
+                    connections_file.read(target_buffer.data(), target_size);
+                    std::string target_name(target_buffer.begin(), target_buffer.end());
+                    
+                    // Find existing connection
+                    std::pair<std::string, std::string> connection_key = {source_name, target_name};
+                    if (inter_module_connections_.find(connection_key) != inter_module_connections_.end()) {
+                        auto& connection_state = inter_module_connections_[connection_key];
+                        
+                        // Read connection state data
+                        connections_file.read(reinterpret_cast<char*>(&connection_state.connection_strength), sizeof(float));
+                        connections_file.read(reinterpret_cast<char*>(&connection_state.base_strength), sizeof(float));
+                        connections_file.read(reinterpret_cast<char*>(&connection_state.plasticity_rate), sizeof(float));
+                        connections_file.read(reinterpret_cast<char*>(&connection_state.usage_frequency), sizeof(float));
+                        connections_file.read(reinterpret_cast<char*>(&connection_state.correlation_strength), sizeof(float));
+                        connections_file.read(reinterpret_cast<char*>(&connection_state.activation_count), sizeof(uint64_t));
+                        connections_file.read(reinterpret_cast<char*>(&connection_state.information_transfer_rate), sizeof(float));
+                        connections_file.read(reinterpret_cast<char*>(&connection_state.mutual_information), sizeof(float));
+                        
+                        // Read connection type
+                        size_t type_size;
+                        connections_file.read(reinterpret_cast<char*>(&type_size), sizeof(size_t));
+                        std::vector<char> type_buffer(type_size);
+                        connections_file.read(type_buffer.data(), type_size);
+                        connection_state.connection_type = std::string(type_buffer.begin(), type_buffer.end());
+                    } else {
+                        // Skip unknown connection
+                        connections_file.seekg(7 * sizeof(float) + sizeof(uint64_t), std::ios::cur);
+                        size_t type_size;
+                        connections_file.read(reinterpret_cast<char*>(&type_size), sizeof(size_t));
+                        connections_file.seekg(type_size, std::ios::cur);
+                    }
+                }
+            }
+            connections_file.close();
         }
+        
+        // Load attention weights
+        std::string attention_path = save_directory + "/" + target_checkpoint + "_attention.state";
+        std::ifstream attention_file(attention_path, std::ios::binary);
+        if (attention_file.is_open()) {
+            size_t num_modules;
+            attention_file.read(reinterpret_cast<char*>(&num_modules), sizeof(size_t));
+            
+            for (size_t i = 0; i < num_modules; ++i) {
+                size_t name_size;
+                attention_file.read(reinterpret_cast<char*>(&name_size), sizeof(size_t));
+                std::vector<char> name_buffer(name_size);
+                attention_file.read(name_buffer.data(), name_size);
+                std::string module_name(name_buffer.begin(), name_buffer.end());
+                
+                float weight;
+                attention_file.read(reinterpret_cast<char*>(&weight), sizeof(float));
+                
+                if (attention_weights_.find(module_name) != attention_weights_.end()) {
+                    attention_weights_[module_name] = weight;
+                }
+            }
+            attention_file.close();
+        }
+        
+        std::cout << "✅ Loaded learning state: " << target_checkpoint << std::endl;
+        std::cout << "📊 Learning steps: " << total_learning_steps 
+                  << ", Cumulative reward: " << cumulative_reward
+                  << ", Avg performance: " << average_performance << std::endl;
+        
+        return all_modules_loaded;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Error loading learning state: " << e.what() << std::endl;
+        return false;
     }
 }
+
+bool BrainModuleArchitecture::saveModuleLearningState(const std::string& module_name, const std::string& save_directory) const {
+    auto module = getModule(module_name);
+    if (!module) {
+        return false;
+    }
+    
+    std::string module_state_path = save_directory + "/" + module_name + "_module.state";
+    return module->save_state(module_state_path);
+}
+
+bool BrainModuleArchitecture::loadModuleLearningState(const std::string& module_name, const std::string& save_directory) {
+    auto module = getModule(module_name);
+    if (!module) {
+        return false;
+    }
+    
+    std::string module_state_path = save_directory + "/" + module_name + "_module.state";
+    return module->load_state(module_state_path);
+}
+
+// ============================================================================
+// INTER-MODULE CONNECTION STATE METHODS
+// ============================================================================
+
+std::vector<InterModuleConnectionState> BrainModuleArchitecture::getInterModuleConnectionState() const {
+    std::lock_guard<std::mutex> lock(connections_mutex_);
+    
+    std::vector<InterModuleConnectionState> connections;
+    connections.reserve(inter_module_connections_.size());
+    
+    for (const auto& [connection_pair, connection_state] : inter_module_connections_) {
+        connections.push_back(connection_state);
+    }
+    
+    return connections;
+}
+
+bool BrainModuleArchitecture::applyInterModuleConnectionState(const std::vector<InterModuleConnectionState>& connections) {
+    std::lock_guard<std::mutex> lock(connections_mutex_);
+    
+    try {
+        for (const auto& connection_state : connections) {
+            std::pair<std::string, std::string> connection_key = {
+                connection_state.source_module, 
+                connection_state.target_module
+            };
+            
+            if (inter_module_connections_.find(connection_key) != inter_module_connections_.end()) {
+                inter_module_connections_[connection_key] = connection_state;
+            } else {
+                std::cerr << "⚠️  Connection not found: " << connection_state.source_module 
+                          << " -> " << connection_state.target_module << std::endl;
+            }
+        }
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Error applying inter-module connection state: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+// ============================================================================
+// PERFORMANCE AND MONITORING METHODS
+// ============================================================================
 
 std::map<std::string, float> BrainModuleArchitecture::getPerformanceMetrics() const {
+    std::lock_guard<std::mutex> lock(performance_mutex_);
+    
     std::map<std::string, float> metrics;
-    metrics["total_activity"] = total_activity_;
-    metrics["update_count"] = static_cast<float>(update_count_);
-    metrics["global_reward"] = global_reward_signal_;
-    metrics["num_modules"] = static_cast<float>(getModuleNames().size());
-    metrics["num_connections"] = static_cast<float>(connections_.size());
+    
+    // Global metrics
+    metrics["total_modules"] = static_cast<float>(modules_.size());
+    metrics["total_connections"] = static_cast<float>(inter_module_connections_.size());
+    metrics["global_learning_steps"] = static_cast<float>(global_learning_steps_);
+    metrics["cumulative_reward"] = global_reward_accumulator_;
+    metrics["total_activity"] = getTotalActivity();
+    
+    // Module-specific metrics
+    for (const auto& [module_name, history] : module_performance_history_) {
+        if (!history.empty()) {
+            float avg_performance = std::accumulate(history.begin(), history.end(), 0.0f) / history.size();
+            metrics["module_" + module_name + "_avg_performance"] = avg_performance;
+            
+            // Recent performance (last 100 steps)
+            size_t recent_count = std::min(history.size(), size_t(100));
+            float recent_avg = std::accumulate(history.end() - recent_count, history.end(), 0.0f) / recent_count;
+            metrics["module_" + module_name + "_recent_performance"] = recent_avg;
+        }
+        
+        if (module_prediction_errors_.find(module_name) != module_prediction_errors_.end()) {
+            metrics["module_" + module_name + "_prediction_error"] = module_prediction_errors_.at(module_name);
+        }
+        
+        if (attention_weights_.find(module_name) != attention_weights_.end()) {
+            metrics["module_" + module_name + "_attention_weight"] = attention_weights_.at(module_name);
+        }
+    }
+    
+    // Connection metrics
+    float avg_connection_strength = 0.0f;
+    float avg_usage_frequency = 0.0f;
+    if (!inter_module_connections_.empty()) {
+        for (const auto& [_, connection_state] : inter_module_connections_) {
+            avg_connection_strength += connection_state.connection_strength;
+            avg_usage_frequency += connection_state.usage_frequency;
+        }
+        avg_connection_strength /= inter_module_connections_.size();
+        avg_usage_frequency /= inter_module_connections_.size();
+    }
+    
+    metrics["avg_connection_strength"] = avg_connection_strength;
+    metrics["avg_connection_usage"] = avg_usage_frequency;
+    
     return metrics;
 }
 
-bool BrainModuleArchitecture::isStable() const {
-    if (!modular_network_) return false;
-    return modular_network_->is_stable();
-}
-
 float BrainModuleArchitecture::getTotalActivity() const {
-    return total_activity_;
-}
-
-// ============================================================================
-// MEMORY OPERATIONS (Simplified Implementation)
-// ============================================================================
-
-void BrainModuleArchitecture::storeExperience(const std::vector<float>& experience, 
-                                             const std::string& context) {
-    auto memory_module = getModule("memory_module");
-    if (memory_module) {
-        memory_module->process(experience);
+    float total_activity = 0.0f;
+    size_t module_count = 0;
+    
+    auto module_names = getModuleNames();
+    for (const auto& module_name : module_names) {
+        auto module = getModule(module_name);
+        if (module) {
+            total_activity += module->getActivityLevel();
+            module_count++;
+        }
     }
+    
+    return module_count > 0 ? total_activity / module_count : 0.0f;
 }
 
-std::vector<std::vector<float>> BrainModuleArchitecture::retrieveExperiences(const std::vector<float>& query, 
-                                                                            size_t max_results) {
-    auto memory_module = getModule("memory_module");
-    if (memory_module) {
-        auto result = memory_module->process(query);
-        return {result}; // Simplified - return single result
-    }
-    return {};
-}
-
-void BrainModuleArchitecture::updateInterModuleConnections() {
-    // Update plastic connections based on activity
-    for (auto& connection : connections_) {
-        if (connection.plastic) {
-            // Simple Hebbian-like update
-            auto source = getModule(connection.source_module);
-            auto target = getModule(connection.target_module);
+std::pair<bool, std::string> BrainModuleArchitecture::isStable() const {
+    // Check if all modules have stable activity levels
+    auto module_names = getModuleNames();
+    
+    for (const auto& module_name : module_names) {
+        auto module = getModule(module_name);
+        if (module) {
+            float activity = module->getActivityLevel();
             
-            if (source && target) {
-                auto source_output = source->get_output();
-                auto target_output = target->get_output();
-                
-                if (!source_output.empty() && !target_output.empty()) {
-                    float correlation = 0.0f;
-                    size_t min_size = std::min(source_output.size(), target_output.size());
-                    
-                    for (size_t i = 0; i < min_size; ++i) {
-                        correlation += source_output[i] * target_output[i];
-                    }
-                    correlation /= min_size;
-                    
-                    // Update connection strength
-                    float learning_rate = 0.001f;
-                    connection.connection_strength += learning_rate * correlation;
-                    connection.connection_strength = std::max(0.1f, 
-                        std::min(2.0f, connection.connection_strength));
-                }
+            // Check for runaway activity or complete silence
+            if (activity > 2.0f || activity < 0.001f) {
+                return {false, "Module " + module_name + " has unstable activity: " + std::to_string(activity)};
             }
         }
     }
-}
-
-std::map<std::string, std::map<std::string, float>> BrainModuleArchitecture::getLearningStats() const {
-    std::map<std::string, std::map<std::string, float>> stats;
     
-    for (const auto& module_name : getModuleNames()) {
-        auto module = getModule(module_name);
-        if (module) {
-            stats[module_name] = module->getPerformanceMetrics();
+    // Check connection stability
+    for (const auto& [_, connection_state] : inter_module_connections_) {
+        if (connection_state.connection_strength > 1.5f || connection_state.connection_strength < 0.0f) {
+            return {false, "Inter-module connection has unstable strength: " + std::to_string(connection_state.connection_strength)};
         }
     }
     
-    return stats;
+    return {true, "Architecture is stable"};
+}
+
+std::pair<bool, std::string> BrainModuleArchitecture::validateArchitectureCompatibility(const std::string& state_hash) const {
+    std::string current_hash = calculateArchitectureHash();
+    
+    if (current_hash == state_hash) {
+        return {true, "Architecture hash matches."};
+    }
+    
+    // Allow minor differences (could implement fuzzy matching here)
+    std::string message = "Architecture hash mismatch:\n    Current:  " + current_hash + "\n    Expected: " + state_hash;
+    std::cout << "⚠️  " << message << std::endl;
+    
+    return {false, message}; // Strict validation
+}
+
+void BrainModuleArchitecture::updateConnectionUsage(const std::string& source_module, 
+                                                   const std::string& target_module, 
+                                                   float activation_strength) {
+    std::pair<std::string, std::string> connection_key = {source_module, target_module};
+    
+    if (connection_usage_history_.find(connection_key) != connection_usage_history_.end()) {
+        // Update usage with exponential moving average
+        connection_usage_history_[connection_key] = 
+            0.9f * connection_usage_history_[connection_key] + 0.1f * activation_strength;
+    }
+}
+
+// ============================================================================
+// GPU INTEGRATION METHODS
+// ============================================================================
+
+void BrainModuleArchitecture::setCUDANetwork(std::shared_ptr<NetworkCUDA> cuda_network) {
+    cuda_network_ = cuda_network;
+    
+    if (cuda_network_) {
+        cuda_network_->setBrainArchitecture(shared_from_this());
+        std::cout << "🚀 CUDA network integration enabled" << std::endl;
+    }
+}
+
+std::pair<bool, std::string> BrainModuleArchitecture::enableGPUAcceleration(bool enable) {
+    if (enable && !cuda_network_) {
+        std::string msg = "⚠️  CUDA network not set - cannot enable GPU acceleration";
+        std::cerr << msg << std::endl;
+        return {false, msg};
+    }
+    
+    gpu_enabled_ = enable;
+    
+    if (enable) {
+        std::string msg = "🚀 GPU acceleration enabled";
+        std::cout << msg << std::endl;
+        return {true, msg};
+    } else {
+        std::string msg = "🔄 GPU acceleration disabled";
+        std::cout << msg << std::endl;
+        return {true, msg};
+    }
+}
+
+bool BrainModuleArchitecture::isGPUEnabled() const {
+    return gpu_enabled_ && cuda_network_ != nullptr;
+}
+
+bool BrainModuleArchitecture::initializeDefaultModules() {
+    // TODO: Implement default module initialization
+    return true;
+}
+
+void BrainModuleArchitecture::initializeInterModuleConnections() {
+    // TODO: Implement inter-module connection initialization
+}
+
+SessionLearningState BrainModuleArchitecture::getGlobalLearningState() const {
+    // TODO: Implement global learning state retrieval
+    return SessionLearningState{};
+}
+
+std::vector<std::string> BrainModuleArchitecture::getModuleNames() const {
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    std::vector<std::string> names;
+    for (const auto& pair : modules_) {
+        names.push_back(pair.first);
+    }
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
+std::string BrainModuleArchitecture::calculateArchitectureHash() const {
+    // TODO: Implement a proper hash calculation
+    return "dummy_hash";
+}
+
+std::map<std::string, uint32_t> BrainModuleArchitecture::getArchitectureStatistics() const {
+    // TODO: Implement architecture statistics retrieval
+    return {};
+}
+
+size_t BrainModuleArchitecture::performGlobalMemoryConsolidation(float consolidation_strength) {
+    // TODO: Implement global memory consolidation
+    return 0;
 }

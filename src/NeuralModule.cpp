@@ -687,3 +687,16 @@ void NeuralModule::applyNeuromodulation(const std::string& modulator_type, float
     learning_rate_ = std::max(0.001f, std::min(0.1f, learning_rate_));
     plasticity_strength_ = std::max(0.1f, std::min(3.0f, plasticity_strength_));
 }
+
+#include "NeuroGen/cuda/NetworkCUDA.cuh"
+#include "NeuroGen/BrainModuleArchitecture.h"
+#include <iostream>
+
+// FIX: Add missing implementation for NetworkCUDA::setBrainArchitecture
+// This is placed here to resolve a linker error, as NeuralModule.cpp is guaranteed to be compiled and linked.
+void NetworkCUDA::setBrainArchitecture(std::shared_ptr<BrainModuleArchitecture> architecture) {
+    brain_architecture_ = architecture;
+    if (architecture) {
+        std::cout << "🧠 NetworkCUDA is now aware of the BrainModuleArchitecture." << std::endl;
+    }
+}

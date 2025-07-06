@@ -489,9 +489,23 @@ float Network::calculateTotalSynapticInput(size_t neuron_id) const {
     return total_input;
 }
 
+// In src/Network.cpp
+
 float Network::calculateNeuronFiringRate(const Neuron& neuron) const {
-    // Estimate firing rate from recent activity
-    return neuron.has_spiked() ? 50.0f : 0.0f; // Simplified estimation
+    // Biologically-realistic firing rate calculation
+    constexpr float BASELINE_RATE = 2.0f;  // Hz - cortical baseline
+    constexpr float MAX_RATE = 100.0f;     // Hz - physiological maximum
+    constexpr float THRESHOLD_VOLTAGE = -55.0f; // mV - typical spike threshold
+    
+    if (neuron.has_spiked()) {
+        // Active neuron: rate depends on membrane potential dynamics
+        float potential_factor = std::tanh((neuron.get_potential() - THRESHOLD_VOLTAGE) / 20.0f);
+        return BASELINE_RATE + (MAX_RATE - BASELINE_RATE) * std::max(0.0f, potential_factor);
+    }
+    
+    // Subthreshold activity contributes to background rate
+    float subthreshold_factor = std::max(0.0f, (neuron.get_potential() + 70.0f) / 50.0f);
+    return BASELINE_RATE * subthreshold_factor;
 }
 
 void Network::updateSynapticPlasticity(Synapse& synapse, float dt, float reward) {

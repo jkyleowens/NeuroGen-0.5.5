@@ -1,512 +1,824 @@
-#ifndef NETWORK_CUDA_CUH
-#define NETWORK_CUDA_CUH
+#ifndef NETWORK_CUDA_H
+#define NETWORK_CUDA_H
 
-// ============================================================================
-// CUDA HEADERS AND GPU MEMORY MANAGEMENT
-// ============================================================================
-#include <cuda_runtime.h>
-#include <device_launch_parameters.h>
-#include <curand_kernel.h>
-#include <cublas_v2.h>
-#include <cusparse.h>
-
-// ============================================================================
-// NEUREGEN FRAMEWORK HEADERS
-// ============================================================================
-#include <NeuroGen/cuda/GPUNeuralStructures.h>
-#include <NeuroGen/NetworkConfig.h>
-#include <NeuroGen/NetworkStats.h>
-
-// ============================================================================
-// STANDARD LIBRARY HEADERS (CUDA-COMPATIBLE)
-// ============================================================================
+#include <memory>
 #include <vector>
+#include <map>
 #include <string>
-#include <utility>  // For std::pair
+#include <mutex>
+#include <atomic>
+#include <chrono>
+#include <cuda_runtime.h>
+#include <cublas_v2.h>
+#include <curand.h>
 
-// ============================================================================
-// FORWARD DECLARATIONS - CONSISTENT WITH CPU CODE
-// ============================================================================
-class Neuron;       // FIX: Use class to match Neuron.h
-struct Synapse;     // Use struct to match Synapse.h
-class Network;
-class NeuralModule;
+// NeuroGen Framework Includes
+#include "NeuroGen/Network.h"
+#include "NeuroGen/NetworkConfig.h"
+#include "NeuroGen/LearningState.h"
+#include "NeuroGen/cuda/GPUNeuralStructures.h"
+#include "NeuroGen/cuda/LearningStateKernels.cuh"
+#include "NeuroGen/cuda/KernelLaunchWrappers.cuh"
 
-// ============================================================================
-// PERFORMANCE METRICS STRUCTURE
-// ============================================================================
-struct PerformanceMetrics {
-    float simulation_fps;              // Simulation frames per second
-    float biological_time_factor;      // Biological time scaling factor
-    float memory_bandwidth_gbps;       // Memory bandwidth in GB/s
-    float gpu_utilization_percent;     // GPU utilization percentage
-    float neuron_update_time_ms;       // Time to update neurons (ms)
-    float synapse_update_time_ms;      // Time to update synapses (ms)
-    float plasticity_update_time_ms;   // Time for plasticity updates (ms)
-    float kernel_execution_time_ms;    // Kernel execution time (ms)
-    size_t total_memory_used_mb;       // Total GPU memory used (MB)
-    size_t peak_memory_used_mb;        // Peak GPU memory used (MB)
-};
+// Forward declarations
+class BrainModuleArchitecture;
+class LearningStateManager;
 
 /**
- * @brief GPU-accelerated Neural Network Manager
+ * @brief GPU-accelerated neural network with persistent learning capabilities
  * 
- * This class provides CUDA-accelerated neural network simulation with
- * seamless integration to the CPU-based modular neural network architecture.
- * Optimized for biological realism and high-performance simulation.
+ * This class provides CUDA-accelerated neural computation with full support for
+ * persistent learning states, memory consolidation, inter-module learning,
+ * and brain-inspired neural dynamics. It integrates seamlessly with the
+ * BrainModuleArchitecture for modular neural processing.
+ * 
+ * Key Features:
+ * - GPU-accelerated neural simulation with CUDA kernels
+ * - Persistent learning state management on GPU
+ * - Memory consolidation during downtime
+ * - Inter-module connection learning
+ * - Efficient GPU-CPU state synchronization
+ * - Multi-stream processing for parallel modules
+ * - Memory pool management for optimal performance
+ * - Real-time performance monitoring
  */
 class NetworkCUDA {
 public:
+    // ========================================================================
+    // CUDA CONFIGURATION STRUCTURES
+    // ========================================================================
+    
+    /**
+     * @brief CUDA-specific configuration parameters
+     */
+    struct CUDAConfig {
+        // Device management
+        int device_id = 0;
+        bool enable_unified_memory = false;
+        bool enable_peer_access = true;
+        size_t memory_pool_size_mb = 2048;
+        
+        // Kernel execution parameters
+        int block_size = 256;
+        int max_grid_size = 65535;
+        int shared_memory_kb = 48;
+        bool enable_cooperative_groups = true;
+        
+        // Multi-stream processing
+        int num_compute_streams = 4;
+        int num_memory_streams = 2;
+        bool enable_stream_priorities = true;
+        
+        // Memory management
+        bool enable_memory_pool = true;
+        float memory_growth_factor = 1.5f;
+        size_t max_cached_memory_mb = 4096;
+        
+        // Performance optimization
+        bool enable_tensor_cores = true;
+        bool enable_mixed_precision = false;
+        bool enable_graph_capture = false;
+        
+        // Learning-specific settings
+        bool enable_learning_state_gpu = true;
+        bool enable_consolidation_gpu = true;
+        size_t learning_buffer_size_mb = 512;
+        
+        // Debugging and profiling
+        bool enable_cuda_profiling = false;
+        bool enable_memory_checking = false;
+        bool enable_kernel_timing = false;
+    };
+    
+    /**
+     * @brief GPU memory usage statistics
+     */
+    struct GPUMemoryStats {
+        size_t total_memory_bytes = 0;
+        size_t allocated_memory_bytes = 0;
+        size_t free_memory_bytes = 0;
+        size_t learning_state_bytes = 0;
+        size_t neural_network_bytes = 0;
+        size_t temporary_buffer_bytes = 0;
+        size_t peak_usage_bytes = 0;
+        float fragmentation_ratio = 0.0f;
+    };
+    
+    /**
+     * @brief Performance metrics for CUDA operations
+     */
+    struct CUDAPerformanceMetrics {
+        // Timing metrics (milliseconds)
+        float last_update_time_ms = 0.0f;
+        float avg_update_time_ms = 0.0f;
+        float consolidation_time_ms = 0.0f;
+        float state_transfer_time_ms = 0.0f;
+        
+        // Throughput metrics
+        float neurons_per_second = 0.0f;
+        float synapses_per_second = 0.0f;
+        float memory_bandwidth_gbps = 0.0f;
+        
+        // Utilization metrics
+        float gpu_utilization_percent = 0.0f;
+        float memory_utilization_percent = 0.0f;
+        float stream_efficiency = 0.0f;
+        
+        // Error metrics
+        uint64_t kernel_launch_errors = 0;
+        uint64_t memory_errors = 0;
+        uint64_t synchronization_errors = 0;
+    };
+
     // ========================================================================
     // CONSTRUCTION AND INITIALIZATION
     // ========================================================================
     
     /**
-     * @brief Construct CUDA neural network manager
-     * @param config Network configuration parameters
+     * @brief Constructor with CUDA configuration
+     * @param config CUDA-specific configuration
      */
-    explicit NetworkCUDA(const NetworkConfig& config);
+    explicit NetworkCUDA(const CUDAConfig& config);
     
     /**
-     * @brief Destructor with automatic resource cleanup
+     * @brief Destructor with proper GPU cleanup
      */
-    ~NetworkCUDA();
+    virtual ~NetworkCUDA();
     
     /**
-     * @brief Initialize CUDA resources and allocate GPU memory
-     * @return Success status of initialization
+     * @brief Initialize CUDA network with neural network configuration
+     * @param network_config Neural network configuration
+     * @return Success status with error details
      */
-    bool initialize();
+    std::pair<bool, std::string> initialize(const NetworkConfig& network_config);
     
     /**
-     * @brief Clean up all CUDA resources
+     * @brief Initialize from existing neural network
+     * @param network Existing Network instance to copy from
+     * @return Success status
      */
-    void cleanup();
+    bool initializeFromNetwork(const Network& network);
+    
+    /**
+     * @brief Reinitialize with new configuration
+     * @param network_config New neural network configuration
+     * @param preserve_weights Whether to preserve existing weights
+     * @return Success status
+     */
+    bool reinitialize(const NetworkConfig& network_config, bool preserve_weights = false);
+    
+    /**
+     * @brief Check if CUDA is properly initialized
+     * @return True if ready for computation
+     */
+    bool isInitialized() const { return is_initialized_; }
+    
+    /**
+     * @brief Get CUDA device information
+     * @return Map of device properties
+     */
+    std::map<std::string, std::string> getDeviceInfo() const;
     
     // ========================================================================
-    // NETWORK CONSTRUCTION AND MANAGEMENT
-    // ========================================================================
-    
-    /**
-     * @brief Transfer network from CPU to GPU
-     * @param cpu_network Source CPU network
-     * @return Transfer success status
-     */
-    bool transferFromCPU(const Network& cpu_network);
-    
-    /**
-     * @brief Transfer network from GPU to CPU
-     * @param cpu_network Target CPU network
-     * @return Transfer success status
-     */
-    bool transferToCPU(Network& cpu_network);
-    
-    /**
-     * @brief Add neuron to GPU network
-     * @param neuron_data GPU neuron structure
-     * @return Neuron ID on GPU
-     */
-    size_t addNeuron(const GPUNeuronState& neuron_data);
-    
-    /**
-     * @brief Add synapse to GPU network
-     * @param synapse_data GPU synapse structure
-     * @return Synapse ID on GPU
-     */
-    size_t addSynapse(const GPUSynapse& synapse_data);
-    
-    // ========================================================================
-    // SIMULATION INTERFACE
+    // BRAIN ARCHITECTURE INTEGRATION
     // ========================================================================
     
     /**
-     * @brief Update neural network simulation on GPU
-     * @param dt Time step in milliseconds
-     * @param input_currents External input currents
-     * @param reward_signal Global reward signal for learning
+     * @brief Set brain architecture reference
+     * @param architecture Shared pointer to brain architecture
      */
-    void update(float dt, const std::vector<float>& input_currents = {}, 
-               float reward_signal = 0.0f);
+    void setBrainArchitecture(std::shared_ptr<BrainModuleArchitecture> architecture);
     
     /**
-     * @brief Get current neuron outputs from GPU
-     * @return Vector of neuron activation values
+     * @brief Set learning state manager reference
+     * @param manager Shared pointer to learning state manager
+     */
+    void setLearningStateManager(std::shared_ptr<LearningStateManager> manager);
+    
+    /**
+     * @brief Synchronize with brain architecture state
+     * @param force_full_sync Force complete synchronization
+     */
+    void synchronizeWithArchitecture(bool force_full_sync = false);
+    
+    /**
+     * @brief Get number of neurons for architecture sizing
+     * @return Total number of neurons
+     */
+    size_t getNumNeurons() const { return num_neurons_; }
+    
+    /**
+     * @brief Get number of synapses for architecture sizing
+     * @return Total number of synapses
+     */
+    size_t getNumSynapses() const { return num_synapses_; }
+    
+    /**
+     * @brief Update network topology from architecture
+     * @return Success status
+     */
+    bool updateTopologyFromArchitecture();
+    
+    // ========================================================================
+    // CORE NEURAL PROCESSING
+    // ========================================================================
+    
+    /**
+     * @brief Update neural network on GPU
+     * @param dt Time step in seconds
+     * @param reward_signal Global reward signal
+     * @param novelty_signal Novelty/surprise signal
+     */
+    void update(float dt, float reward_signal = 0.0f, float novelty_signal = 0.0f);
+    
+    /**
+     * @brief Process input through the network
+     * @param inputs Input vector
+     * @return Output vector
+     */
+    std::vector<float> processInput(const std::vector<float>& inputs);
+    
+    /**
+     * @brief Process input with learning
+     * @param inputs Input vector
+     * @param target_outputs Target outputs for supervised learning
+     * @param reward_signal Reward signal for reinforcement learning
+     * @return Network outputs
+     */
+    std::vector<float> processInputWithLearning(const std::vector<float>& inputs,
+                                               const std::vector<float>& target_outputs = {},
+                                               float reward_signal = 0.0f);
+    
+    /**
+     * @brief Get network outputs
+     * @return Current output vector
      */
     std::vector<float> getOutputs() const;
     
     /**
-     * @brief Get specific neuron states from GPU
-     * @param neuron_ids Vector of neuron IDs to query
-     * @return Vector of neuron states
+     * @brief Get neuron states
+     * @return Vector of neuron membrane potentials
      */
-    std::vector<GPUNeuronState> getNeuronStates(const std::vector<size_t>& neuron_ids) const;
-    
-    // ========================================================================
-    // MODULAR NEURAL NETWORK SUPPORT
-    // ========================================================================
+    std::vector<float> getNeuronStates() const;
     
     /**
-     * @brief Register neural module for GPU processing
-     * @param module_id Unique module identifier
-     * @param neuron_range Range of neurons belonging to this module
-     * @param config Module-specific configuration
+     * @brief Get synaptic weights
+     * @return Vector of all synaptic weights
      */
-    void registerModule(size_t module_id, const std::pair<size_t, size_t>& neuron_range,
-                       const NetworkConfig& config);
+    std::vector<float> getSynapticWeights() const;
     
     /**
-     * @brief Update specific neural module on GPU
-     * @param module_id Module identifier
-     * @param dt Time step
-     * @param module_inputs Input signals for this module
-     * @param attention_weight Attention modulation factor
+     * @brief Set synaptic weights
+     * @param weights New synaptic weights
+     * @return Success status
      */
-    void updateModule(size_t module_id, float dt, 
-                     const std::vector<float>& module_inputs,
-                     float attention_weight = 1.0f);
+    bool setSynapticWeights(const std::vector<float>& weights);
     
     /**
-     * @brief Get module-specific outputs
-     * @param module_id Module identifier
-     * @return Vector of module output activations
+     * @brief Reset network to initial state
+     * @param preserve_topology Whether to keep network structure
      */
-    std::vector<float> getModuleOutputs(size_t module_id) const;
+    void reset(bool preserve_topology = true);
     
     // ========================================================================
-    // INTER-MODULE COMMUNICATION
+    // LEARNING STATE MANAGEMENT
     // ========================================================================
     
     /**
-     * @brief Transfer signals between modules on GPU
-     * @param source_module Source module ID
-     * @param target_module Target module ID
-     * @param signal_data Signal values to transfer
-     * @param connection_strength Strength of inter-module connection
+     * @brief Initialize learning state GPU memory
+     * @return Success status with error details
      */
-    void transferInterModuleSignals(size_t source_module, size_t target_module,
-                                  const std::vector<float>& signal_data,
-                                  float connection_strength = 1.0f);
+    std::pair<bool, std::string> initializeLearningStateGPU();
     
     /**
-     * @brief Process all pending inter-module communications
-     */
-    void processInterModuleCommunication();
-    
-    // ========================================================================
-    // LEARNING AND PLASTICITY
-    // ========================================================================
-    
-    /**
-     * @brief Apply reward-modulated learning on GPU
+     * @brief Update learning state on GPU
      * @param reward_signal Global reward signal
-     * @param learning_rate Learning rate parameter
+     * @param novelty_signal Novelty/surprise signal
+     * @param dt Time step
      */
-    void applyRewardModulatedLearning(float reward_signal, float learning_rate);
+    void updateLearningStateGPU(float reward_signal, float novelty_signal, float dt);
     
     /**
-     * @brief Update synaptic plasticity using STDP
-     * @param plasticity_window STDP time window in milliseconds
-     * @param learning_rate Plasticity learning rate
+     * @brief Save learning state from GPU to host buffer
+     * @param output_buffer Host buffer for learning state
+     * @param buffer_size Size of output buffer
+     * @return Success status
      */
-    void updateSynapticPlasticity(float plasticity_window = 20.0f, 
-                                float learning_rate = 0.01f);
+    bool saveLearningStateFromGPU(uint8_t* output_buffer, size_t buffer_size);
     
     /**
-     * @brief Apply homeostatic scaling to maintain network stability
-     * @param target_activity Target average activity level
-     * @param scaling_rate Rate of homeostatic adjustment
+     * @brief Load learning state from host buffer to GPU
+     * @param input_buffer Host buffer containing learning state
+     * @param buffer_size Size of input buffer
+     * @return Success status
      */
-    void applyHomeostaticScaling(float target_activity = 0.1f, 
-                               float scaling_rate = 0.001f);
+    bool loadLearningStateToGPU(const uint8_t* input_buffer, size_t buffer_size);
+    
+    /**
+     * @brief Save module-specific learning state
+     * @param module_id Module identifier
+     * @param output_buffer Host buffer for module state
+     * @param buffer_size Size of output buffer
+     * @return Success status
+     */
+    bool saveModuleLearningState(int module_id, float* output_buffer, size_t buffer_size);
+    
+    /**
+     * @brief Load module-specific learning state
+     * @param module_id Module identifier
+     * @param input_buffer Host buffer containing module state
+     * @param buffer_size Size of input buffer
+     * @return Success status
+     */
+    bool loadModuleLearningState(int module_id, const float* input_buffer, size_t buffer_size);
+    
+    /**
+     * @brief Calculate learning state buffer size requirements
+     * @return Required buffer size in bytes
+     */
+    size_t calculateLearningStateBufferSize() const;
+    
+    /**
+     * @brief Cleanup learning state GPU memory
+     */
+    void cleanupLearningStateGPU();
     
     // ========================================================================
-    // PERFORMANCE MONITORING
-    // ========================================================================
-    
-    /**
-     * @brief Get comprehensive network statistics from GPU
-     * @return Current network statistics
-     */
-    NetworkStats getNetworkStats() const;
-    
-    /**
-     * @brief Get GPU performance metrics  
-     * @return Performance metrics structure
-     */
-    PerformanceMetrics getPerformanceMetrics() const;
-    
-    /**
-     * @brief Reset performance counters
-     */
-    void resetPerformanceMetrics();
-    
-    // ========================================================================
-    // MEMORY MANAGEMENT
-    // ========================================================================
-    
-    /**
-     * @brief Get current GPU memory usage
-     * @return Memory usage in bytes
-     */
-    size_t getMemoryUsage() const;
-    
-    /**
-     * @brief Optimize GPU memory layout for better performance
-     */
-    void optimizeMemoryLayout();
-    
-    /**
-     * @brief Check if CUDA is available and initialized
-     * @return CUDA availability status
-     */
-    bool isCudaAvailable() const;
-    
-    // ========================================================================
-    // STATE SERIALIZATION
+    // MEMORY CONSOLIDATION
     // ========================================================================
     
     /**
-     * @brief Save GPU network state to file
+     * @brief Perform memory consolidation on GPU
+     * @param consolidation_strength Consolidation strength (0-1)
+     * @return Number of synapses consolidated
+     */
+    size_t performMemoryConsolidationGPU(float consolidation_strength);
+    
+    /**
+     * @brief Consolidate specific module on GPU
+     * @param module_id Module to consolidate
+     * @param consolidation_strength Consolidation strength
+     * @return Number of synapses consolidated
+     */
+    size_t consolidateModuleGPU(int module_id, float consolidation_strength);
+    
+    /**
+     * @brief Check if consolidation is needed
+     * @return True if consolidation should be performed
+     */
+    bool shouldConsolidateGPU() const;
+    
+    /**
+     * @brief Get consolidation statistics
+     * @return Map of consolidation metrics
+     */
+    std::map<std::string, float> getConsolidationStats() const;
+    
+    // ========================================================================
+    // INTER-MODULE LEARNING
+    // ========================================================================
+    
+    /**
+     * @brief Update inter-module connections on GPU
+     * @param learning_rate_multiplier Global learning rate modifier
+     * @param dt Time step
+     */
+    void updateInterModuleConnectionsGPU(float learning_rate_multiplier, float dt);
+    
+    /**
+     * @brief Apply Hebbian learning to inter-module connections
+     * @param source_activities Source module activity levels
+     * @param target_activities Target module activity levels
+     * @param learning_rate Learning rate for connections
+     */
+    void applyHebbianLearningGPU(const float* source_activities,
+                                const float* target_activities,
+                                float learning_rate);
+    
+    /**
+     * @brief Get inter-module connection strengths
+     * @return Vector of connection strengths
+     */
+    std::vector<float> getInterModuleConnectionStrengths() const;
+    
+    /**
+     * @brief Set inter-module connection strengths
+     * @param strengths New connection strengths
+     * @return Success status
+     */
+    bool setInterModuleConnectionStrengths(const std::vector<float>& strengths);
+    
+    // ========================================================================
+    // NEUROMODULATION
+    // ========================================================================
+    
+    /**
+     * @brief Apply neuromodulation on GPU
+     * @param dopamine_level Dopamine level
+     * @param acetylcholine_level Acetylcholine level
+     * @param norepinephrine_level Norepinephrine level
+     * @param dt Time step
+     */
+    void applyNeuromodulationGPU(float dopamine_level, float acetylcholine_level,
+                                float norepinephrine_level, float dt);
+    
+    /**
+     * @brief Get neuromodulator levels
+     * @return Map of neuromodulator names to levels
+     */
+    std::map<std::string, float> getNeuromodulatorLevels() const;
+    
+    /**
+     * @brief Set neuromodulator levels
+     * @param levels Map of neuromodulator names to levels
+     */
+    void setNeuromodulatorLevels(const std::map<std::string, float>& levels);
+    
+    // ========================================================================
+    // PERFORMANCE MONITORING AND OPTIMIZATION
+    // ========================================================================
+    
+    /**
+     * @brief Get GPU memory usage statistics
+     * @return Memory usage statistics
+     */
+    GPUMemoryStats getMemoryStats() const;
+    
+    /**
+     * @brief Get CUDA performance metrics
+     * @return Performance metrics
+     */
+    CUDAPerformanceMetrics getPerformanceMetrics() const;
+    
+    /**
+     * @brief Optimize GPU memory usage
+     * @return Amount of memory freed in bytes
+     */
+    size_t optimizeMemoryUsage();
+    
+    /**
+     * @brief Profile kernel performance
+     * @param enable Enable profiling
+     */
+    void enableProfiling(bool enable);
+    
+    /**
+     * @brief Get kernel timing information
+     * @return Map of kernel names to execution times
+     */
+    std::map<std::string, float> getKernelTimings() const;
+    
+    /**
+     * @brief Synchronize all CUDA streams
+     */
+    void synchronizeAllStreams();
+    
+    /**
+     * @brief Check for CUDA errors
+     * @return Error status with description
+     */
+    std::pair<bool, std::string> checkCudaErrors() const;
+    
+    // ========================================================================
+    // MULTI-STREAM PROCESSING
+    // ========================================================================
+    
+    /**
+     * @brief Process multiple modules in parallel
+     * @param module_inputs Map of module IDs to input vectors
+     * @return Map of module IDs to output vectors
+     */
+    std::map<int, std::vector<float>> processModulesParallel(
+        const std::map<int, std::vector<float>>& module_inputs);
+    
+    /**
+     * @brief Update modules in parallel streams
+     * @param module_ids Vector of module IDs to update
+     * @param dt Time step
+     * @param reward_signals Per-module reward signals
+     */
+    void updateModulesParallel(const std::vector<int>& module_ids, float dt,
+                              const std::vector<float>& reward_signals);
+    
+    /**
+     * @brief Get stream utilization
+     * @return Map of stream IDs to utilization percentages
+     */
+    std::map<int, float> getStreamUtilization() const;
+    
+    // ========================================================================
+    // ADVANCED FEATURES
+    // ========================================================================
+    
+    /**
+     * @brief Enable mixed precision training
+     * @param enable Enable mixed precision
+     * @return Success status
+     */
+    bool enableMixedPrecision(bool enable);
+    
+    /**
+     * @brief Capture CUDA graph for optimization
+     * @return Success status
+     */
+    bool captureComputationGraph();
+    
+    /**
+     * @brief Use captured graph for execution
+     * @param use_graph Use captured graph if available
+     */
+    void useComputationGraph(bool use_graph);
+    
+    /**
+     * @brief Enable tensor core acceleration
+     * @param enable Enable tensor cores
+     * @return Success status
+     */
+    bool enableTensorCores(bool enable);
+    
+    /**
+     * @brief Set memory pool size
+     * @param size_mb Memory pool size in megabytes
+     * @return Success status
+     */
+    bool setMemoryPoolSize(size_t size_mb);
+    
+    /**
+     * @brief Warm up GPU for optimal performance
+     */
+    void warmupGPU();
+    
+    // ========================================================================
+    // STATE PERSISTENCE
+    // ========================================================================
+    
+    /**
+     * @brief Save complete GPU state to file
      * @param filename Output filename
-     * @return Save success status
+     * @return Success status
      */
     bool saveGPUState(const std::string& filename) const;
     
     /**
-     * @brief Load GPU network state from file
+     * @brief Load complete GPU state from file
      * @param filename Input filename
-     * @return Load success status
+     * @return Success status
      */
     bool loadGPUState(const std::string& filename);
     
-    // ========================================================================
-    // CUDA INTERFACE METHODS (PUBLIC ACCESS REQUIRED)
-    // ========================================================================
+    /**
+     * @brief Get state size for serialization
+     * @return Size in bytes
+     */
+    size_t getStateSize() const;
     
     /**
-     * @brief Copy data to GPU
+     * @brief Validate GPU state integrity
+     * @return True if state is valid
      */
-    void copy_to_gpu(const std::vector<GPUNeuronState>& neurons, 
-                     const std::vector<GPUSynapse>& synapses);
-    
-    /**
-     * @brief Copy data from GPU
-     */
-    void copy_from_gpu(std::vector<GPUNeuronState>& neurons, 
-                       std::vector<GPUSynapse>& synapses);
-    
-    /**
-     * @brief Simulate one step
-     */
-    void simulate_step(float current_time, float dt, float reward, 
-                       const std::vector<float>& inputs);
-    
-    /**
-     * @brief Get network statistics (snake_case version)
-     */
-    void get_stats(NetworkStats& stats) const;
+    bool validateGPUState() const;
 
 private:
     // ========================================================================
-    // INTERNAL GPU DATA STRUCTURES
+    // INTERNAL STATE
     // ========================================================================
     
-    // Network configuration and state
-    NetworkConfig config_;
-    bool system_initialized_;
+    // Configuration
+    CUDAConfig cuda_config_;
+    NetworkConfig network_config_;
+    bool is_initialized_ = false;
+    
+    // CUDA device management
+    int device_id_;
+    cudaDeviceProp device_properties_;
+    cudaStream_t default_stream_ = nullptr;
+    std::vector<cudaStream_t> compute_streams_;
+    std::vector<cudaStream_t> memory_streams_;
+    
+    // cuBLAS and cuRAND handles
+    cublasHandle_t cublas_handle_ = nullptr;
+    curandGenerator_t curand_generator_ = nullptr;
+    
+    // Neural network GPU memory
+    GPUNeuronState* d_neurons_ = nullptr;
+    GPUSynapse* d_synapses_ = nullptr;
+    float* d_inputs_ = nullptr;
+    float* d_outputs_ = nullptr;
+    
+    // Learning state GPU memory
+    GPULearningState* d_learning_state_ = nullptr;
+    GPUInterModuleState* d_inter_module_state_ = nullptr;
+    
+    // Working buffers
+    float* d_temp_buffer_ = nullptr;
+    float* d_reduction_buffer_ = nullptr;
+    int* d_consolidated_count_ = nullptr;
+    
+    // Host-side buffers for synchronization
+    std::vector<float> h_neuron_outputs_;
+    std::vector<float> h_synaptic_weights_;
+    std::unique_ptr<uint8_t[]> h_learning_state_buffer_;
+    size_t learning_state_buffer_size_ = 0;
     
     // Network dimensions
-    int num_neurons_;
-    int num_synapses_;
+    size_t num_neurons_ = 0;
+    size_t num_synapses_ = 0;
+    size_t num_inputs_ = 0;
+    size_t num_outputs_ = 0;
+    size_t num_modules_ = 0;
     
-    // Simulation state
-    float current_simulation_time_;
-    size_t simulation_step_count_;
+    // External references
+    std::shared_ptr<BrainModuleArchitecture> brain_architecture_;
+    std::shared_ptr<LearningStateManager> learning_state_manager_;
     
-    // GPU memory pointers - Core neural structures
-    GPUNeuronState* d_neurons_;
-    GPUSynapse* d_synapses_;
-    float* d_input_currents_;
-    float* d_output_activations_;
-    curandState* d_random_states_;
+    // Performance monitoring
+    mutable CUDAPerformanceMetrics performance_metrics_;
+    mutable GPUMemoryStats memory_stats_;
+    std::map<std::string, float> kernel_timings_;
+    bool profiling_enabled_ = false;
     
-    // GPU memory pointers - Statistics and monitoring
-    int* d_spike_count_;
-    NetworkStats* d_network_stats_;
+    // Graph capture for optimization
+    cudaGraph_t computation_graph_ = nullptr;
+    cudaGraphExec_t graph_exec_ = nullptr;
+    bool use_captured_graph_ = false;
     
-    // Memory tracking
-    float allocated_memory_mb_;
-    size_t total_gpu_memory_;
-    size_t allocated_memory_;
+    // Memory management
+    cudaMemPool_t memory_pool_ = nullptr;
+    bool memory_pool_enabled_ = false;
     
-    // Module management (using vectors instead of STL maps for CUDA compatibility)
-    struct ModuleInfo {
-        size_t module_id;
-        size_t start_neuron;
-        size_t end_neuron;
-        NetworkConfig config;
-        float* d_module_inputs;
-        float* d_module_outputs;
-    };
-    std::vector<ModuleInfo> registered_modules_;
+    // Thread safety
+    mutable std::mutex cuda_mutex_;
+    mutable std::mutex memory_mutex_;
+    mutable std::mutex stream_mutex_;
     
-    // Performance tracking
-    mutable PerformanceMetrics performance_metrics_;
+    // Error tracking
+    mutable std::atomic<uint64_t> total_cuda_errors_{0};
+    mutable std::string last_cuda_error_;
     
-    // Performance tracking
-    mutable NetworkStats gpu_stats_;
-    
-    // CUDA handles
-    cublasHandle_t cublas_handle_;
-    cusparseHandle_t cusparse_handle_;
-    cudaStream_t computation_stream_;
-    cudaStream_t memory_stream_;
+    // Timing
+    std::chrono::high_resolution_clock::time_point last_update_time_;
+    std::vector<float> update_time_history_;
     
     // ========================================================================
     // INTERNAL HELPER METHODS
     // ========================================================================
     
     /**
-     * @brief Initialize CUDA handles and streams
+     * @brief Initialize CUDA device and context
+     * @return Success status
      */
-    bool initializeCudaHandles();
+    bool initializeCudaDevice();
     
     /**
-     * @brief Allocate GPU memory for network structures
+     * @brief Initialize CUDA streams
+     * @return Success status
      */
-    bool allocateGPUMemory();
+    bool initializeCudaStreams();
     
     /**
-     * @brief Initialize random number generators on GPU
+     * @brief Initialize cuBLAS and cuRAND
+     * @return Success status
      */
-    bool initializeRandomStates();
+    bool initializeCudaLibraries();
     
     /**
-     * @brief Launch neural update kernels
+     * @brief Allocate GPU memory for neural network
+     * @return Success status
      */
-    void launchNeuronUpdateKernels(float dt, float reward_signal);
+    bool allocateNeuralNetworkMemory();
     
     /**
-     * @brief Launch synaptic processing kernels
+     * @brief Allocate GPU memory for learning state
+     * @return Success status
      */
-    void launchSynapseProcessingKernels(float dt);
+    bool allocateLearningStateMemory();
     
     /**
-     * @brief Launch plasticity update kernels
+     * @brief Allocate working buffers
+     * @return Success status
      */
-    void launchPlasticityKernels(float learning_rate);
+    bool allocateWorkingBuffers();
     
     /**
-     * @brief Update performance statistics
+     * @brief Initialize neural network data on GPU
+     * @return Success status
      */
-    void updatePerformanceStats();
+    bool initializeNeuralNetworkData();
     
     /**
-     * @brief Check for CUDA errors and handle them
+     * @brief Initialize learning state data on GPU
+     * @return Success status
      */
-    bool checkCudaErrors(const std::string& operation) const;
-    
-    // ========================================================================
-    // ADDITIONAL MISSING METHODS FROM IMPLEMENTATION
-    // ========================================================================
+    bool initializeLearningStateData();
     
     /**
-     * @brief Calculate neuron firing rate from GPU neuron state
+     * @brief Update memory statistics
      */
-    float calculateNeuronFiringRate(const GPUNeuronState& gpu_neuron) const;
+    void updateMemoryStats() const;
     
     /**
-     * @brief Update synaptic plasticity for a specific synapse
+     * @brief Update performance metrics
+     * @param kernel_time_ms Time taken for last kernel execution
      */
-    void updateSynapticPlasticity(GPUSynapse& gpu_synapse, float dt, float reward);
+    void updatePerformanceMetrics(float kernel_time_ms) const;
     
     /**
-     * @brief Get incoming synapses for a neuron
+     * @brief Check and handle CUDA errors
+     * @param operation Description of the operation
+     * @return True if no errors
      */
-    std::vector<size_t> getIncomingSynapses(size_t neuron_id) const;
+    bool checkCudaError(const std::string& operation) const;
     
     /**
-     * @brief Synchronize with CPU network
+     * @brief Cleanup all GPU resources
      */
-    void synchronize_with_cpu_network(void* cpu_network_ptr, const std::string& sync_direction);
+    void cleanupGPUResources();
     
     /**
-     * @brief Get network output (alternative method name)
+     * @brief Get optimal block size for kernel launch
+     * @param kernel_func CUDA kernel function pointer
+     * @return Optimal block size
      */
-    std::vector<float> get_output() const;
+    int getOptimalBlockSize(const void* kernel_func) const;
     
     /**
-     * @brief Allocate GPU memory (snake_case version)
+     * @brief Calculate grid size for given problem size
+     * @param problem_size Total number of elements to process
+     * @param block_size Block size to use
+     * @return Grid size
      */
-    void allocate_gpu_memory();
+    int calculateGridSize(int problem_size, int block_size) const;
     
     /**
-     * @brief Initialize GPU state (snake_case version)
+     * @brief Time CUDA kernel execution
+     * @param stream CUDA stream to time
+     * @return Execution time in milliseconds
      */
-    void initialize_gpu_state();
+    float timeKernelExecution(cudaStream_t stream) const;
     
     /**
-     * @brief Cleanup resources (snake_case version)
+     * @brief Validate GPU memory allocation
+     * @param ptr GPU memory pointer
+     * @param size Expected size
+     * @param name Memory region name
+     * @return True if valid
      */
-    void cleanup_resources();
+    bool validateGPUMemory(void* ptr, size_t size, const std::string& name) const;
     
     /**
-     * @brief Check if synapse exists
+     * @brief Synchronize specific stream with timeout
+     * @param stream CUDA stream
+     * @param timeout_ms Timeout in milliseconds
+     * @return True if synchronized successfully
      */
-    bool synapseExists(size_t pre_id, size_t post_id) const;
-    
-    /**
-     * @brief Check if neuron is active
-     */
-    bool isNeuronActive(size_t neuron_id) const;
-    
-    /**
-     * @brief Get performance metrics (snake_case version)
-     */
-    PerformanceMetrics get_performance_metrics() const;
-    
-    /**
-     * @brief Synchronize configurations
-     */
-    void synchronize_configurations(const NetworkConfig& cpu_config, NetworkConfig& gpu_config);
-    
-    /**
-     * @brief Save GPU state (snake_case version)
-     */
-    bool save_gpu_state(const std::string& filename) const;
-    
-    /**
-     * @brief Load GPU state (snake_case version)
-     */
-    bool load_gpu_state(const std::string& filename);
+    bool synchronizeStreamWithTimeout(cudaStream_t stream, int timeout_ms = 1000) const;
 };
 
 // ============================================================================
-// GLOBAL CUDA UTILITY FUNCTIONS
+// CUDA UTILITY FUNCTIONS
 // ============================================================================
 
 /**
- * @brief Initialize CUDA device and check compatibility
- * @return Device initialization success status
+ * @brief Check if CUDA is available
+ * @return True if CUDA is available
  */
-bool initializeCudaDevice();
+bool isCudaAvailable();
 
 /**
- * @brief Get optimal CUDA block and grid dimensions
- * @param num_elements Number of elements to process
- * @return Optimal launch configuration
+ * @brief Get CUDA device count
+ * @return Number of CUDA devices
  */
-dim3 getOptimalLaunchConfig(size_t num_elements);
+int getCudaDeviceCount();
 
 /**
- * @brief Synchronize all CUDA operations and check for errors
- * @return Synchronization success status
+ * @brief Get optimal CUDA device for neural computation
+ * @return Device ID of optimal device
  */
-bool synchronizeCuda();
+int getOptimalCudaDevice();
 
 /**
- * @brief Clean up global CUDA resources
+ * @brief Get CUDA memory info for device
+ * @param device_id Device ID
+ * @return Pair of (free_memory, total_memory) in bytes
  */
-void cleanupCuda();
+std::pair<size_t, size_t> getCudaMemoryInfo(int device_id = -1);
 
-#endif // NETWORK_CUDA_CUH
+/**
+ * @brief Warm up CUDA device
+ * @param device_id Device ID
+ */
+void warmUpCudaDevice(int device_id = -1);
+
+/**
+ * @brief Get CUDA runtime version
+ * @return CUDA runtime version string
+ */
+std::string getCudaRuntimeVersion();
+
+/**
+ * @brief Get CUDA driver version
+ * @return CUDA driver version string
+ */
+std::string getCudaDriverVersion();
+
+#endif // NETWORK_CUDA_H

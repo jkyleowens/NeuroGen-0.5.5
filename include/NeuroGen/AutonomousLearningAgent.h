@@ -143,12 +143,8 @@ enum class ActionType {
     CLICK,
     SCROLL,
     TYPE,
-    NAVIGATE,
-    WAIT,
-    OBSERVE,
-    BACK,
-    FORWARD,
-    REFRESH
+    ENTER,
+    BACKSPACE
 };
 
 /**
@@ -181,7 +177,6 @@ struct BrowsingState {
  */
 struct BrowsingAction {
     ActionType type;
-    std::string target_url;         // For NAVIGATE actions
     std::string text_content;       // For TYPE actions
     int x_coordinate;               // For CLICK actions
     int y_coordinate;               // For CLICK actions
@@ -191,7 +186,7 @@ struct BrowsingAction {
     float expected_reward;          // Expected reward for this action
     std::string description;        // Human-readable description
     
-    BrowsingAction() : type(ActionType::WAIT), x_coordinate(0), y_coordinate(0),
+    BrowsingAction() : type(ActionType::CLICK), x_coordinate(0), y_coordinate(0),
                       scroll_amount(0), scroll_direction(ScrollDirection::DOWN),
                       confidence(0.5f), expected_reward(0.0f) {}
 };
@@ -437,6 +432,13 @@ private:
     
     float global_reward_signal_;
     float learning_rate_;
+    std::chrono::steady_clock::time_point last_action_time_;
+    std::mt19937 gen; // Mersenne Twister for random number generation
+    
+    // Real-time learning state
+    std::vector<ScreenElement> detected_screen_elements_;
+    size_t previous_screen_elements_count_ = 0;
+    std::string last_screen_text_; // Added to store OCR results
     
     // ========================================================================
     // INTERNAL METHODS
@@ -446,6 +448,23 @@ private:
     void initialize_attention_system();
     void update_learning_goals();
     void log_action(const std::string& action);
+    void initializeSpecializedModules();
+    void setupDefaultLearningGoals();
+    
+    // Real screen-based reinforcement learning methods
+    void processRealScreenInput();
+    void executeRealAction();
+    float computeScreenBasedReward();
+    float evaluateGoalProgress();
+    float evaluateExplorationEffectiveness();
+    float evaluateActionPenalties();
+    float evaluateLearningEfficiency();
+    float evaluateInformationGathering();
+    float evaluateTaskCompletion();
+    float evaluateLearningImprovement();
+    void learnFromActionOutcome(float reward);
+    void storeEpisodeInMemory(float reward);
+    void logLearningProgress(int step, float reward);
     
     // Missing method declarations needed by DecisionAndActionSystems.cpp
     void update_attention_weights();
@@ -453,16 +472,19 @@ private:
     std::vector<float> collect_inter_module_signals(const std::string& target_module);
     void distribute_module_output(const std::string& source_module, const std::vector<float>& output);
     void make_decision();
+    std::vector<BrowsingAction> translate_neural_output_to_actions(const std::vector<float>& neural_output);
+    std::vector<BrowsingAction> generate_base_action_candidates();
     std::vector<float> evaluate_action_candidates(const std::vector<BrowsingAction>& candidates, 
                                                    const std::vector<MemorySystem::MemoryTrace>& similar_episodes);
-    BrowsingAction select_action_with_exploration(const std::vector<BrowsingAction>& candidates, 
+    std::vector<BrowsingAction> generate_action_candidates_for_goal(const std::vector<float>& goal);
+    void select_action_with_exploration(const std::vector<BrowsingAction>& candidates, 
                                                    const std::vector<float>& values);
     void execute_action();
     void execute_click_action();
     void execute_scroll_action();
     void execute_type_action();
-    void execute_navigate_action();
-    void execute_wait_action();
+    void execute_enter_action();
+    void execute_backspace_action();
     std::vector<float> convert_action_to_motor_command(const BrowsingAction& action);
     void learn_from_feedback();
     float compute_action_reward();
@@ -471,6 +493,7 @@ private:
     void update_global_state();
     void consolidate_learning();
     void transfer_knowledge_between_modules();
+    bool isActionValid(const BrowsingAction& action);
 };
 
 // ============================================================================

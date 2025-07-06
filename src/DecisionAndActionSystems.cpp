@@ -364,35 +364,29 @@ void AutonomousLearningAgent::distribute_module_output(const std::string& source
 void AutonomousLearningAgent::make_decision() {
     // Decision-making pipeline combining multiple cognitive systems
     
-    // Step 1: Get current situation assessment from prefrontal cortex
-    if (!modules_.count("prefrontal_cortex")) return;
-    
-    // Use get_output instead of get_internal_state
-    auto prefrontal_output = modules_["prefrontal_cortex"]->get_output();
-    
-    // Step 2: Retrieve relevant memories
+    // Step 1: Get neural output from the motor cortex
+    if (!modules_.count("motor_cortex")) return;
+    auto neural_output = modules_["motor_cortex"]->get_output();
+
+    // Step 2: Translate neural output into a set of action candidates
+    auto action_candidates = translate_neural_output_to_actions(neural_output);
+
+    // Step 3: Retrieve relevant memories to help evaluate candidates
     std::vector<float> current_state_summary;
     current_state_summary.reserve(256);
-    
-    // Combine key state information
     for (size_t i = 0; i < std::min(global_state_.size(), size_t(128)); ++i) {
         current_state_summary.push_back(global_state_[i]);
     }
     for (size_t i = 0; i < std::min(environmental_context_.size(), size_t(128)); ++i) {
         current_state_summary.push_back(environmental_context_[i]);
     }
-    
-    // Retrieve similar past experiences
     auto similar_episodes = memory_system_->retrieve_similar_episodes(current_state_summary, 5);
     
-    // Step 3: Generate action candidates
-    auto action_candidates = generate_action_candidates();
-    
-    // Step 4: Evaluate actions using learned value function
+    // Step 4: Evaluate actions using learned value function and memory
     auto action_values = evaluate_action_candidates(action_candidates, similar_episodes);
     
     // Step 5: Select action with exploration
-    selected_action_ = select_action_with_exploration(action_candidates, action_values);
+    select_action_with_exploration(action_candidates, action_values);
     
     static int decision_count = 0;
     if (++decision_count % 100 == 0) {
@@ -402,68 +396,51 @@ void AutonomousLearningAgent::make_decision() {
     }
 }
 
-std::vector<BrowsingAction> AutonomousLearningAgent::generate_action_candidates() {
+std::vector<BrowsingAction> AutonomousLearningAgent::translate_neural_output_to_actions(const std::vector<float>& neural_output) {
     std::vector<BrowsingAction> candidates;
-    
-    if (!visual_interface_) {
-        // Generate basic movement actions as fallback
-        BrowsingAction wait_action;
-        wait_action.type = ActionType::WAIT;
-        wait_action.confidence = 0.8f;
-        candidates.push_back(wait_action);
-        return candidates;
+    if (neural_output.size() < 10) return candidates; // Need enough data to decode
+
+    // Action Type Decoding (first 5 values for 5 actions)
+    ActionType decoded_type = static_cast<ActionType>(std::distance(neural_output.begin(), std::max_element(neural_output.begin(), neural_output.begin() + 5)));
+
+    // Parameter Decoding (example using fixed positions)
+    float confidence = (neural_output.size() > 5) ? (neural_output[5] + 1.0f) / 2.0f : 0.5f;
+    int x_coord = (neural_output.size() > 6) ? static_cast<int>(neural_output[6] * 1920) : 0;
+    int y_coord = (neural_output.size() > 7) ? static_cast<int>(neural_output[7] * 1080) : 0;
+    int scroll_val = (neural_output.size() > 8) ? static_cast<int>(neural_output[8] * 500) : 100;
+
+    BrowsingAction action;
+    action.type = decoded_type;
+    action.confidence = std::max(0.0f, std::min(1.0f, confidence));
+
+    switch (decoded_type) {
+        case ActionType::CLICK:
+            action.x_coordinate = x_coord;
+            action.y_coordinate = y_coord;
+            break;
+        case ActionType::SCROLL:
+            action.scroll_amount = scroll_val;
+            action.scroll_direction = (neural_output[8] > 0) ? ScrollDirection::DOWN : ScrollDirection::UP;
+            break;
+        case ActionType::TYPE:
+            action.text_content = "decoded text"; // Placeholder
+            break;
+        case ActionType::ENTER:
+        case ActionType::BACKSPACE:
+            break;
     }
-    
-    // Get current screen elements
-    auto screen_elements = visual_interface_->detect_screen_elements();
-    
-    // Generate click actions for detected elements
-    for (const auto& element : screen_elements) {
-        if (element.is_clickable && element.confidence > 0.5f) {
-            BrowsingAction action;
-            action.type = ActionType::CLICK;
-            action.x_coordinate = element.x + element.width / 2;
-            action.y_coordinate = element.y + element.height / 2;
-            action.text_content = element.text;
-            action.confidence = element.confidence * 0.8f; // Reduce confidence slightly
-            
-            candidates.push_back(action);
-        }
-    }
-    
-    // Generate exploration actions
-    if (exploration_rate_ > 0.1f) {
-        // Random click for exploration
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<int> x_dist(100, 1800);
-        std::uniform_int_distribution<int> y_dist(100, 1000);
-        
+    candidates.push_back(action);
+
+    // Add a few more variations for exploration
+    if (exploration_rate_ > 0.3f) {
         BrowsingAction explore_action;
         explore_action.type = ActionType::CLICK;
-        explore_action.x_coordinate = x_dist(gen);
-        explore_action.y_coordinate = y_dist(gen);
+        explore_action.x_coordinate = rand() % 1920;
+        explore_action.y_coordinate = rand() % 1080;
         explore_action.confidence = exploration_rate_ * 0.5f;
-        
         candidates.push_back(explore_action);
-        
-        // Scroll action
-        BrowsingAction scroll_action;
-        scroll_action.type = ActionType::SCROLL;
-        scroll_action.x_coordinate = 960; // Screen center
-        scroll_action.y_coordinate = 540;
-        scroll_action.confidence = exploration_rate_ * 0.3f;
-        
-        candidates.push_back(scroll_action);
     }
-    
-    // Wait action (always available)
-    BrowsingAction wait_action;
-    wait_action.type = ActionType::WAIT;
-    wait_action.confidence = 0.6f;
-    
-    candidates.push_back(wait_action);
-    
+
     return candidates;
 }
 
@@ -480,22 +457,19 @@ std::vector<float> AutonomousLearningAgent::evaluate_action_candidates(
         // Base value from action type
         switch (action.type) {
             case ActionType::CLICK:
-                value = 0.6f; // Generally positive
+                value = 0.7f;
                 break;
             case ActionType::SCROLL:
-                value = 0.4f; // Moderate value
+                value = 0.4f;
                 break;
             case ActionType::TYPE:
-                value = 0.7f; // High value for input
+                value = 0.8f;
                 break;
-            case ActionType::NAVIGATE:
-                value = 0.5f; // Navigation is risky but potentially valuable
+            case ActionType::ENTER:
+                value = 0.6f;
                 break;
-            case ActionType::WAIT:
-                value = 0.2f; // Low value, but safe
-                break;
-            default:
-                value = 0.1f; // Unknown action type
+            case ActionType::BACKSPACE:
+                value = 0.5f;
                 break;
         }
         
@@ -517,9 +491,7 @@ std::vector<float> AutonomousLearningAgent::evaluate_action_candidates(
         }
         
         // Add exploration bonus
-        if (action.type != ActionType::WAIT) {
-            value += exploration_rate_ * 0.2f;
-        }
+        value += exploration_rate_ * 0.1f;
         
         values[i] = value;
     }
@@ -527,21 +499,18 @@ std::vector<float> AutonomousLearningAgent::evaluate_action_candidates(
     return values;
 }
 
-BrowsingAction AutonomousLearningAgent::select_action_with_exploration(
+void AutonomousLearningAgent::select_action_with_exploration(
     const std::vector<BrowsingAction>& candidates, const std::vector<float>& values) {
-    
+
     if (candidates.empty()) {
-        BrowsingAction default_action;
-        default_action.type = ActionType::WAIT;
-        default_action.confidence = 0.5f;
-        return default_action;
+        // No action to select, just return. The agent will reconsider in the next cycle.
+        return;
     }
     
     // Softmax action selection with temperature
-    float temperature = exploration_rate_ * 2.0f + 0.1f; // Higher exploration = higher temperature
+    float temperature = exploration_rate_ * 2.0f + 0.1f; 
     std::vector<float> probabilities(values.size());
     
-    // Find max value for numerical stability
     float max_value = *std::max_element(values.begin(), values.end());
     
     float sum_exp = 0.0f;
@@ -550,12 +519,10 @@ BrowsingAction AutonomousLearningAgent::select_action_with_exploration(
         sum_exp += probabilities[i];
     }
     
-    // Normalize probabilities
     for (float& prob : probabilities) {
         prob /= sum_exp;
     }
     
-    // Sample action
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<float> dist(0.0f, 1.0f);
@@ -566,48 +533,43 @@ BrowsingAction AutonomousLearningAgent::select_action_with_exploration(
     for (size_t i = 0; i < candidates.size(); ++i) {
         cumulative_prob += probabilities[i];
         if (random_value <= cumulative_prob) {
-            return candidates[i];
+            // Directly return the chosen candidate to preserve all its data
+            selected_action_ = candidates[i];
+            return;
         }
     }
     
     // Fallback to last action
-    return candidates.back();
+    selected_action_ = candidates.back();
 }
 
 void AutonomousLearningAgent::execute_action() {
-    // Simulate action execution (in a real system, this would interface with OS)
-    switch (selected_action_.type) {
-        case ActionType::CLICK:
-            execute_click_action();
-            break;
-        case ActionType::SCROLL:
-            execute_scroll_action();
-            break;
-        case ActionType::TYPE:
-            execute_type_action();
-            break;
-        case ActionType::NAVIGATE:
-            execute_navigate_action();
-            break;
-        case ActionType::WAIT:
-            execute_wait_action();
-            break;
-        case ActionType::OBSERVE:
-            execute_wait_action(); // Treat observe as wait for now
-            break;
-        case ActionType::BACK:
-        case ActionType::FORWARD:
-        case ActionType::REFRESH:
-            execute_navigate_action(); // Treat navigation actions similarly
-            break;
-        default:
-            execute_wait_action(); // Default fallback
-            break;
+    if (action_executor_) {
+        action_executor_(selected_action_);
+    } else {
+        // Fallback to internal execution if no executor is set
+        switch (selected_action_.type) {
+            case ActionType::CLICK:
+                execute_click_action();
+                break;
+            case ActionType::SCROLL:
+                execute_scroll_action();
+                break;
+            case ActionType::TYPE:
+                execute_type_action();
+                break;
+            case ActionType::ENTER:
+                execute_enter_action();
+                break;
+            case ActionType::BACKSPACE:
+                execute_backspace_action();
+                break;
+        }
     }
-    
+
     // Update action statistics
     metrics_.total_actions++;
-    
+
     // Motor cortex processes the action
     if (modules_.count("motor_cortex")) {
         std::vector<float> motor_command = convert_action_to_motor_command(selected_action_);
@@ -679,28 +641,32 @@ void AutonomousLearningAgent::execute_type_action() {
     SafetyManager::getInstance().recordAction(selected_action_);
 }
 
-void AutonomousLearningAgent::execute_navigate_action() {
-    std::cout << "Executing NAVIGATE to: '" << selected_action_.target_url 
-              << "' with confidence " << selected_action_.confidence << std::endl;
-    
-    // Simulate navigation
-    bool success = !selected_action_.target_url.empty() && selected_action_.confidence > 0.6f;
+void AutonomousLearningAgent::execute_enter_action() {
+    std::cout << "Executing ENTER with confidence " << selected_action_.confidence << std::endl;
+
+    bool success = false;
+    if (input_controller_) {
+        success = input_controller_->typeText("\n");
+    }
     if (success) {
         metrics_.successful_actions++;
-        global_reward_signal_ += 0.2f; // High reward for successful navigation
+        global_reward_signal_ += 0.1f;
     }
-    
-    std::this_thread::sleep_for(std::chrono::milliseconds(2000)); // Page load simulation
+    SafetyManager::getInstance().recordAction(selected_action_);
 }
 
-void AutonomousLearningAgent::execute_wait_action() {
-    std::cout << "Executing WAIT with confidence " << selected_action_.confidence << std::endl;
-    
-    // Wait actions are always "successful" but provide minimal reward
-    metrics_.successful_actions++;
-    global_reward_signal_ += 0.01f;
-    
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+void AutonomousLearningAgent::execute_backspace_action() {
+    std::cout << "Executing BACKSPACE with confidence " << selected_action_.confidence << std::endl;
+
+    bool success = false;
+    if (input_controller_) {
+        success = input_controller_->typeText("\b");
+    }
+    if (success) {
+        metrics_.successful_actions++;
+        global_reward_signal_ += 0.05f;
+    }
+    SafetyManager::getInstance().recordAction(selected_action_);
 }
 
 std::vector<float> AutonomousLearningAgent::convert_action_to_motor_command(const BrowsingAction& action) {
@@ -779,25 +745,14 @@ float AutonomousLearningAgent::compute_action_reward() {
         case ActionType::TYPE:
             reward += selected_action_.confidence * 0.15f;
             break;
-        case ActionType::NAVIGATE:
-            reward += selected_action_.confidence * 0.2f;
-            break;
         case ActionType::SCROLL:
             reward += selected_action_.confidence * 0.05f;
             break;
-        case ActionType::WAIT:
-            reward += 0.01f; // Minimal reward for waiting
+        case ActionType::ENTER:
+            reward += selected_action_.confidence * 0.08f;
             break;
-        case ActionType::OBSERVE:
-            reward += 0.02f; // Small reward for observation
-            break;
-        case ActionType::BACK:
-        case ActionType::FORWARD:
-        case ActionType::REFRESH:
-            reward += selected_action_.confidence * 0.1f; // Navigation rewards
-            break;
-        default:
-            reward += 0.01f; // Minimal default reward
+        case ActionType::BACKSPACE:
+            reward += selected_action_.confidence * 0.03f;
             break;
     }
     
@@ -840,20 +795,9 @@ void AutonomousLearningAgent::apply_modular_learning(float reward) {
             relevant_modules = {"visual_cortex", "motor_cortex", "attention_system"};
             break;
         case ActionType::TYPE:
+        case ActionType::ENTER:
+        case ActionType::BACKSPACE:
             relevant_modules = {"prefrontal_cortex", "working_memory", "motor_cortex"};
-            break;
-        case ActionType::NAVIGATE:
-        case ActionType::BACK:
-        case ActionType::FORWARD:
-        case ActionType::REFRESH:
-            relevant_modules = {"prefrontal_cortex", "hippocampus", "motor_cortex"};
-            break;
-        case ActionType::WAIT:
-        case ActionType::OBSERVE:
-            relevant_modules = {"prefrontal_cortex", "attention_system"};
-            break;
-        default:
-            relevant_modules = {"prefrontal_cortex"};
             break;
     }
     

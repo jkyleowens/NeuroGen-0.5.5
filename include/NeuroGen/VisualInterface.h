@@ -49,14 +49,16 @@ public:
     bool is_element_visible(const ScreenElement& element) const;
     
     // Visual processing
-    std::vector<float> extract_visual_features() const;
-    void apply_visual_feature_enhancement(std::vector<float>& features) const;
-    std::vector<float> get_attention_map() const;
-    
-    // Module integration
-    void send_to_visual_cortex(SpecializedModule* visual_cortex);
+    std::vector<float> get_visual_features(const ScreenElement& element) const;
+    cv::Mat get_last_frame() const;
 
 private:
+    // Internal processing
+    void capture_loop();
+    void preprocess_image();
+    void extract_text_elements();
+    void detect_interactive_elements();
+
     // Configuration
     int target_width_, target_height_;
     float detection_threshold_;
@@ -74,12 +76,6 @@ private:
     std::unique_ptr<GUIElementDetector> gui_detector_;
     std::unique_ptr<OCRProcessor> ocr_processor_;
     std::unique_ptr<BioVisualProcessor> visual_processor_;
-
-    // Internal methods
-    void capture_loop();
-    void preprocess_image();
-    void extract_text_elements();
-    void detect_interactive_elements();
 };
 
 // ============================================================================
