@@ -251,8 +251,12 @@ void AutonomousLearningAgent::update_attention_weights() {
     // Add visual saliency
     if (visual_interface_) {
         auto attention_map = visual_interface_->get_attention_map();
-        for (size_t i = 0; i < std::min(attention_map.size(), size_t(64)); ++i) {
-            attention_context.push_back(attention_map[i]);
+        if (!attention_map.empty() && attention_map.isContinuous()) {
+            size_t num_elements_to_add = std::min(attention_map.total(), static_cast<size_t>(64));
+            float* p = attention_map.ptr<float>(0);
+            for (size_t i = 0; i < num_elements_to_add; ++i) {
+                attention_context.push_back(p[i]);
+            }
         }
     }
     
@@ -530,7 +534,7 @@ void AutonomousLearningAgent::select_action_with_exploration(
     float random_value = dist(gen);
     float cumulative_prob = 0.0f;
     
-    for (size_t i = 0; i < candidates.size(); ++i) {
+    for (size_t i = 0; i < candidates.size(); i++) {
         cumulative_prob += probabilities[i];
         if (random_value <= cumulative_prob) {
             // Directly return the chosen candidate to preserve all its data
@@ -543,46 +547,7 @@ void AutonomousLearningAgent::select_action_with_exploration(
     selected_action_ = candidates.back();
 }
 
-void AutonomousLearningAgent::execute_action() {
-    if (action_executor_) {
-        action_executor_(selected_action_);
-    } else {
-        // Fallback to internal execution if no executor is set
-        switch (selected_action_.type) {
-            case ActionType::CLICK:
-                execute_click_action();
-                break;
-            case ActionType::SCROLL:
-                execute_scroll_action();
-                break;
-            case ActionType::TYPE:
-                execute_type_action();
-                break;
-            case ActionType::ENTER:
-                execute_enter_action();
-                break;
-            case ActionType::BACKSPACE:
-                execute_backspace_action();
-                break;
-        }
-    }
-
-    // Update action statistics
-    metrics_.total_actions++;
-
-    // Motor cortex processes the action
-    if (modules_.count("motor_cortex")) {
-        std::vector<float> motor_command = convert_action_to_motor_command(selected_action_);
-        float motor_attention = attention_controller_->get_attention_weight("motor_cortex");
-        
-        // Apply attention weighting to motor command
-        for (size_t i = 0; i < motor_command.size(); ++i) {
-            motor_command[i] *= motor_attention;
-        }
-        
-        modules_["motor_cortex"]->process(motor_command);
-    }
-}
+// NOTE: execute_action() is now defined in AutonomousLearningAgent.cpp to avoid multiple definitions
 
 void AutonomousLearningAgent::execute_click_action() {
     std::cout << "Executing CLICK at (" << selected_action_.x_coordinate << ", " << selected_action_.y_coordinate

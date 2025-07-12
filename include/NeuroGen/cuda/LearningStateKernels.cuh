@@ -6,6 +6,7 @@
 
 #include "NeuroGen/cuda/GPUNeuralStructures.h"
 #include <cuda_runtime.h>
+#include <cstdint>
 
 /**
  * @brief GPU structures for learning state management

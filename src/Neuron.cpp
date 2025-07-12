@@ -55,3 +55,7 @@ size_t Neuron::get_id() const {
 float Neuron::get_potential() const {
     return potential_;
 }
+
+void Neuron::set_potential(float potential) {
+    potential_ = potential;
+}

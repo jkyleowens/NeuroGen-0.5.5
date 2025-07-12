@@ -58,6 +58,12 @@ public:
      */
     float get_potential() const;
 
+    /**
+     * @brief Sets the neuron's current membrane potential.
+     * @param potential The membrane potential in mV.
+     */
+    void set_potential(float potential);
+
 private:
     size_t id_;
     NeuronParams params_; // Stores the neuron's configuration

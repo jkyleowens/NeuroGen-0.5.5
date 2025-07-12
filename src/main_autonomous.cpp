@@ -9,6 +9,8 @@
 #include <thread>
 #include <chrono>
 #include <functional>
+#include <iomanip>
+#include <string>
 
 // Core NeuroGen includes
 #include "NeuroGen/TaskAutomationModules.h"
@@ -17,33 +19,32 @@
 #include "NeuroGen/AutonomousLearningAgent.h"
 #include "NeuroGen/NetworkIntegration.h"
 #include "NeuroGen/ControllerModule.h"
-#include <iomanip>
 
 // Function to create a default configuration for a neural module
 NetworkConfig create_default_config() {
     NetworkConfig config;
-    config.num_neurons = 256; // Enhanced neuron count for version 0.5.5
+    config.num_neurons = 8192; // MASSIVE scale-up: 8K neurons per base module for free-thinking AI
     config.enable_neurogenesis = true;
     config.enable_stdp = true;
     config.enable_pruning = true;
     config.enable_structural_plasticity = true; // Enable dynamic synaptogenesis
     
-    // Enhanced connectivity parameters for version 0.5.5
-    config.input_hidden_prob = 0.6f;
-    config.hidden_hidden_prob = 0.3f;
-    config.hidden_output_prob = 0.8f;
+    // Enhanced connectivity parameters for version 0.5.5 - optimized for large scale
+    config.input_hidden_prob = 0.15f;  // Reduced for computational efficiency at scale
+    config.hidden_hidden_prob = 0.08f; // Sparse connectivity for emergent patterns
+    config.hidden_output_prob = 0.4f;  // Selective output connections
     config.exc_ratio = 0.8f;
     
-    // Synaptic parameters
-    config.min_weight = 0.01f;
-    config.max_weight = 1.5f;
-    config.weight_init_std = 0.3f;
+    // Synaptic parameters optimized for large-scale networks
+    config.min_weight = 0.001f;        // Finer resolution for large networks
+    config.max_weight = 2.0f;          // Increased for stronger signal propagation
+    config.weight_init_std = 0.15f;    // Reduced for stability at scale
     
-    // Topology parameters
-    config.numColumns = 4;
-    config.neuronsPerColumn = 64;
-    config.localFanOut = 15;
-    config.localFanIn = 15;
+    // Topology parameters - MASSIVE SCALE-UP for tens of thousands of neurons
+    config.numColumns = 16;            // 4x increase: 16 cortical columns
+    config.neuronsPerColumn = 512;     // 8x increase: 512 neurons per column = 8,192 total
+    config.localFanOut = 40;           // Increased connectivity for richer dynamics
+    config.localFanIn = 40;            // Increased fan-in for complex integration
     
     // Enhanced timing
     config.dt = 0.1;
@@ -297,7 +298,7 @@ void runBasicModularSimulation() {
 // AUTONOMOUS LEARNING SIMULATION (New Version 0.5.5 Feature)
 // ============================================================================
 
-void runAutonomousLearningSimulation() {
+void runAutonomousLearningSimulation(bool reset_model = false) {
     std::cout << "\n🤖 ========== AUTONOMOUS LEARNING SIMULATION ==========\n" << std::endl;
     std::cout << "🚀 Initializing Advanced Autonomous Learning Agent..." << std::endl;
     
@@ -376,7 +377,7 @@ void runAutonomousLearningSimulation() {
     
     // Environment action executor function - REAL COMPUTER CONTROL
     auto action_executor = [&](const BrowsingAction& action) {
-        // This is now integrated into the agent itself for real-time control
+        // Log the action first
         std::cout << "🎬 Real Computer Action: " << actionTypeToString(action.type) 
                   << " (confidence: " << action.confidence << ")";
         
@@ -397,7 +398,11 @@ void runAutonomousLearningSimulation() {
                 break;
         }
         
-        std::cout << " [REAL COMPUTER CONTROL ACTIVE]" << std::endl;
+        std::cout << " [EXECUTING ON REAL COMPUTER]" << std::endl;
+        
+        // Actually execute the action using the agent's internal execute_action method
+        // This delegates to the properly implemented execute_action(action) method
+        agent.execute_action(action);
     };
     
     // Setup environment interaction - REAL SCREEN MONITORING
@@ -467,13 +472,13 @@ void runAutonomousLearningSimulation() {
     std::cout << "   Watch for learning progress...\n" << std::endl;
     
     // Initialize the agent
-    if (!agent.initialize()) {
+    if (!agent.initialize(reset_model)) {
         std::cerr << "❌ Failed to initialize autonomous learning agent!" << std::endl;
         return;
     }
     
     // Enable detailed logging for better monitoring
-    agent.enableDetailedLogging(true);
+    agent.setDetailedLogging(true);
     
     int max_learning_steps = 2000; // Increased for more comprehensive learning
     std::cout << "🔄 Running " << max_learning_steps << " autonomous learning steps..." << std::endl;
@@ -590,39 +595,54 @@ void runBenchmarkSuite() {
 // MAIN FUNCTION WITH MODE SELECTION
 // ============================================================================
 
-int main() {
+int main(int argc, char* argv[]) {
+    std::vector<std::string> args(argv + 1, argv + argc);
+
+    bool reset_model = false;
+    if (std::find(args.begin(), args.end(), "--reset-model") != args.end()) {
+        reset_model = true;
+        std::cout << "🔥 --reset-model flag detected. Agent state will be reset." << std::endl;
+    }
+
     std::cout << "🧠 NeuroGen 0.5.5 - Advanced Autonomous Learning Framework" << std::endl;
     std::cout << "=========================================================\n" << std::endl;
-    
-    // For now, automatically run autonomous learning simulation
-    // In the future, this could be command-line configurable
-    
-    std::cout << "🔍 Available Simulation Modes:" << std::endl;
-    std::cout << "   1. Basic Modular Simulation (Enhanced)" << std::endl;
-    std::cout << "   2. Autonomous Learning Agent (NEW!)" << std::endl;
-    std::cout << "   3. Interactive Training (Coming Soon)" << std::endl;
-    std::cout << "   4. Benchmark Suite (Coming Soon)" << std::endl;
-    
-    std::cout << "\n� Launching Autonomous Learning Simulation..." << std::endl;
-    
-    try {
-        // Run basic modular simulation first
-        std::cout << "\n==== Phase 1: Basic Modular Network Test ====" << std::endl;
-        runBasicModularSimulation();
-        
-        // Then run autonomous learning
-        std::cout << "\n==== Phase 2: Autonomous Learning Agent ====" << std::endl;
-        runAutonomousLearningSimulation();
-        
-        std::cout << "\n🎉 All simulations completed successfully!" << std::endl;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "❌ Simulation error: " << e.what() << std::endl;
+
+    auto agent_config = create_default_config();
+    AutonomousLearningAgent agent(agent_config);
+
+    if (!agent.initialize(reset_model)) {
+        std::cerr << "❌ Failed to initialize autonomous learning agent!" << std::endl;
         return 1;
     }
-    
-    std::cout << "\n🎊 NeuroGen 0.5.5 Simulation Suite Complete!" << std::endl;
-    std::cout << "Thank you for exploring advanced autonomous neural learning!" << std::endl;
-    
+
+    std::cout << "✅ Agent initialized. Waiting for commands..." << std::endl;
+    std::cout.flush();
+
+    std::string line;
+    while (true) {
+        if (std::getline(std::cin, line)) {
+            if (line.rfind("COMMAND:", 0) == 0) {
+                agent.handleCommand(line.substr(8));
+                std::cout.flush(); // Ensure any output is immediately visible
+            } else if (line == "EXIT" || line == "QUIT") {
+                std::cout << "🛑 Exit command received. Shutting down." << std::endl;
+                break;
+            } else if (!line.empty()) {
+                std::cerr << "Warning: Received malformed input: " << line << std::endl;
+            }
+        } else {
+            // Check if stdin was closed (parent process died)
+            if (std::cin.eof()) {
+                std::cout << "🛑 Input stream closed. Shutting down." << std::endl;
+                break;
+            }
+            // Sleep briefly to avoid busy waiting
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+
+    std::cout << "🛑 Agent shutting down." << std::endl;
+    agent.shutdown();
+
     return 0;
 }

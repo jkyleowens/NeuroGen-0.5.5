@@ -1,4 +1,4 @@
-#include "NeuroGen/NetworkCUDA.h"
+#include "NeuroGen/cuda/NetworkCUDA.cuh"
 #include "NeuroGen/BrainModuleArchitecture.h"
 #include "NeuroGen/LearningStateManager.h"
 #include <iostream>
@@ -69,18 +69,12 @@ std::pair<bool, std::string> NetworkCUDA::initialize(const NetworkConfig& networ
         }
         
         // Set network dimensions from config
-        num_inputs_ = network_config_.num_input;
-        num_outputs_ = network_config_.num_output;
-        num_neurons_ = network_config_.num_input + network_config_.num_hidden + network_config_.num_output;
+        num_neurons_ = network_config_.num_neurons;
+        num_inputs_ = num_neurons_ / 4;  // Simple estimation: 25% inputs
+        num_outputs_ = num_neurons_ / 4; // Simple estimation: 25% outputs
         
-        // Estimate number of synapses
-        size_t input_hidden_synapses = static_cast<size_t>(num_inputs_ * network_config_.num_hidden * 
-                                                          network_config_.input_hidden_prob);
-        size_t hidden_hidden_synapses = static_cast<size_t>(network_config_.num_hidden * network_config_.num_hidden * 
-                                                           network_config_.hidden_hidden_prob);
-        size_t hidden_output_synapses = static_cast<size_t>(network_config_.num_hidden * num_outputs_ * 
-                                                           network_config_.hidden_output_prob);
-        num_synapses_ = input_hidden_synapses + hidden_hidden_synapses + hidden_output_synapses;
+        // Estimate number of synapses based on connectivity
+        num_synapses_ = static_cast<size_t>(num_neurons_ * num_neurons_ * 0.1f); // 10% connectivity
         
         // Allocate GPU memory
         if (!allocateNeuralNetworkMemory()) {
@@ -523,61 +517,28 @@ size_t NetworkCUDA::performMemoryConsolidationGPU(float consolidation_strength) 
 }
 
 // ============================================================================
-// BRAIN ARCHITECTURE INTEGRATION
+// BRAIN ARCHITECTURE
 // ============================================================================
 
 void NetworkCUDA::setBrainArchitecture(std::shared_ptr<BrainModuleArchitecture> architecture) {
+    if (!architecture) {
+        std::cerr << "❌ Invalid brain architecture provided" << std::endl;
+        return;
+    }
+    
     std::lock_guard<std::mutex> lock(cuda_mutex_);
     
     brain_architecture_ = architecture;
     
-    if (brain_architecture_ && is_initialized_) {
-        // Update module count and assignments
-        auto module_names = brain_architecture_->getModuleNames();
-        num_modules_ = module_names.size();
-        
-        // Update learning state with module information
-        if (d_learning_state_) {
-            // Create module assignment mapping
-            std::vector<int> module_assignments(num_neurons_, 0);
-            
-            // Simple assignment strategy - divide neurons among modules
-            size_t neurons_per_module = num_neurons_ / num_modules_;
-            for (size_t i = 0; i < num_neurons_; ++i) {
-                module_assignments[i] = static_cast<int>(i / neurons_per_module);
-                if (module_assignments[i] >= static_cast<int>(num_modules_)) {
-                    module_assignments[i] = static_cast<int>(num_modules_ - 1);
-                }
-            }
-            
-            // Copy module assignments to GPU
-            GPULearningState h_learning_state;
-            CUDA_CHECK_RETURN(cudaMemcpy(&h_learning_state, d_learning_state_, sizeof(GPULearningState), cudaMemcpyDeviceToHost), void());
-            
-            CUDA_CHECK_RETURN(cudaMemcpy(h_learning_state.module_assignments, module_assignments.data(),
-                                        num_neurons_ * sizeof(int), cudaMemcpyHostToDevice), void());
-            
-            h_learning_state.num_modules = static_cast<int>(num_modules_);
-            
-            CUDA_CHECK_RETURN(cudaMemcpy(d_learning_state_, &h_learning_state, sizeof(GPULearningState), cudaMemcpyHostToDevice), void());
-        }
-        
-        // Update inter-module connections
-        if (d_inter_module_state_) {
-            auto connections = brain_architecture_->getConnections();
-            
-            // Update connection count
-            GPUInterModuleState h_inter_module_state;
-            CUDA_CHECK_RETURN(cudaMemcpy(&h_inter_module_state, d_inter_module_state_, sizeof(GPUInterModuleState), cudaMemcpyDeviceToHost), void());
-            
-            h_inter_module_state.num_connections = static_cast<int>(std::min(connections.size(), size_t(100))); // Max 100 connections for now
-            
-            CUDA_CHECK_RETURN(cudaMemcpy(d_inter_module_state_, &h_inter_module_state, sizeof(GPUInterModuleState), cudaMemcpyHostToDevice), void());
-        }
-        
-        std::cout << "🔗 Brain architecture integrated with " << num_modules_ << " modules" << std::endl;
-    }
+    // Configure modules and connections based on the architecture
+    // This part needs to be implemented based on how BrainArchitecture is defined
+    
+    std::cout << "🧠 Brain architecture set with " << brain_architecture_->getModuleCount() << " modules" << std::endl;
 }
+
+// ============================================================================
+// DATA SYNCHRONIZATION
+// ============================================================================
 
 void NetworkCUDA::synchronizeWithArchitecture(bool force_full_sync) {
     if (!brain_architecture_ || !is_initialized_) {
@@ -669,6 +630,61 @@ void NetworkCUDA::updatePerformanceMetrics(float kernel_time_ms) const {
     // Update utilization metrics
     updateMemoryStats();
     performance_metrics_.memory_utilization_percent = getMemoryStats().memory_utilization_percent;
+}
+
+// ============================================================================
+// DATA ACCESS METHODS
+// ============================================================================
+
+std::vector<GPUNeuronState> NetworkCUDA::getNeuronStates() const {
+    std::lock_guard<std::mutex> lock(cuda_mutex_);
+    
+    if (!is_initialized_ || !d_neurons_) {
+        return {};
+    }
+    
+    std::vector<GPUNeuronState> host_neurons(num_neurons_);
+    
+    cudaError_t error = cudaMemcpy(host_neurons.data(), d_neurons_, 
+                                   num_neurons_ * sizeof(GPUNeuronState), 
+                                   cudaMemcpyDeviceToHost);
+    
+    if (error != cudaSuccess) {
+        std::cerr << "Failed to copy neuron states from GPU: " << cudaGetErrorString(error) << std::endl;
+        return {};
+    }
+    
+    return host_neurons;
+}
+
+std::vector<float> NetworkCUDA::getSynapticWeights() const {
+    std::lock_guard<std::mutex> lock(cuda_mutex_);
+    
+    if (!is_initialized_ || !d_synapses_) {
+        return {};
+    }
+    
+    // First get the synapses from GPU
+    std::vector<GPUSynapse> host_synapses(num_synapses_);
+    
+    cudaError_t error = cudaMemcpy(host_synapses.data(), d_synapses_, 
+                                   num_synapses_ * sizeof(GPUSynapse), 
+                                   cudaMemcpyDeviceToHost);
+    
+    if (error != cudaSuccess) {
+        std::cerr << "Failed to copy synapses from GPU: " << cudaGetErrorString(error) << std::endl;
+        return {};
+    }
+    
+    // Extract weights from synapses
+    std::vector<float> weights;
+    weights.reserve(num_synapses_);
+    
+    for (const auto& synapse : host_synapses) {
+        weights.push_back(synapse.weight);
+    }
+    
+    return weights;
 }
 
 // ============================================================================
@@ -863,4 +879,175 @@ std::string getCudaDriverVersion() {
     int minor = (driver_version % 1000) / 10;
     
     return std::to_string(major) + "." + std::to_string(minor);
+}
+
+// ============================================================================
+// MISSING HELPER METHODS
+// ============================================================================
+
+bool NetworkCUDA::shouldSynchronize() const {
+    // Simple heuristic: synchronize every 100 updates or if there's significant learning activity
+    static int update_count = 0;
+    update_count++;
+    
+    if (update_count % 100 == 0) {
+        return true;
+    }
+    
+    // Check if there's significant learning activity
+    if (performance_metrics_.last_update_time_ms > performance_metrics_.avg_update_time_ms * 1.5f) {
+        return true;
+    }
+    
+    return false;
+}
+
+float NetworkCUDA::calculateFragmentationRatio() const {
+    // Simple fragmentation calculation based on memory usage patterns
+    // In a real implementation, this would analyze memory allocation patterns
+    
+    size_t free_bytes, total_bytes;
+    if (cudaMemGetInfo(&free_bytes, &total_bytes) != cudaSuccess) {
+        return 0.0f;
+    }
+    
+    size_t used_bytes = total_bytes - free_bytes;
+    if (total_bytes == 0) {
+        return 0.0f;
+    }
+    
+    // Simple heuristic: fragmentation increases with memory usage
+    float usage_ratio = static_cast<float>(used_bytes) / total_bytes;
+    
+    // Assume fragmentation is minimal below 50% usage, increases after that
+    if (usage_ratio < 0.5f) {
+        return usage_ratio * 0.1f; // Low fragmentation
+    } else {
+        return 0.05f + (usage_ratio - 0.5f) * 0.4f; // Increasing fragmentation
+    }
+}
+
+bool NetworkCUDA::allocateWorkingBuffers() {
+    try {
+        // Allocate temporary computation buffer
+        size_t temp_buffer_size = std::max(num_neurons_, num_synapses_) * sizeof(float);
+        CUDA_CHECK(cudaMalloc(&d_temp_buffer_, temp_buffer_size));
+        
+        // Allocate reduction buffer for parallel reductions
+        size_t reduction_buffer_size = 1024 * sizeof(float); // For reduction operations
+        CUDA_CHECK(cudaMalloc(&d_reduction_buffer_, reduction_buffer_size));
+        
+        // Allocate counter for consolidation operations
+        CUDA_CHECK(cudaMalloc(&d_consolidated_count_, sizeof(int)));
+        
+        std::cout << "💾 Allocated working buffers:" << std::endl;
+        std::cout << "   Temp buffer: " << temp_buffer_size / (1024*1024) << " MB" << std::endl;
+        std::cout << "   Reduction buffer: " << reduction_buffer_size / 1024 << " KB" << std::endl;
+        
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Error allocating working buffers: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool NetworkCUDA::initializeNeuralNetworkData() {
+    try {
+        // Initialize neurons with default values
+        if (d_neurons_) {
+            std::vector<GPUNeuronState> initial_neurons(num_neurons_);
+            for (size_t i = 0; i < num_neurons_; ++i) {
+                initial_neurons[i].V = -65.0f; // Resting potential
+                initial_neurons[i].ca_conc[0] = 50.0e-9f; // Resting calcium
+                initial_neurons[i].active = 1; // Set as active
+                initial_neurons[i].neuron_type = (i % 5 == 0) ? 0 : 1; // 20% inhibitory, 80% excitatory
+                // Initialize other fields to defaults...
+            }
+            
+            CUDA_CHECK(cudaMemcpy(d_neurons_, initial_neurons.data(), 
+                                 num_neurons_ * sizeof(GPUNeuronState), 
+                                 cudaMemcpyHostToDevice));
+        }
+        
+        // Initialize synapses with random weights
+        if (d_synapses_) {
+            std::vector<GPUSynapse> initial_synapses(num_synapses_);
+            std::random_device rd;
+            std::mt19937 gen(rd());
+            std::normal_distribution<float> weight_dist(0.0f, 0.1f);
+            
+            for (size_t i = 0; i < num_synapses_; ++i) {
+                initial_synapses[i].weight = weight_dist(gen);
+                initial_synapses[i].pre_neuron_idx = static_cast<int>(i % num_neurons_);
+                initial_synapses[i].post_neuron_idx = static_cast<int>((i + 1) % num_neurons_);
+                initial_synapses[i].active = 1; // Set as active
+                initial_synapses[i].is_plastic = true; // Enable plasticity
+                // Initialize other fields...
+            }
+            
+            CUDA_CHECK(cudaMemcpy(d_synapses_, initial_synapses.data(), 
+                                 num_synapses_ * sizeof(GPUSynapse), 
+                                 cudaMemcpyHostToDevice));
+        }
+        
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "❌ Error initializing neural network data: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+bool NetworkCUDA::initializeLearningStateData() {
+    // This method would initialize the learning state data structures
+    // For now, return true as the allocation already initializes to defaults
+    return true;
+}
+
+void NetworkCUDA::updateMemoryStats() const {
+    // Update memory statistics - this is called internally
+    // The actual implementation is in getMemoryStats()
+}
+
+void NetworkCUDA::cleanupLearningStateGPU() {
+    if (d_learning_state_) {
+        // Free learning state arrays
+        GPULearningState h_learning_state;
+        if (cudaMemcpy(&h_learning_state, d_learning_state_, sizeof(GPULearningState), cudaMemcpyDeviceToHost) == cudaSuccess) {
+            if (h_learning_state.eligibility_traces) cudaFree(h_learning_state.eligibility_traces);
+            if (h_learning_state.synaptic_tags) cudaFree(h_learning_state.synaptic_tags);
+            if (h_learning_state.consolidation_weights) cudaFree(h_learning_state.consolidation_weights);
+            if (h_learning_state.neuromodulator_levels) cudaFree(h_learning_state.neuromodulator_levels);
+            if (h_learning_state.firing_rate_history) cudaFree(h_learning_state.firing_rate_history);
+            if (h_learning_state.prediction_errors) cudaFree(h_learning_state.prediction_errors);
+            if (h_learning_state.learning_rates) cudaFree(h_learning_state.learning_rates);
+            if (h_learning_state.plasticity_thresholds) cudaFree(h_learning_state.plasticity_thresholds);
+            if (h_learning_state.learning_step_counts) cudaFree(h_learning_state.learning_step_counts);
+            if (h_learning_state.reward_history) cudaFree(h_learning_state.reward_history);
+            if (h_learning_state.history_indices) cudaFree(h_learning_state.history_indices);
+            if (h_learning_state.module_assignments) cudaFree(h_learning_state.module_assignments);
+            if (h_learning_state.module_boundaries) cudaFree(h_learning_state.module_boundaries);
+        }
+        
+        cudaFree(d_learning_state_);
+        d_learning_state_ = nullptr;
+    }
+    
+    if (d_inter_module_state_) {
+        // Free inter-module state arrays
+        GPUInterModuleState h_inter_module_state;
+        if (cudaMemcpy(&h_inter_module_state, d_inter_module_state_, sizeof(GPUInterModuleState), cudaMemcpyDeviceToHost) == cudaSuccess) {
+            if (h_inter_module_state.connection_strengths) cudaFree(h_inter_module_state.connection_strengths);
+            if (h_inter_module_state.usage_frequencies) cudaFree(h_inter_module_state.usage_frequencies);
+            if (h_inter_module_state.correlation_strengths) cudaFree(h_inter_module_state.correlation_strengths);
+            if (h_inter_module_state.activation_counts) cudaFree(h_inter_module_state.activation_counts);
+            if (h_inter_module_state.pre_synaptic_traces) cudaFree(h_inter_module_state.pre_synaptic_traces);
+            if (h_inter_module_state.post_synaptic_traces) cudaFree(h_inter_module_state.post_synaptic_traces);
+            if (h_inter_module_state.timing_differences) cudaFree(h_inter_module_state.timing_differences);
+            if (h_inter_module_state.source_modules) cudaFree(h_inter_module_state.source_modules);
+            if (h_inter_module_state.target_modules) cudaFree(h_inter_module_state.target_modules);
+        }
+        
+        cudaFree(d_inter_module_state_);
+        d_inter_module_state_ = nullptr;
+    }
 }

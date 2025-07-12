@@ -1,5 +1,6 @@
 #include <NeuroGen/Network.h>
 #include <NeuroGen/NeuralModule.h>
+#include <fstream>
 #include <iostream>
 #include <numeric>
 #include <algorithm>
@@ -190,6 +191,88 @@ void Network::set_module(NeuralModule* module) {
 
 NetworkStats Network::get_stats() const {
     return stats_;
+}
+
+// ============================================================================
+// PERSISTENCE METHODS
+// ============================================================================
+
+bool Network::saveToFile(const std::string& file_path) const {
+    std::ofstream ofs(file_path, std::ios::binary);
+    if (!ofs) {
+        std::cerr << "Error: Cannot open file for writing: " << file_path << std::endl;
+        return false;
+    }
+
+    // Write neuron data
+    size_t num_neurons = neurons_.size();
+    ofs.write(reinterpret_cast<const char*>(&num_neurons), sizeof(num_neurons));
+    for (const auto& neuron : neurons_) {
+        size_t neuron_id = neuron->get_id();
+        ofs.write(reinterpret_cast<const char*>(&neuron_id), sizeof(neuron_id));
+        // Note: NeuronParams are not saved, assuming they are constant
+        float potential = neuron->get_potential();
+        ofs.write(reinterpret_cast<const char*>(&potential), sizeof(potential));
+    }
+
+    // Write synapse data
+    size_t num_synapses = synapses_.size();
+    ofs.write(reinterpret_cast<const char*>(&num_synapses), sizeof(num_synapses));
+    for (const auto& synapse : synapses_) {
+        ofs.write(reinterpret_cast<const char*>(&synapse->id), sizeof(synapse->id));
+        ofs.write(reinterpret_cast<const char*>(&synapse->pre_neuron_id), sizeof(synapse->pre_neuron_id));
+        ofs.write(reinterpret_cast<const char*>(&synapse->post_neuron_id), sizeof(synapse->post_neuron_id));
+        ofs.write(reinterpret_cast<const char*>(&synapse->weight), sizeof(synapse->weight));
+        ofs.write(reinterpret_cast<const char*>(&synapse->axonal_delay), sizeof(synapse->axonal_delay));
+    }
+
+    return true;
+}
+
+bool Network::loadFromFile(const std::string& file_path) {
+    std::ifstream ifs(file_path, std::ios::binary);
+    if (!ifs) {
+        std::cerr << "Error: Cannot open file for reading: " << file_path << std::endl;
+        return false;
+    }
+
+    // Clear existing network
+    neurons_.clear();
+    synapses_.clear();
+    neuron_map_.clear();
+    incoming_synapse_map_.clear();
+    outgoing_synapse_map_.clear();
+
+    // Read neuron data
+    size_t num_neurons;
+    ifs.read(reinterpret_cast<char*>(&num_neurons), sizeof(num_neurons));
+    NeuronParams params; // Assuming default params
+    for (size_t i = 0; i < num_neurons; ++i) {
+        size_t neuron_id;
+        float potential;
+        ifs.read(reinterpret_cast<char*>(&neuron_id), sizeof(neuron_id));
+        ifs.read(reinterpret_cast<char*>(&potential), sizeof(potential));
+        auto neuron = std::make_unique<Neuron>(neuron_id, params);
+        neuron->set_potential(potential); // Need to add set_potential to Neuron class
+        add_neuron(std::move(neuron));
+    }
+
+    // Read synapse data
+    size_t num_synapses;
+    ifs.read(reinterpret_cast<char*>(&num_synapses), sizeof(num_synapses));
+    for (size_t i = 0; i < num_synapses; ++i) {
+        size_t id, pre_id, post_id;
+        double weight, delay;
+        ifs.read(reinterpret_cast<char*>(&id), sizeof(id));
+        ifs.read(reinterpret_cast<char*>(&pre_id), sizeof(pre_id));
+        ifs.read(reinterpret_cast<char*>(&post_id), sizeof(post_id));
+        ifs.read(reinterpret_cast<char*>(&weight), sizeof(weight));
+        ifs.read(reinterpret_cast<char*>(&delay), sizeof(delay));
+        createSynapse(pre_id, post_id, "excitatory", static_cast<int>(delay), static_cast<float>(weight));
+    }
+
+    rebuild_connection_maps();
+    return true;
 }
 
 // ============================================================================

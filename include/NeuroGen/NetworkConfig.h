@@ -38,7 +38,7 @@ struct NetworkConfig {
     double neurogenesis_rate = 0.001;        // neurons/ms base rate
     double activity_threshold_low = 0.1;     // For underactivation
     double activity_threshold_high = 10.0;   // For hyperactivation
-    size_t max_neurons = 4096;
+    size_t max_neurons = 65536;              // MASSIVE SCALE-UP: Support up to 64K neurons per module
     
     // Pruning parameters
     bool enable_pruning = true;
@@ -69,14 +69,14 @@ struct NetworkConfig {
     float homeostatic_strength = 0.001f;     // Homeostatic scaling strength
     
     // Network topology parameters
-    int input_size = 64;                     // Number of input neurons
-    int output_size = 10;                    // Number of output neurons
-    int hidden_size = 256;                   // Number of hidden neurons
+    int input_size = 256;                    // INCREASED: 256 input neurons for richer input processing
+    int output_size = 64;                    // INCREASED: 64 output neurons for complex action space  
+    int hidden_size = 8192;                  // MASSIVE SCALE-UP: 8K hidden neurons for emergent intelligence
     
-    // Connection probabilities
-    float input_hidden_prob = 0.8f;          // Input to hidden connection probability
-    float hidden_hidden_prob = 0.1f;         // Hidden to hidden connection probability
-    float hidden_output_prob = 0.9f;         // Hidden to output connection probability
+    // Connection probabilities - OPTIMIZED for large-scale networks
+    float input_hidden_prob = 0.15f;         // REDUCED: Sparse connectivity for computational efficiency
+    float hidden_hidden_prob = 0.05f;        // REDUCED: Very sparse recurrent connections for stability  
+    float hidden_output_prob = 0.3f;         // REDUCED: Selective output connections for focused behavior
     
     // Weight initialization
     float weight_init_std = 0.5f;            // Standard deviation for weight initialization
@@ -89,11 +89,11 @@ struct NetworkConfig {
     float exc_ratio = 0.8f;  // Excitatory connection ratio
     float simulation_time = 50.0f;
 
-    // TopologyGenerator-specific fields
-    int numColumns = 4;                       // Number of cortical columns
-    int neuronsPerColumn = 256;               // Neurons per column
-    int localFanOut = 30;                     // Local fan-out connections per neuron
-    int localFanIn = 30;                      // Local fan-in connections per neuron
+    // TopologyGenerator-specific fields - SCALED UP for massive neural architecture
+    int numColumns = 16;                      // INCREASED: 16 cortical columns for complex organization
+    int neuronsPerColumn = 512;               // MASSIVE INCREASE: 512 neurons per column (16×512 = 8,192 total)
+    int localFanOut = 50;                     // INCREASED: 50 local fan-out connections for richer dynamics
+    int localFanIn = 50;                      // INCREASED: 50 local fan-in connections for complex integration
     
     // Synaptic weight ranges
     float wExcMin = 0.05f;                    // Minimum excitatory weight

@@ -12,7 +12,7 @@
 #include <cublas_v2.h>
 #include <curand.h>
 
-// NeuroGen Framework Includes
+// NeuroGen Framework includes
 #include "NeuroGen/Network.h"
 #include "NeuroGen/NetworkConfig.h"
 #include "NeuroGen/LearningState.h"
@@ -102,6 +102,7 @@ public:
         size_t temporary_buffer_bytes = 0;
         size_t peak_usage_bytes = 0;
         float fragmentation_ratio = 0.0f;
+        float memory_utilization_percent = 0.0f;
     };
     
     /**
@@ -259,7 +260,7 @@ public:
      * @brief Get neuron states
      * @return Vector of neuron membrane potentials
      */
-    std::vector<float> getNeuronStates() const;
+    std::vector<GPUNeuronState> getNeuronStates() const;
     
     /**
      * @brief Get synaptic weights
@@ -748,6 +749,18 @@ private:
      * @return Grid size
      */
     int calculateGridSize(int problem_size, int block_size) const;
+    
+    /**
+     * @brief Check if synchronization with architecture is needed
+     * @return True if synchronization is needed
+     */
+    bool shouldSynchronize() const;
+    
+    /**
+     * @brief Calculate memory fragmentation ratio
+     * @return Fragmentation ratio (0.0 = no fragmentation, 1.0 = fully fragmented)
+     */
+    float calculateFragmentationRatio() const;
     
     /**
      * @brief Time CUDA kernel execution

@@ -165,12 +165,27 @@ void SpecializedModule::update_internal_metrics() {
     for (const float& state : internal_state_) {
         total_activity += std::abs(state);
     }
-    
+
     if (!internal_state_.empty()) {
         // Update performance metrics that can be accessed by the controller
-        float avg_activity = total_activity / internal_state_.size();
-        
+        // float avg_activity = total_activity / internal_state_.size();
+
         // This would typically update performance metrics in the parent class
         // The exact implementation depends on the parent class interface
+    }
+}
+
+void SpecializedModule::apply_reinforcement(float reward, float global_reward) {
+    // This is a placeholder implementation.
+    // The actual implementation would involve more complex logic, 
+    // such as updating weights based on the reward signal.
+    
+    // std::cout << "Applying reinforcement to module " << get_name() 
+    //           << " with reward " << reward 
+    //           << " and global reward " << global_reward << std::endl;
+
+    // Example of a simple learning rule - update internal state based on reward
+    for (float& state : internal_state_) {
+        state += learning_rate_ * reward * (state > 0 ? 1.0f : -1.0f);
     }
 }

@@ -138,7 +138,6 @@ std::vector<ScreenElement> VisualInterface::detect_screen_elements() {
 }
 
 cv::Mat VisualInterface::get_last_frame() const {
-    std::lock_guard<std::mutex> lock(screen_mutex_);
     return current_screen_;
 }
 
@@ -190,8 +189,8 @@ void VisualInterface::apply_visual_feature_enhancement(std::vector<float>& featu
     features = enhanced_features;
 }
 
-std::vector<float> VisualInterface::get_attention_map() const {
-    std::vector<float> attention_map(target_width_ * target_height_, 0.0f);
+cv::Mat VisualInterface::get_attention_map() const {
+    cv::Mat attention_map = cv::Mat::zeros(target_height_, target_width_, CV_32F);
     
     // Generate attention map based on detected elements
     for (const auto& element : detected_elements_) {
@@ -210,8 +209,8 @@ std::vector<float> VisualInterface::get_attention_map() const {
                 float attention_value = element.confidence * std::exp(-distance_sq / (2 * sigma * sigma));
                 
                 size_t idx = y * target_width_ + x;
-                if (idx < attention_map.size()) {
-                    attention_map[idx] = std::max(attention_map[idx], attention_value);
+                if (idx < attention_map.total()) {
+                    attention_map.at<float>(y, x) = std::max(attention_map.at<float>(y, x), attention_value);
                 }
             }
         }
@@ -227,27 +226,18 @@ bool VisualInterface::is_element_visible(const ScreenElement& element) const {
            element.y + element.height <= target_height_;
 }
 
-void VisualInterface::send_to_visual_cortex(SpecializedModule* visual_cortex) {
-    if (!visual_cortex) return;
-    
-    std::vector<float> visual_features = extract_visual_features();
-    std::vector<float> attention_map = get_attention_map();
-    
-    // Combine visual features with attention
-    std::vector<float> attended_features;
-    attended_features.reserve(visual_features.size());
-    
-    size_t attention_scale = visual_features.size() / std::max(size_t(1), attention_map.size());
-    
-    for (size_t i = 0; i < visual_features.size(); ++i) {
-        size_t attention_idx = i / std::max(size_t(1), attention_scale);
-        float attention_weight = (attention_idx < attention_map.size()) ? 
-                                attention_map[attention_idx] : 1.0f;
-        attended_features.push_back(visual_features[i] * (0.5f + 0.5f * attention_weight));
-    }
-    
+void VisualInterface::send_to_visual_cortex(const cv::Mat& image) {
+    if (!visual_processor_) return;
+
+    // Process the provided image through the visual processor to get features
+    std::vector<float> visual_features = visual_processor_->processPixels(image);
+
+    // The rest of the logic seems to rely on internal state (attention maps, etc.)
+    // that might not directly correspond to the input image. For now, we'll
+    // process the extracted features directly.
+
     // Process through visual cortex
-    visual_cortex->process(attended_features);
+    visual_processor_->process(visual_features);
 }
 
 ScreenElement VisualInterface::find_element_by_type(const std::string& type) const {

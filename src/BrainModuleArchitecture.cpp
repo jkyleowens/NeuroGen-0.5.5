@@ -623,3 +623,8 @@ size_t BrainModuleArchitecture::performGlobalMemoryConsolidation(float consolida
     // TODO: Implement global memory consolidation
     return 0;
 }
+
+size_t BrainModuleArchitecture::getModuleCount() const {
+    std::lock_guard<std::mutex> lock(modules_mutex_);
+    return modules_.size();
+}
