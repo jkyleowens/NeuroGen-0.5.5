@@ -17,12 +17,13 @@
 #include <mutex>
 #include <map>
 
+#include "NeuroGen/SpecializedModule.h"
+
 #ifdef USE_OPENCV
 #include <opencv2/opencv.hpp>
 #endif
 
 // Forward declarations
-class SpecializedModule;
 
 // ============================================================================
 // VISUAL INTERFACE CLASS DECLARATION
@@ -49,14 +50,20 @@ public:
     bool is_element_visible(const ScreenElement& element) const;
     
     // Visual processing
+    std::vector<float> get_visual_features(const ScreenElement& element) const;
+    cv::Mat get_last_frame() const;
+    cv::Mat get_attention_map() const;
     std::vector<float> extract_visual_features() const;
     void apply_visual_feature_enhancement(std::vector<float>& features) const;
-    std::vector<float> get_attention_map() const;
-    
-    // Module integration
-    void send_to_visual_cortex(SpecializedModule* visual_cortex);
+    void send_to_visual_cortex(const cv::Mat& image);
 
 private:
+    // Internal processing
+    void capture_loop();
+    void preprocess_image();
+    void extract_text_elements();
+    void detect_interactive_elements();
+
     // Configuration
     int target_width_, target_height_;
     float detection_threshold_;
@@ -69,17 +76,12 @@ private:
     mutable std::mutex screen_mutex_;
     
     cv::Mat current_screen_;
+    std::chrono::steady_clock::time_point last_capture_time_;
     
     std::unique_ptr<RealScreenCapture> real_screen_capture_;
     std::unique_ptr<GUIElementDetector> gui_detector_;
     std::unique_ptr<OCRProcessor> ocr_processor_;
     std::unique_ptr<BioVisualProcessor> visual_processor_;
-
-    // Internal methods
-    void capture_loop();
-    void preprocess_image();
-    void extract_text_elements();
-    void detect_interactive_elements();
 };
 
 // ============================================================================

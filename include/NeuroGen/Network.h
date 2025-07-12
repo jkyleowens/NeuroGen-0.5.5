@@ -191,6 +191,24 @@ public:
     NetworkStats get_stats() const;
 
     // ========================================================================
+    // PERSISTENCE - Save and Load Network State
+    // ========================================================================
+    
+    /**
+     * @brief Saves the complete network state to a binary file.
+     * @param file_path The path to the file where the network will be saved.
+     * @return True if saving was successful, false otherwise.
+     */
+    bool saveToFile(const std::string& file_path) const;
+
+    /**
+     * @brief Loads the network state from a binary file.
+     * @param file_path The path to the file from which to load the network.
+     * @return True if loading was successful, false otherwise.
+     */
+    bool loadFromFile(const std::string& file_path);
+
+    // ========================================================================
     // ADVANCED BIOLOGICAL FEATURES - Cutting-Edge Neuroscience
     // ========================================================================
     

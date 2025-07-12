@@ -6,7 +6,7 @@ obj/DecisionAndActionSystems.o: src/DecisionAndActionSystems.cpp \
   include/NeuroGen/NetworkStats.h include/NeuroGen/NetworkConfig.h \
   include/NeuroGen/TopologyGenerator.h \
   include/NeuroGen/cuda/GPUNeuralStructures.h \
-  include/NeuroGen/NeuralConstants.h \
+  include/NeuroGen/NeuralConstants.h include/NeuroGen/LearningState.h \
   include/NeuroGen/AutonomousLearningAgent.h \
   include/NeuroGen/ControllerModule.h include/NeuroGen/ScreenElement.h \
   include/NeuroGen/VisualInterface.h \
@@ -125,4 +125,5 @@ obj/DecisionAndActionSystems.o: src/DecisionAndActionSystems.cpp \
   include/NeuroGen/BioVisualProcessor.h \
   include/NeuroGen/BrainModuleArchitecture.h \
   include/NeuroGen/ModularNeuralNetwork.h \
+  include/NeuroGen/LearningStateManager.h \
   include/NeuroGen/InputController.h include/NeuroGen/SafetyManager.h

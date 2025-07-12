@@ -27,9 +27,19 @@
 #include <vector>
 #include <chrono>
 #include <map>
+#include <filesystem>
 
 // Forward declarations for remaining classes
 // class EnhancedLearningSystem; // Removed to avoid CUDA dependencies
+
+/**
+ * @brief Defines the operating modes for the agent.
+ */
+enum class OperatingMode {
+    AUTONOMOUS_CONTROL,
+    LANGUAGE_TRAINING
+};
+
 
 /**
  * @brief Memory system for autonomous learning agent
@@ -143,12 +153,8 @@ enum class ActionType {
     CLICK,
     SCROLL,
     TYPE,
-    NAVIGATE,
-    WAIT,
-    OBSERVE,
-    BACK,
-    FORWARD,
-    REFRESH
+    ENTER,
+    BACKSPACE
 };
 
 /**
@@ -181,7 +187,6 @@ struct BrowsingState {
  */
 struct BrowsingAction {
     ActionType type;
-    std::string target_url;         // For NAVIGATE actions
     std::string text_content;       // For TYPE actions
     int x_coordinate;               // For CLICK actions
     int y_coordinate;               // For CLICK actions
@@ -191,7 +196,7 @@ struct BrowsingAction {
     float expected_reward;          // Expected reward for this action
     std::string description;        // Human-readable description
     
-    BrowsingAction() : type(ActionType::WAIT), x_coordinate(0), y_coordinate(0),
+    BrowsingAction() : type(ActionType::CLICK), x_coordinate(0), y_coordinate(0),
                       scroll_amount(0), scroll_direction(ScrollDirection::DOWN),
                       confidence(0.5f), expected_reward(0.0f) {}
 };
@@ -225,56 +230,34 @@ struct AutonomousGoal {
  */
 class AutonomousLearningAgent {
 public:
-    // Type aliases for convenience
-    using ActionCandidates = std::vector<BrowsingAction>;
-    using ActionValues = std::vector<float>;
-    
-    // ========================================================================
-    // CONSTRUCTION AND INITIALIZATION
-    // ========================================================================
-    
-    /**
-     * @brief Construct autonomous learning agent
-     * @param config Network configuration for internal modules
-     */
-    explicit AutonomousLearningAgent(const NetworkConfig& config);
-    
-    /**
-     * @brief Virtual destructor
-     */
-    virtual ~AutonomousLearningAgent();
-    
-    /**
-     * @brief Initialize the autonomous learning agent
-     * @return Success status of initialization
-     */
-    bool initialize();
-    
-    /**
-     * @brief Update agent state and processing
-     * @param dt Time step for update
-     */
+    // Constructor and Destructor
+    AutonomousLearningAgent(const NetworkConfig& config);
+    ~AutonomousLearningAgent();
+
+    // Core Lifecycle Methods
+    bool initialize(bool reset_model = false);
     void update(float dt);
-    
-    /**
-     * @brief Shutdown the agent and cleanup resources
-     */
     void shutdown();
-    
+
+    // Autonomous Learning Control
+    void startAutonomousLearning();
+    void stopAutonomousLearning();
+
+    // Command Handling
+    void handleCommand(const std::string& command);
+
+    // State Management
+    bool saveAgentState(const std::string& save_path);
+    bool loadAgentState(const std::string& save_path);
+
+    // Configuration
+    void setPassiveMode(bool is_passive);
+    void setDetailedLogging(bool detailed_logging) { detailed_logging_ = detailed_logging; }
+
     // ========================================================================
     // AUTONOMOUS LEARNING INTERFACE
     // ========================================================================
-    
-    /**
-     * @brief Start autonomous learning mode
-     */
-    void startAutonomousLearning();
-    
-    /**
-     * @brief Stop autonomous learning mode
-     */
-    void stopAutonomousLearning();
-    
+
     /**
      * @brief Perform one step of autonomous learning
      * @param dt Time step
@@ -287,7 +270,20 @@ public:
      * @param goal Autonomous goal to pursue
      */
     void addLearningGoal(std::unique_ptr<AutonomousGoal> goal);
-    
+
+    // Status and Metrics
+    std::string getStatusReport() const;
+    float getLearningProgress() const;
+    std::map<std::string, float> getAttentionWeights() const;
+    BrowsingState getCurrentEnvironmentState() const;
+    std::string getTrainingStatistics() const;
+    void setTrainingStatistics(const std::string& stats_json);
+    bool processLanguageInput(const std::string& language_input);
+    void applyReward(float reward);
+    std::string generateLanguageResponse();
+    void updateLanguageMetrics(float comprehension_score);
+    std::string generateNextWordPrediction(const std::string& context, const std::vector<float>& neural_output);
+
     // ========================================================================
     // CORE PROCESSING METHODS
     // ========================================================================
@@ -342,51 +338,8 @@ public:
      * @brief Set environment sensor function
      * @param sensor Function that returns environmental state
      */
-    void setEnvironmentSensor(std::function<BrowsingState()> sensor) {
-        environment_sensor_ = sensor;
-    }
-    
-    /**
-     * @brief Set action executor function
-     * @param executor Function that executes actions in environment
-     */
-    void setActionExecutor(std::function<void(const BrowsingAction&)> executor) {
-        action_executor_ = executor;
-    }
-    
-    /**
-     * @brief Get current environment state
-     * @return Current browsing state
-     */
-    BrowsingState getCurrentEnvironmentState() const;
-    
-    // ========================================================================
-    // MONITORING AND DIAGNOSTICS
-    // ========================================================================
-    
-    /**
-     * @brief Get agent status report
-     * @return Status string
-     */
-    std::string getStatusReport() const;
-    
-    /**
-     * @brief Get learning progress
-     * @return Progress value [0-1]
-     */
-    float getLearningProgress() const;
-    
-    /**
-     * @brief Get current attention weights
-     * @return Map of module attention weights
-     */
-    std::map<std::string, float> getAttentionWeights() const;
-    
-    /**
-     * @brief Enable/disable detailed logging
-     * @param enable Enable flag
-     */
-    void enableDetailedLogging(bool enable) { detailed_logging_ = enable; }
+    void setEnvironmentSensor(std::function<BrowsingState()> sensor);
+    void setActionExecutor(std::function<void(const BrowsingAction&)> executor);
 
 private:
     // ========================================================================
@@ -395,48 +348,61 @@ private:
     
     // Configuration
     NetworkConfig config_;
+    OperatingMode current_mode_;
     bool is_learning_active_;
     bool detailed_logging_;
+    bool is_passive_mode_;
     float simulation_time_;
-    
-    // Core components
+    std::chrono::steady_clock::time_point last_action_time_;
+    std::mt19937 gen;
+    std::string save_path_;
+    std::function<BrowsingState()> environment_sensor_;
+    std::function<void(const BrowsingAction&)> action_executor_;
+
+    // Core Components
     std::unique_ptr<ControllerModule> controller_module_;
     std::unique_ptr<MemorySystem> memory_system_;
     std::unique_ptr<VisualInterface> visual_interface_;
     std::unique_ptr<AttentionController> attention_controller_;
     std::unique_ptr<BrainModuleArchitecture> brain_architecture_;
+
+    // Input/Output Systems
     std::unique_ptr<RealScreenCapture> real_screen_capture_;
     std::unique_ptr<InputController> input_controller_;
     std::unique_ptr<OCRProcessor> ocr_processor_;
     std::unique_ptr<GUIElementDetector> gui_detector_;
-    
-    // Environment interaction
-    std::function<BrowsingState()> environment_sensor_;
-    std::function<void(const BrowsingAction&)> action_executor_;
-    
-    // State tracking
-    std::vector<float> environmental_context_;
-    BrowsingAction last_action_;
-    std::vector<std::unique_ptr<AutonomousGoal>> learning_goals_;
-    
-    // Missing member variables needed by DecisionAndActionSystems.cpp
+
+    // Neural Modules
     std::unordered_map<std::string, std::unique_ptr<SpecializedModule>> modules_;
-    std::vector<float> current_goals_;
-    float exploration_rate_;
-    // std::unique_ptr<EnhancedLearningSystem> learning_system_; // Removed to avoid CUDA dependencies
+
+    // State Vectors
+    std::vector<float> environmental_context_;
     std::vector<float> global_state_;
+    std::vector<float> current_goals_;
+
+    // Learning Parameters
+    float exploration_rate_;
+    float learning_rate_;
+    float global_reward_signal_;
+
+    // Action and Goal Management
     BrowsingAction selected_action_;
-    
-    // Performance metrics
-    struct {
+    std::vector<std::unique_ptr<AutonomousGoal>> learning_goals_;
+    std::vector<ScreenElement> detected_screen_elements_;
+    size_t previous_screen_elements_count_ = 0;
+
+    // Language and Text
+    std::string last_screen_text_;
+    std::string last_language_input_;
+    std::vector<std::string> vocabulary_;
+
+    // Metrics and Performance Tracking
+    struct AgentMetrics {
         int total_actions = 0;
         int successful_actions = 0;
         float average_reward = 0.0f;
         int network_expansions = 0;
     } metrics_;
-    
-    float global_reward_signal_;
-    float learning_rate_;
     
     // ========================================================================
     // INTERNAL METHODS
@@ -446,6 +412,22 @@ private:
     void initialize_attention_system();
     void update_learning_goals();
     void log_action(const std::string& action);
+    void initializeSpecializedModules();
+    void setupDefaultLearningGoals();
+    
+    // Real screen-based reinforcement learning methods
+    void processRealScreenInput();
+    void executeRealAction();
+    float computeScreenBasedReward();
+    float evaluateGoalProgress();
+    float evaluateExplorationEffectiveness();
+    float evaluateActionPenalties();
+    float evaluateLearningEfficiency();
+    float evaluateTaskCompletion();
+    float evaluateLearningImprovement();
+    void learnFromActionOutcome(float reward);
+    void storeEpisodeInMemory(float reward);
+    void logLearningProgress(int step, float reward);
     
     // Missing method declarations needed by DecisionAndActionSystems.cpp
     void update_attention_weights();
@@ -453,16 +435,19 @@ private:
     std::vector<float> collect_inter_module_signals(const std::string& target_module);
     void distribute_module_output(const std::string& source_module, const std::vector<float>& output);
     void make_decision();
+    std::vector<BrowsingAction> translate_neural_output_to_actions(const std::vector<float>& neural_output);
+    std::vector<BrowsingAction> generate_base_action_candidates();
     std::vector<float> evaluate_action_candidates(const std::vector<BrowsingAction>& candidates, 
                                                    const std::vector<MemorySystem::MemoryTrace>& similar_episodes);
-    BrowsingAction select_action_with_exploration(const std::vector<BrowsingAction>& candidates, 
+    std::vector<BrowsingAction> generate_action_candidates_for_goal(const std::vector<float>& goal);
+    void select_action_with_exploration(const std::vector<BrowsingAction>& candidates, 
                                                    const std::vector<float>& values);
     void execute_action();
     void execute_click_action();
     void execute_scroll_action();
     void execute_type_action();
-    void execute_navigate_action();
-    void execute_wait_action();
+    void execute_enter_action();
+    void execute_backspace_action();
     std::vector<float> convert_action_to_motor_command(const BrowsingAction& action);
     void learn_from_feedback();
     float compute_action_reward();
@@ -471,6 +456,25 @@ private:
     void update_global_state();
     void consolidate_learning();
     void transfer_knowledge_between_modules();
+    bool isActionValid(const BrowsingAction& action);
+
+    // Helper methods for persistence and neural network management
+    bool saveModule(const std::string& module_name, const std::string& save_path);
+    bool loadModule(const std::string& module_name, const std::string& load_path);
+    int getTotalNeuronCount() const;
+    int getModuleNeuronCount(const std::string& module_name) const;
+    std::string getCurrentTimestamp() const;
+    
+    // Language processing helper methods
+    std::vector<float> extractLanguageFeatures(const std::string& text) const;
+    float computeLanguageComprehension(const std::vector<float>& neural_output) const;
+    std::string convertNeuralToLanguage(const std::vector<float>& neural_features) const;
+
+    /**
+     * @brief Update exploration rate based on performance
+     */
+    float updateExplorationRate(float current_rate, float recent_performance, 
+                               float target_performance = 0.8f);
 };
 
 // ============================================================================
@@ -496,11 +500,5 @@ float computeBrowsingStateSimilarity(const BrowsingState& state1, const Browsing
  * @brief Compute action value using simple heuristics
  */
 float computeActionValue(const BrowsingAction& action, const BrowsingState& state);
-
-/**
- * @brief Update exploration rate based on performance
- */
-float updateExplorationRate(float current_rate, float recent_performance, 
-                           float target_performance = 0.8f);
 
 #endif // AUTONOMOUS_LEARNING_AGENT_H

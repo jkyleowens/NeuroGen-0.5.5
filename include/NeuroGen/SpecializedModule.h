@@ -99,9 +99,20 @@ public:
     
     /**
      * @brief Set attention weight for this module
-     * @param weight Attention weight (0.0 to 1.0)
+     * @param weight New attention weight value
      */
     void set_attention_weight(float weight);
+
+    /**
+     * @brief Applies reinforcement signal to the module.
+     * @param reward The reward signal.
+     * @param global_reward The global reward signal.
+     */
+    void apply_reinforcement(float reward, float global_reward);
+    
+    // ========================================================================
+    // GETTERS AND SETTERS
+    // ========================================================================
     
     /**
      * @brief Get current attention weight

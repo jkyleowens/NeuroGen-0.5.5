@@ -3,6 +3,7 @@
 
 #include <NeuroGen/NeuralModule.h>
 #include <NeuroGen/TopologyGenerator.h>
+#include <NeuroGen/LearningState.h>
 #include <memory>
 #include <functional>
 #include <chrono>
@@ -97,23 +98,15 @@ public:
      * @param state ModuleState structure to load
      */
     virtual void loadState(const ModuleState& state);
-    
+
     /**
-     * @brief Save state to file with enhanced serialization
-     * @param filename Output filename
-     * @return Success status
+     * @brief Get the current activity level of the module
+     * @return Activity level (e.g., based on attention)
      */
-    bool save_state(const std::string& filename) const override;
-    
-    /**
-     * @brief Load state from file with enhanced deserialization
-     * @param filename Input filename  
-     * @return Success status
-     */
-    bool load_state(const std::string& filename) override;
+    virtual float getActivityLevel() const;
     
     // ========================================================================
-    // ATTENTION MECHANISM
+    // ATTENTION AND MODULATION
     // ========================================================================
     
     /**
@@ -193,7 +186,52 @@ public:
     void receiveInterModuleSignal(const std::vector<float>& signal_data,
                                   const std::string& source_port);
     
-    // ========================================================================
+    // =======================================================================
+    // LEARNING AND PLASTICITY
+    // =======================================================================
+
+    /**
+     * @brief Get the current learning state of the module
+     * @return ModuleLearningState structure with learning-related data
+     */
+    ModuleLearningState getLearningState() const;
+
+    /**
+     * @brief Apply a learning state to the module
+     * @param state The learning state to apply
+     * @return True if the state was applied successfully, false otherwise
+     */
+    bool applyLearningState(const ModuleLearningState& state);
+
+    /**
+     * @brief Get the synaptic weights of the module
+     * @return A vector of synaptic weights
+     */
+    std::vector<float> getSynapticWeights() const;
+
+    /**
+     * @brief Set the synaptic weights of the module
+     * @param weights A vector of synaptic weights
+     * @return True if the weights were set successfully, false otherwise
+     */
+    bool setSynapticWeights(const std::vector<float>& weights);
+
+    /**
+     * @brief Perform memory consolidation based on tagged synapses
+     * @param consolidation_strength The strength of the consolidation
+     * @return The number of synapses consolidated
+     */
+    size_t performMemoryConsolidation(float consolidation_strength);
+
+    /**
+     * @brief Update neuromodulator levels
+     * @param dopamine Dopamine level
+     * @param acetylcholine Acetylcholine level
+     * @param norepinephrine Norepinephrine level
+     */
+    void updateNeuromodulators(float dopamine, float acetylcholine, float norepinephrine);
+    
+    // =======================================================================
     // ACTIVITY AND STATUS
     // ========================================================================
     
@@ -216,9 +254,9 @@ public:
     virtual std::string getSpecializationType() const { return "general"; }
 
 protected:
-    // ========================================================================
+    // =======================================================================
     // PROTECTED MEMBER VARIABLES
-    // ========================================================================
+    // =======================================================================
     
     float attention_weight_;
     bool is_active_;
@@ -237,9 +275,27 @@ protected:
     // Neuromodulator levels
     std::map<std::string, float> neuromodulator_levels_;
     
-    // ========================================================================
+    // Learning and Plasticity
+    std::vector<float> eligibility_traces_;
+    std::vector<float> synaptic_tags_;
+    std::vector<float> firing_rate_buffer_;
+    std::vector<float> prediction_error_history_;
+    size_t performance_history_index_;
+    
+    float dopamine_level_ = 0.0f;
+    float acetylcholine_level_ = 0.0f;
+    float norepinephrine_level_ = 0.0f;
+    
+    float synaptic_tag_threshold_ = 0.5f;
+    float eligibility_decay_rate_ = 0.95f;
+    float consolidation_threshold_ = 1.0f;
+
+    std::chrono::steady_clock::time_point last_consolidation_;
+    bool consolidation_pending_ = false;
+
+    // =======================================================================
     // PROTECTED HELPER METHODS
-    // ========================================================================
+    // =======================================================================
     
     /**
      * @brief Update internal biological processes
@@ -247,6 +303,43 @@ protected:
      */
     void updateBiologicalProcesses(float dt);
     
+    /**
+     * @brief Initialize learning traces and buffers
+     */
+    void initializeLearningTraces();
+
+    /**
+     * @brief Update eligibility traces for synapses
+     * @param reward_signal The global reward signal
+     * @param dt Time step
+     */
+    void updateEligibilityTraces(float reward_signal, float dt);
+
+    /**
+     * @brief Apply synaptic tags based on novelty
+     * @param novelty_signal A signal indicating novelty
+     */
+    void applySynapticTagging(float novelty_signal);
+
+    /**
+     * @brief Calculate prediction error
+     * @param expected_output The expected output vector
+     * @return The calculated prediction error
+     */
+    float getPredictionError(const std::vector<float>& expected_output) const;
+
+    /**
+     * @brief Update the history of performance metrics
+     * @param prediction_error The latest prediction error
+     */
+    void updatePerformanceHistory(float prediction_error);
+
+    /**
+     * @brief Check if memory consolidation should be performed
+     * @return True if consolidation is needed, false otherwise
+     */
+    bool shouldConsolidate() const;
+
     /**
      * @brief Compute attention-weighted output
      * @param raw_output Raw module output

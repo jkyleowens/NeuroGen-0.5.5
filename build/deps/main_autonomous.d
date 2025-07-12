@@ -123,9 +123,10 @@ obj/main_autonomous.o: src/main_autonomous.cpp \
   include/NeuroGen/EnhancedNeuralModule.h \
   include/NeuroGen/TopologyGenerator.h \
   include/NeuroGen/cuda/GPUNeuralStructures.h \
-  include/NeuroGen/NeuralConstants.h \
+  include/NeuroGen/NeuralConstants.h include/NeuroGen/LearningState.h \
   include/NeuroGen/BrainModuleArchitecture.h \
   include/NeuroGen/ModularNeuralNetwork.h \
+  include/NeuroGen/LearningStateManager.h \
   include/NeuroGen/InputController.h \
   include/NeuroGen/NetworkIntegration.h \
   include/NeuroGen/cuda/GridBlockUtils.cuh \

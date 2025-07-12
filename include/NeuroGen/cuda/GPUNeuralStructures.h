@@ -131,6 +131,7 @@ struct GPUNeuronState {
     float V;                            // Membrane potential (mV)
     float u;                            // Recovery variable (Izhikevich)
     float I_syn[MAX_COMPARTMENTS];      // Synaptic currents per compartment
+    float I_ext;                        // External current input
     float ca_conc[MAX_COMPARTMENTS];    // Calcium concentrations
     
     // === TIMING AND ACTIVITY ===

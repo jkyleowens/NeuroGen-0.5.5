@@ -9,6 +9,8 @@
 #include <thread>
 #include <chrono>
 #include <functional>
+#include <iomanip>
+#include <string>
 
 // Core NeuroGen includes
 #include "NeuroGen/TaskAutomationModules.h"
@@ -17,33 +19,32 @@
 #include "NeuroGen/AutonomousLearningAgent.h"
 #include "NeuroGen/NetworkIntegration.h"
 #include "NeuroGen/ControllerModule.h"
-#include <iomanip>
 
 // Function to create a default configuration for a neural module
 NetworkConfig create_default_config() {
     NetworkConfig config;
-    config.num_neurons = 256; // Enhanced neuron count for version 0.5.5
+    config.num_neurons = 8192; // MASSIVE scale-up: 8K neurons per base module for free-thinking AI
     config.enable_neurogenesis = true;
     config.enable_stdp = true;
     config.enable_pruning = true;
     config.enable_structural_plasticity = true; // Enable dynamic synaptogenesis
     
-    // Enhanced connectivity parameters for version 0.5.5
-    config.input_hidden_prob = 0.6f;
-    config.hidden_hidden_prob = 0.3f;
-    config.hidden_output_prob = 0.8f;
+    // Enhanced connectivity parameters for version 0.5.5 - optimized for large scale
+    config.input_hidden_prob = 0.15f;  // Reduced for computational efficiency at scale
+    config.hidden_hidden_prob = 0.08f; // Sparse connectivity for emergent patterns
+    config.hidden_output_prob = 0.4f;  // Selective output connections
     config.exc_ratio = 0.8f;
     
-    // Synaptic parameters
-    config.min_weight = 0.01f;
-    config.max_weight = 1.5f;
-    config.weight_init_std = 0.3f;
+    // Synaptic parameters optimized for large-scale networks
+    config.min_weight = 0.001f;        // Finer resolution for large networks
+    config.max_weight = 2.0f;          // Increased for stronger signal propagation
+    config.weight_init_std = 0.15f;    // Reduced for stability at scale
     
-    // Topology parameters
-    config.numColumns = 4;
-    config.neuronsPerColumn = 64;
-    config.localFanOut = 15;
-    config.localFanIn = 15;
+    // Topology parameters - MASSIVE SCALE-UP for tens of thousands of neurons
+    config.numColumns = 16;            // 4x increase: 16 cortical columns
+    config.neuronsPerColumn = 512;     // 8x increase: 512 neurons per column = 8,192 total
+    config.localFanOut = 40;           // Increased connectivity for richer dynamics
+    config.localFanIn = 40;            // Increased fan-in for complex integration
     
     // Enhanced timing
     config.dt = 0.1;
@@ -297,7 +298,7 @@ void runBasicModularSimulation() {
 // AUTONOMOUS LEARNING SIMULATION (New Version 0.5.5 Feature)
 // ============================================================================
 
-void runAutonomousLearningSimulation() {
+void runAutonomousLearningSimulation(bool reset_model = false) {
     std::cout << "\n🤖 ========== AUTONOMOUS LEARNING SIMULATION ==========\n" << std::endl;
     std::cout << "🚀 Initializing Advanced Autonomous Learning Agent..." << std::endl;
     
@@ -338,7 +339,7 @@ void runAutonomousLearningSimulation() {
     }
     
     // Environment sensor function that returns BrowsingState
-    auto environment_sensor = [&]() -> BrowsingState {
+    /* auto environment_sensor = [&]() -> BrowsingState {
         // Update environment dynamics
         environment_phase++;
         
@@ -372,13 +373,52 @@ void runAutonomousLearningSimulation() {
         state.page_loading = false;
         
         return state;
+    };*/
+    
+    // Environment action executor function - REAL COMPUTER CONTROL
+    auto action_executor = [&](const BrowsingAction& action) {
+        // Log the action first
+        std::cout << "🎬 Real Computer Action: " << actionTypeToString(action.type) 
+                  << " (confidence: " << action.confidence << ")";
+        
+        switch(action.type) {
+            case ActionType::CLICK:
+                std::cout << " at (" << action.x_coordinate << ", " << action.y_coordinate << ")";
+                break;
+            case ActionType::TYPE:
+                std::cout << " with text: \"" << action.text_content << "\"";
+                break;
+            case ActionType::SCROLL:
+                std::cout << " " << (action.scroll_direction == ScrollDirection::UP ? "UP" : "DOWN")
+                          << " by " << action.scroll_amount;
+                break;
+            case ActionType::ENTER:
+            case ActionType::BACKSPACE:
+                // No extra details needed for these actions
+                break;
+        }
+        
+        std::cout << " [EXECUTING ON REAL COMPUTER]" << std::endl;
+        
+        // Actually execute the action using the agent's internal execute_action method
+        // This delegates to the properly implemented execute_action(action) method
+        agent.execute_action(action);
     };
     
-    // Environment action executor function
-    auto action_executor = [&](const BrowsingAction& action) {
-        // Simple action processing for simulation
-        std::cout << "🎬 Executing action: " << actionTypeToString(action.type) 
-                  << " (confidence: " << action.confidence << ")" << std::endl;
+    // Setup environment interaction - REAL SCREEN MONITORING
+    auto environment_sensor = [&]() -> BrowsingState {
+        // Real screen capture and analysis
+        BrowsingState state;
+        state.current_url = "real://computer_screen";
+        
+        // The agent now captures real screen data internally
+        // This is just for compatibility with the existing interface
+        state.scroll_position = environment_phase % 1000;
+        state.page_loading = false;
+        state.window_width = 1920;
+        state.window_height = 1080;
+        
+        return state;
     };
     
     // Setup environment interaction
@@ -413,6 +453,13 @@ void runAutonomousLearningSimulation() {
     prediction_goal->priority = 0.8f;
     prediction_goal->is_active = true;
     agent.addLearningGoal(std::move(prediction_goal));
+
+    // Goal 4: Information Gathering
+    auto info_goal = std::make_unique<AutonomousGoal>();
+    info_goal->description = "Information Gathering";
+    info_goal->priority = 0.7f; // High priority for seeking knowledge
+    info_goal->is_active = true;
+    agent.addLearningGoal(std::move(info_goal));
     
     std::cout << "✅ Learning goals established!" << std::endl;
     
@@ -425,52 +472,78 @@ void runAutonomousLearningSimulation() {
     std::cout << "   Watch for learning progress...\n" << std::endl;
     
     // Initialize the agent
-    if (!agent.initialize()) {
+    if (!agent.initialize(reset_model)) {
         std::cerr << "❌ Failed to initialize autonomous learning agent!" << std::endl;
         return;
     }
     
-    int max_learning_steps = 1000; // Reduced for simpler demo
+    // Enable detailed logging for better monitoring
+    agent.setDetailedLogging(true);
+    
+    int max_learning_steps = 2000; // Increased for more comprehensive learning
     std::cout << "🔄 Running " << max_learning_steps << " autonomous learning steps..." << std::endl;
+    std::cout << "🖥️  The agent will now interact with the real computer screen!" << std::endl;
+    std::cout << "⚠️  Safety bounds are enabled to prevent dangerous actions." << std::endl;
     
     auto learning_start = std::chrono::high_resolution_clock::now();
     
     agent.startAutonomousLearning();
     
-    // Manual learning loop for detailed monitoring
+    // Enhanced learning loop with real-time monitoring
+    float total_reward = 0.0f;
+    float best_performance = 0.0f;
+    
     for (int step = 0; step < max_learning_steps; ++step) {
         float learning_progress = agent.autonomousLearningStep(1.0f);
         
         // Update the agent
         agent.update(1.0f);
         
-        // Detailed monitoring every 200 steps
-        if (step % 200 == 0) {
+        // Detailed monitoring every 100 steps
+        if (step % 100 == 0) {
             std::cout << "\n📈 Learning Progress Report (Step " << step << "):" << std::endl;
             std::cout << "   🧠 Learning Progress: " << std::fixed << std::setprecision(2) 
                       << learning_progress * 100 << "%" << std::endl;
             
-            // Get status report
+            // Get comprehensive status report
             std::string status = agent.getStatusReport();
-            std::cout << "   📊 Agent Status: " << status << std::endl;
+            std::cout << status << std::endl;
             
-            // Check for early completion
-            if (learning_progress > 0.9f) {
-                std::cout << "\n🎉 High learning competence achieved early!" << std::endl;
+            // Track best performance
+            if (learning_progress > best_performance) {
+                best_performance = learning_progress;
+                std::cout << "🎉 New best performance achieved: " << best_performance * 100 << "%!" << std::endl;
+            }
+            
+            // Check for high competence achievement
+            if (learning_progress > 0.8f) {
+                std::cout << "\n🎉 High learning competence achieved!" << std::endl;
+                std::cout << "The agent has demonstrated significant learning capability." << std::endl;
                 break;
             }
         }
         
-        // Introduce environmental challenges periodically
-        if (step % 200 == 0 && step > 0) {
-            environment_complexity = std::min(1.0f, environment_complexity + 0.05f);
-            std::cout << "\n🌊 Environmental challenge increased! Complexity: " 
-                      << environment_complexity << std::endl;
+        // Periodic performance evaluation
+        if (step % 500 == 0 && step > 0) {
+            auto attention_weights = agent.getAttentionWeights();
+            std::cout << "\n🔍 Attention Analysis:" << std::endl;
+            for (const auto& [module, weight] : attention_weights) {
+                std::cout << "   " << module << ": " << weight << std::endl;
+            }
         }
         
-        // Brief pause to prevent CPU overload
-        if (step % 50 == 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        // Brief pause to allow observation and prevent overwhelming the system
+        if (step % 25 == 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        
+        // Emergency stop check (user can stop by creating a stop file)
+        if (step % 100 == 0) {
+            std::ifstream stop_file("/tmp/stop_neurogen");
+            if (stop_file.good()) {
+                std::cout << "\n🛑 Emergency stop detected. Shutting down safely..." << std::endl;
+                break;
+            }
         }
     }
     
@@ -522,39 +595,54 @@ void runBenchmarkSuite() {
 // MAIN FUNCTION WITH MODE SELECTION
 // ============================================================================
 
-int main() {
+int main(int argc, char* argv[]) {
+    std::vector<std::string> args(argv + 1, argv + argc);
+
+    bool reset_model = false;
+    if (std::find(args.begin(), args.end(), "--reset-model") != args.end()) {
+        reset_model = true;
+        std::cout << "🔥 --reset-model flag detected. Agent state will be reset." << std::endl;
+    }
+
     std::cout << "🧠 NeuroGen 0.5.5 - Advanced Autonomous Learning Framework" << std::endl;
     std::cout << "=========================================================\n" << std::endl;
-    
-    // For now, automatically run autonomous learning simulation
-    // In the future, this could be command-line configurable
-    
-    std::cout << "🔍 Available Simulation Modes:" << std::endl;
-    std::cout << "   1. Basic Modular Simulation (Enhanced)" << std::endl;
-    std::cout << "   2. Autonomous Learning Agent (NEW!)" << std::endl;
-    std::cout << "   3. Interactive Training (Coming Soon)" << std::endl;
-    std::cout << "   4. Benchmark Suite (Coming Soon)" << std::endl;
-    
-    std::cout << "\n� Launching Autonomous Learning Simulation..." << std::endl;
-    
-    try {
-        // Run basic modular simulation first
-        std::cout << "\n==== Phase 1: Basic Modular Network Test ====" << std::endl;
-        runBasicModularSimulation();
-        
-        // Then run autonomous learning
-        std::cout << "\n==== Phase 2: Autonomous Learning Agent ====" << std::endl;
-        runAutonomousLearningSimulation();
-        
-        std::cout << "\n🎉 All simulations completed successfully!" << std::endl;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "❌ Simulation error: " << e.what() << std::endl;
+
+    auto agent_config = create_default_config();
+    AutonomousLearningAgent agent(agent_config);
+
+    if (!agent.initialize(reset_model)) {
+        std::cerr << "❌ Failed to initialize autonomous learning agent!" << std::endl;
         return 1;
     }
-    
-    std::cout << "\n🎊 NeuroGen 0.5.5 Simulation Suite Complete!" << std::endl;
-    std::cout << "Thank you for exploring advanced autonomous neural learning!" << std::endl;
-    
+
+    std::cout << "✅ Agent initialized. Waiting for commands..." << std::endl;
+    std::cout.flush();
+
+    std::string line;
+    while (true) {
+        if (std::getline(std::cin, line)) {
+            if (line.rfind("COMMAND:", 0) == 0) {
+                agent.handleCommand(line.substr(8));
+                std::cout.flush(); // Ensure any output is immediately visible
+            } else if (line == "EXIT" || line == "QUIT") {
+                std::cout << "🛑 Exit command received. Shutting down." << std::endl;
+                break;
+            } else if (!line.empty()) {
+                std::cerr << "Warning: Received malformed input: " << line << std::endl;
+            }
+        } else {
+            // Check if stdin was closed (parent process died)
+            if (std::cin.eof()) {
+                std::cout << "🛑 Input stream closed. Shutting down." << std::endl;
+                break;
+            }
+            // Sleep briefly to avoid busy waiting
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+
+    std::cout << "🛑 Agent shutting down." << std::endl;
+    agent.shutdown();
+
     return 0;
 }
