@@ -135,8 +135,112 @@ public:
      */
     void shutdown();
 
-    // ... rest of class declaration (methods, private members, etc.)
-    // Include all other methods that were in the original header
+    // ====================================================================== 
+    // NLP-SPECIFIC PROCESSING INTERFACE
+    // ======================================================================
+
+    /**
+     * @brief Process natural language input through the architecture
+     * @param text_input Raw text input to process
+     * @return Map of module names to their output vectors
+     */
+    std::map<std::string, std::vector<float>> processNLPInput(
+        const std::string& text_input);
+
+    /**
+     * @brief Convert text to neural tokens
+     * @param text Input text
+     * @return Tokenized representation
+     */
+    std::vector<float> tokenizeText(const std::string& text);
+
+    /**
+     * @brief Apply neuromodulatory control to input
+     * @param input Base input vector
+     * @param control_signals Control signals from central controller
+     * @return Modulated input vector
+     */
+    std::vector<float> applyNeuromodulation(
+        const std::vector<float>& input,
+        const std::vector<float>& control_signals);
+
+    /**
+     * @brief Update attention weights based on module outputs
+     * @param module_outputs Current module outputs
+     */
+    void updateAttentionWeights(
+        const std::map<std::string, std::vector<float>>& module_outputs);
+
+    // ======================================================================
+    // MODULE MANAGEMENT
+    // ======================================================================
+
+    std::vector<std::string> getModuleNames() const;
+    size_t getModuleCount() const;
+    bool hasModule(const std::string& module_name) const;
+    std::shared_ptr<EnhancedNeuralModule> getModule(
+        const std::string& module_name) const;
+    ModuleConfig getModuleConfig(const std::string& module_name) const;
+    std::vector<float> getModuleOutput(const std::string& module_name) const;
+
+    // ======================================================================
+    // CONNECTION MANAGEMENT
+    // ======================================================================
+
+    bool createConnection(const std::string& source_module,
+                          const std::string& target_module,
+                          float strength);
+    std::vector<InterModuleConnection> getConnections() const;
+    bool hasConnection(const std::string& source_module,
+                       const std::string& target_module) const;
+    std::vector<InterModuleConnection> getModuleConnections(
+        const std::string& module_name, bool incoming = true) const;
+
+    // ======================================================================
+    // ATTENTION AND CONTROL
+    // ======================================================================
+
+    float getAttentionWeight(const std::string& module_name) const;
+    void setAttentionWeight(const std::string& module_name, float weight);
+    std::vector<float> getGlobalContext() const;
+    void updateGlobalContext(const std::vector<float>& new_context);
+    std::map<std::string, float> getNeuromodulatorLevels() const;
+
+    // ======================================================================
+    // LEARNING AND ADAPTATION
+    // ======================================================================
+
+    void update(float dt, float global_reward = 0.0f);
+    void applyLearningUpdates(float reward_signal, float dt);
+
+    struct GlobalLearningState {
+        uint64_t total_learning_steps;
+        float cumulative_reward;
+        float average_module_performance;
+        std::chrono::steady_clock::time_point last_update;
+    };
+
+    GlobalLearningState getGlobalLearningState() const;
+
+    // ======================================================================
+    // STATE PERSISTENCE
+    // ======================================================================
+
+    bool saveLearningState(const std::string& save_directory,
+                           const std::string& checkpoint_name = "latest");
+    bool loadLearningState(const std::string& save_directory,
+                           const std::string& checkpoint_name = "latest");
+    bool saveModuleLearningState(const std::string& module_name,
+                                 const std::string& save_directory);
+    bool loadModuleLearningState(const std::string& module_name,
+                                 const std::string& save_directory);
+
+    // ======================================================================
+    // CONFIGURATION AND CONTROL
+    // ======================================================================
+
+    ArchitectureConfig getArchitectureConfig() const;
+    bool updateArchitectureConfig(const ArchitectureConfig& config);
 
 private:
     // ========================================================================
