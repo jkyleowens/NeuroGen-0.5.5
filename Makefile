@@ -22,7 +22,7 @@ TARGET_AUTONOMOUS := NeuroGen_Autonomous
 
 # Compiler Flags
 # Note: The -I$(INCLUDE_DIR) flag tells the compilers where to find your header files.
-CXXFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -I/usr/include/opencv4 -O3 -g -fPIC -Wall
+CXXFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -I/usr/include/opencv4 -O3 -g -fPIC -Wall -ferror-limit=50
 NVCCFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -I/usr/include/opencv4 -arch=sm_75 -O3 -g -lineinfo \
              -Xcompiler -fPIC -Xcompiler -Wall -use_fast_math \
              --expt-relaxed-constexpr --expt-extended-lambda -ccbin /usr/bin/clang++
