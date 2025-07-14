@@ -7,7 +7,7 @@
 #include "NeuroGen/EnhancedNeuralModule.h"
 #include "NeuroGen/ModularNeuralNetwork.h"
 #include "NeuroGen/LearningStateManager.h"
-// REMOVED: #include "NeuroGen/NetworkCUDA.h" - Not needed for NLP mode
+#include "NeuroGen/cuda/NetworkCUDA.cuh"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -77,9 +77,28 @@ bool BrainModuleArchitecture::initializeForNLP() {
         
         // Initialize context vector for language understanding
         global_context_vector_.resize(512, 0.0f);
-        
+
+        // Setup CUDA network for biologically inspired processing
+        NetworkCUDA::CUDAConfig cuda_cfg;
+        cuda_network_ = std::make_shared<NetworkCUDA>(cuda_cfg);
+
+        size_t total_neurons = 0;
+        for (const auto& [name, cfg] : module_configs_) {
+            total_neurons += cfg.num_neurons;
+        }
+
+        NetworkConfig net_cfg;
+        net_cfg.num_neurons = static_cast<int>(total_neurons);
+        auto [success, err] = cuda_network_->initialize(net_cfg);
+        if (!success) {
+            std::cerr << "❌ Failed to initialize CUDA network: " << err << std::endl;
+        } else {
+            cuda_network_->setBrainArchitecture(shared_from_this());
+            cuda_network_->setLearningStateManager(learning_state_manager_);
+        }
+
         std::cout << "✅ Brain Module Architecture initialized successfully for NLP" << std::endl;
-        std::cout << "📊 Architecture: " << modules_.size() << " modules, " 
+        std::cout << "📊 Architecture: " << modules_.size() << " modules, "
                   << connections_.size() << " connections" << std::endl;
         
         return true;
@@ -91,78 +110,78 @@ bool BrainModuleArchitecture::initializeForNLP() {
 }
 
 void BrainModuleArchitecture::createNLPModules() {
-    // Module 1: Central Controller (Neuromodulatory Control)
-    ModuleConfig central_config;
-    central_config.module_name = "central_controller";
-    central_config.module_type = "neuromodulatory_control";
-    central_config.num_neurons = 2048;
-    central_config.input_size = 512;
-    central_config.output_size = 512;
-    central_config.learning_rate = 0.005f;
-    central_config.attention_weight = 1.0f;
-    central_config.enable_plasticity = true;
+    // Module 1: Neuromodulation Module (adaptive control)
+    ModuleConfig neuromod_config;
+    neuromod_config.module_name = "neuromodulation";
+    neuromod_config.module_type = "adaptive_control";
+    neuromod_config.num_neurons = 2048;
+    neuromod_config.input_size = 512;
+    neuromod_config.output_size = 512;
+    neuromod_config.learning_rate = 0.005f;
+    neuromod_config.attention_weight = 1.0f;
+    neuromod_config.enable_plasticity = true;
     
-    NetworkConfig central_net_config;
-    central_net_config.num_neurons = central_config.num_neurons;
-    central_net_config.input_size = central_config.input_size;
-    central_net_config.output_size = central_config.output_size;
+    NetworkConfig neuromod_net_config;
+    neuromod_net_config.num_neurons = neuromod_config.num_neurons;
+    neuromod_net_config.input_size = neuromod_config.input_size;
+    neuromod_net_config.output_size = neuromod_config.output_size;
     
-    auto central_module = std::make_shared<EnhancedNeuralModule>(
-        central_config.module_name, central_net_config);
-    central_module->initialize();
+    auto neuromod_module = std::make_shared<EnhancedNeuralModule>(
+        neuromod_config.module_name, neuromod_net_config);
+    neuromod_module->initialize();
+
+    modules_["neuromodulation"] = neuromod_module;
+    module_configs_["neuromodulation"] = neuromod_config;
     
-    modules_["central_controller"] = central_module;
-    module_configs_["central_controller"] = central_config;
+    // Module 2: Language Perception Module
+    ModuleConfig perception_config;
+    perception_config.module_name = "language_perception";
+    perception_config.module_type = "tokenization";
+    perception_config.num_neurons = 1024;
+    perception_config.input_size = 1024; // tokenized characters
+    perception_config.output_size = 512;
+    perception_config.learning_rate = 0.01f;
+    perception_config.attention_weight = 0.7f;
+    perception_config.enable_plasticity = true;
     
-    // Module 2: Input Module (Text Input Processing)
-    ModuleConfig input_config;
-    input_config.module_name = "input_module";
-    input_config.module_type = "text_input_processing";
-    input_config.num_neurons = 1024;
-    input_config.input_size = 1024; // Large for tokenized text
-    input_config.output_size = 512;
-    input_config.learning_rate = 0.01f;
-    input_config.attention_weight = 0.7f;
-    input_config.enable_plasticity = true;
+    NetworkConfig perception_net_config;
+    perception_net_config.num_neurons = perception_config.num_neurons;
+    perception_net_config.input_size = perception_config.input_size;
+    perception_net_config.output_size = perception_config.output_size;
     
-    NetworkConfig input_net_config;
-    input_net_config.num_neurons = input_config.num_neurons;
-    input_net_config.input_size = input_config.input_size;
-    input_net_config.output_size = input_config.output_size;
+    auto perception_module = std::make_shared<EnhancedNeuralModule>(
+        perception_config.module_name, perception_net_config);
+    perception_module->initialize();
+
+    modules_["language_perception"] = perception_module;
+    module_configs_["language_perception"] = perception_config;
     
-    auto input_module = std::make_shared<EnhancedNeuralModule>(
-        input_config.module_name, input_net_config);
-    input_module->initialize();
+    // Module 3: Comprehension Module
+    ModuleConfig comprehension_config;
+    comprehension_config.module_name = "comprehension";
+    comprehension_config.module_type = "semantic_integration";
+    comprehension_config.num_neurons = 4096; // complex language understanding
+    comprehension_config.input_size = 512;
+    comprehension_config.output_size = 1024;
+    comprehension_config.learning_rate = 0.008f;
+    comprehension_config.attention_weight = 0.9f;
+    comprehension_config.enable_plasticity = true;
     
-    modules_["input_module"] = input_module;
-    module_configs_["input_module"] = input_config;
+    NetworkConfig comprehension_net_config;
+    comprehension_net_config.num_neurons = comprehension_config.num_neurons;
+    comprehension_net_config.input_size = comprehension_config.input_size;
+    comprehension_net_config.output_size = comprehension_config.output_size;
     
-    // Module 3: Language Processing Module
-    ModuleConfig language_config;
-    language_config.module_name = "language_processing";
-    language_config.module_type = "language_understanding";
-    language_config.num_neurons = 4096; // Largest module for complex language
-    language_config.input_size = 512;
-    language_config.output_size = 1024;
-    language_config.learning_rate = 0.008f;
-    language_config.attention_weight = 0.9f;
-    language_config.enable_plasticity = true;
-    
-    NetworkConfig language_net_config;
-    language_net_config.num_neurons = language_config.num_neurons;
-    language_net_config.input_size = language_config.input_size;
-    language_net_config.output_size = language_config.output_size;
-    
-    auto language_module = std::make_shared<EnhancedNeuralModule>(
-        language_config.module_name, language_net_config);
-    language_module->initialize();
-    
-    modules_["language_processing"] = language_module;
-    module_configs_["language_processing"] = language_config;
+    auto comprehension_module = std::make_shared<EnhancedNeuralModule>(
+        comprehension_config.module_name, comprehension_net_config);
+    comprehension_module->initialize();
+
+    modules_["comprehension"] = comprehension_module;
+    module_configs_["comprehension"] = comprehension_config;
     
     // Module 4: Reasoning Module
     ModuleConfig reasoning_config;
-    reasoning_config.module_name = "reasoning_module";
+    reasoning_config.module_name = "reasoning";
     reasoning_config.module_type = "logical_reasoning";
     reasoning_config.num_neurons = 2048;
     reasoning_config.input_size = 1024;
@@ -180,13 +199,13 @@ void BrainModuleArchitecture::createNLPModules() {
         reasoning_config.module_name, reasoning_net_config);
     reasoning_module->initialize();
     
-    modules_["reasoning_module"] = reasoning_module;
-    module_configs_["reasoning_module"] = reasoning_config;
+    modules_["reasoning"] = reasoning_module;
+    module_configs_["reasoning"] = reasoning_config;
     
-    // Module 5: Output Module (Spike to Action Conversion)
+    // Module 5: Output Generation Module
     ModuleConfig output_config;
-    output_config.module_name = "output_module";
-    output_config.module_type = "spike_to_action";
+    output_config.module_name = "output_generation";
+    output_config.module_type = "language_production";
     output_config.num_neurons = 1024;
     output_config.input_size = 512;
     output_config.output_size = 256;
@@ -203,38 +222,38 @@ void BrainModuleArchitecture::createNLPModules() {
         output_config.module_name, output_net_config);
     output_module->initialize();
     
-    modules_["output_module"] = output_module;
-    module_configs_["output_module"] = output_config;
+    modules_["output_generation"] = output_module;
+    module_configs_["output_generation"] = output_config;
     
-    std::cout << "✅ Created 5 NLP modules: Central Controller, Input, Language, Reasoning, Output" << std::endl;
+    std::cout << "✅ Created 5 NLP modules: Neuromodulation, Perception, Comprehension, Reasoning, Output" << std::endl;
 }
 
 void BrainModuleArchitecture::setupNLPConnections() {
     // Create forward processing pipeline
     connections_.clear();
     
-    // Input -> Language Processing (primary path)
-    InterModuleConnection input_to_lang;
-    input_to_lang.source_module = "input_module";
-    input_to_lang.target_module = "language_processing";
-    input_to_lang.connection_strength = 0.8f;
-    input_to_lang.connection_type = "excitatory";
-    input_to_lang.is_active = true;
-    connections_.push_back(input_to_lang);
+    // Perception -> Comprehension (primary path)
+    InterModuleConnection percept_to_comp;
+    percept_to_comp.source_module = "language_perception";
+    percept_to_comp.target_module = "comprehension";
+    percept_to_comp.connection_strength = 0.8f;
+    percept_to_comp.connection_type = "excitatory";
+    percept_to_comp.is_active = true;
+    connections_.push_back(percept_to_comp);
     
-    // Language Processing -> Reasoning (reasoning path)
-    InterModuleConnection lang_to_reason;
-    lang_to_reason.source_module = "language_processing";
-    lang_to_reason.target_module = "reasoning_module";
-    lang_to_reason.connection_strength = 0.7f;
-    lang_to_reason.connection_type = "excitatory";
-    lang_to_reason.is_active = true;
-    connections_.push_back(lang_to_reason);
+    // Comprehension -> Reasoning (reasoning path)
+    InterModuleConnection comp_to_reason;
+    comp_to_reason.source_module = "comprehension";
+    comp_to_reason.target_module = "reasoning";
+    comp_to_reason.connection_strength = 0.7f;
+    comp_to_reason.connection_type = "excitatory";
+    comp_to_reason.is_active = true;
+    connections_.push_back(comp_to_reason);
     
     // Reasoning -> Output (output path)
     InterModuleConnection reason_to_output;
-    reason_to_output.source_module = "reasoning_module";
-    reason_to_output.target_module = "output_module";
+    reason_to_output.source_module = "reasoning";
+    reason_to_output.target_module = "output_generation";
     reason_to_output.connection_strength = 0.9f;
     reason_to_output.connection_type = "excitatory";
     reason_to_output.is_active = true;
@@ -242,12 +261,12 @@ void BrainModuleArchitecture::setupNLPConnections() {
     
     // Central Controller connections (neuromodulatory)
     std::vector<std::string> target_modules = {
-        "input_module", "language_processing", "reasoning_module", "output_module"
+        "language_perception", "comprehension", "reasoning", "output_generation"
     };
     
     for (const auto& target : target_modules) {
         InterModuleConnection control_conn;
-        control_conn.source_module = "central_controller";
+        control_conn.source_module = "neuromodulation";
         control_conn.target_module = target;
         control_conn.connection_strength = 0.5f;
         control_conn.connection_type = "modulatory";
@@ -257,16 +276,16 @@ void BrainModuleArchitecture::setupNLPConnections() {
     
     // Feedback connections
     InterModuleConnection reason_feedback;
-    reason_feedback.source_module = "reasoning_module";
-    reason_feedback.target_module = "language_processing";
+    reason_feedback.source_module = "reasoning";
+    reason_feedback.target_module = "comprehension";
     reason_feedback.connection_strength = 0.3f;
     reason_feedback.connection_type = "inhibitory";
     reason_feedback.is_active = true;
     connections_.push_back(reason_feedback);
     
     InterModuleConnection output_feedback;
-    output_feedback.source_module = "output_module";
-    output_feedback.target_module = "central_controller";
+    output_feedback.source_module = "output_generation";
+    output_feedback.target_module = "neuromodulation";
     output_feedback.connection_strength = 0.5f;
     output_feedback.connection_type = "excitatory";
     output_feedback.is_active = true;
@@ -277,11 +296,11 @@ void BrainModuleArchitecture::setupNLPConnections() {
 
 void BrainModuleArchitecture::initializeNLPAttentionSystem() {
     // Initialize attention weights for NLP modules
-    attention_weights_["central_controller"] = 1.0f;
-    attention_weights_["input_module"] = 0.7f;
-    attention_weights_["language_processing"] = 0.9f;
-    attention_weights_["reasoning_module"] = 0.8f;
-    attention_weights_["output_module"] = 0.6f;
+    attention_weights_["neuromodulation"] = 1.0f;
+    attention_weights_["language_perception"] = 0.7f;
+    attention_weights_["comprehension"] = 0.9f;
+    attention_weights_["reasoning"] = 0.8f;
+    attention_weights_["output_generation"] = 0.6f;
     
     // Initialize attention history
     for (const auto& [module_name, _] : modules_) {
@@ -303,33 +322,33 @@ std::map<std::string, std::vector<float>> BrainModuleArchitecture::processNLPInp
     // Tokenize input for neural processing
     std::vector<float> tokenized_input = tokenizeText(text_input);
     
-    // STEP 1: Input Module processes tokenized text
-    if (modules_.count("input_module")) {
-        auto input_output = modules_["input_module"]->process(tokenized_input);
-        module_outputs["input_module"] = input_output;
-        
-        // STEP 2: Central Controller provides neuromodulatory signals
-        if (modules_.count("central_controller")) {
-            auto control_output = modules_["central_controller"]->process(input_output);
-            module_outputs["central_controller"] = control_output;
-            
-            // Apply neuromodulation to language processing
-            auto modulated_input = applyNeuromodulation(input_output, control_output);
-            
-            // STEP 3: Language Processing Module
-            if (modules_.count("language_processing")) {
-                auto lang_output = modules_["language_processing"]->process(modulated_input);
-                module_outputs["language_processing"] = lang_output;
-                
-                // STEP 4: Reasoning Module
-                if (modules_.count("reasoning_module")) {
-                    auto reason_output = modules_["reasoning_module"]->process(lang_output);
-                    module_outputs["reasoning_module"] = reason_output;
-                    
-                    // STEP 5: Output Module converts to actionable data
-                    if (modules_.count("output_module")) {
-                        auto final_output = modules_["output_module"]->process(reason_output);
-                        module_outputs["output_module"] = final_output;
+    // STEP 1: Perception module processes tokenized text
+    if (modules_.count("language_perception")) {
+        auto percept_output = modules_["language_perception"]->process(tokenized_input);
+        module_outputs["language_perception"] = percept_output;
+
+        // STEP 2: Neuromodulation module provides control signals
+        if (modules_.count("neuromodulation")) {
+            auto control_output = modules_["neuromodulation"]->process(percept_output);
+            module_outputs["neuromodulation"] = control_output;
+
+            // Apply neuromodulation to comprehension
+            auto modulated = applyNeuromodulation(percept_output, control_output);
+
+            // STEP 3: Comprehension module
+            if (modules_.count("comprehension")) {
+                auto comp_output = modules_["comprehension"]->process(modulated);
+                module_outputs["comprehension"] = comp_output;
+
+                // STEP 4: Reasoning module
+                if (modules_.count("reasoning")) {
+                    auto reason_output = modules_["reasoning"]->process(comp_output);
+                    module_outputs["reasoning"] = reason_output;
+
+                    // STEP 5: Output generation
+                    if (modules_.count("output_generation")) {
+                        auto final_output = modules_["output_generation"]->process(reason_output);
+                        module_outputs["output_generation"] = final_output;
                     }
                 }
             }
