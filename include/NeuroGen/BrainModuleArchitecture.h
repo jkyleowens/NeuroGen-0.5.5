@@ -39,11 +39,11 @@ class ContinuousLearningAgent;
  * specifically designed for natural language processing. It consists of
  * five core modules:
  * 
- * 1. Central Controller - Neuromodulatory control and orchestration
- * 2. Input Module - Text tokenization and input processing  
- * 3. Language Processing Module - Deep language understanding
- * 4. Reasoning Module - Logical reasoning and inference
- * 5. Output Module - Spike-to-action conversion for response generation
+ * 1. Language Perception Module - reading and tokenization
+ * 2. Comprehension Module - semantic integration
+ * 3. Reasoning Module - logical inference
+ * 4. Output Generation Module - language production
+ * 5. Neuromodulation Module - adaptive control
  * 
  * Key Features:
  * - Simplified 5-module architecture optimized for NLP
