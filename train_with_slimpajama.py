@@ -1,5 +1,6 @@
 import subprocess
 import time
+import select
 from datasets import load_dataset
 
 def launch_agent_process():
@@ -36,8 +37,8 @@ def launch_agent_process():
         print(f"An unexpected error occurred during agent launch: {e}")
         return None
 
-def send_command(process, command):
-    """Sends a command to the agent and returns the output."""
+def send_command(process, command, expect_response=True, timeout=2.0):
+    """Send a command to the agent and optionally read a response."""
     if process.poll() is not None:
         print("Agent process has terminated unexpectedly.")
         stdout, stderr = process.communicate()
@@ -45,43 +46,40 @@ def send_command(process, command):
         print(f"Agent stderr:\n{stderr}")
         return "AGENT_TERMINATED"
 
+    if not command.endswith("\n"):
+        command += "\n"
+
     print(f"Sending command: {command.strip()}")
     process.stdin.write(command)
     process.stdin.flush()
 
-    output_lines = []
-    try:
-        # Read stdout non-blockingly to see initial output
-        print("Waiting for agent response...")
-        while True:
-            line = process.stdout.readline()
-            if not line:
-                # Check if process is still alive
-                if process.poll() is not None:
-                    print("Agent terminated while waiting for response.")
-                    break
-                # If no line and process is alive, just means no output yet
-                time.sleep(0.1)
-                continue
+    if not expect_response:
+        return ""
 
-            print(f"Agent raw output: {line.strip()}")
-            if "COMMAND_PROCESSED" in line:
-                print("'COMMAND_PROCESSED' received.")
+    output_lines = []
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        ready, _, _ = select.select([process.stdout], [], [], 0.1)
+        if ready:
+            line = process.stdout.readline()
+            if line:
+                line = line.strip()
+                print(f"Agent raw output: {line}")
+                output_lines.append(line)
+                if line.startswith("NEXT_WORD_PREDICTION"):
+                    break
+        else:
+            if process.poll() is not None:
                 break
-            output_lines.append(line.strip())
-    except Exception as e:
-        print(f"An error occurred while reading agent output: {e}")
-        # It's possible the process terminated, let's check stderr
-        if process.poll() is not None:
-            stdout, stderr = process.communicate()
-            print(f"Agent stdout dump:\n{stdout}")
-            print(f"Agent stderr dump:\n{stderr}")
 
     return "\n".join(output_lines)
 
 def train_agent(process, dataset):
     """Trains the agent on the provided dataset."""
     print("\n--- Starting Training Phase ---")
+    # Ensure agent is in language training mode
+    send_command(process, "SET_MODE:LANGUAGE_TRAINING")
+
     for i, item in enumerate(dataset):
         text = item['text']
         if not text.strip():
@@ -92,8 +90,8 @@ def train_agent(process, dataset):
         max_length = 512
         truncated_text = text[:max_length].replace("\n", " ") # Avoid newlines in the middle of the command
 
-        command = f"process_and_learn {truncated_text}\n"
-        send_command(process, command)
+        command = f"LANGUAGE_INPUT:{truncated_text}"
+        send_command(process, command, expect_response=False)
 
         if (i + 1) % 100 == 0:
             print(f"Processed {i + 1} training examples.")
@@ -110,10 +108,9 @@ def validate_agent(process):
     ]
 
     for prompt in prompts:
-        # Add a newline to the prompt for the agent
-        full_command = f"{prompt}\n"
+        command = f"LANGUAGE_INPUT:{prompt}"
         print(f"\nValidation Prompt: {prompt}")
-        output = send_command(process, full_command)
+        output = send_command(process, command)
         print(f"Agent Response: {output}")
 
     print("--- Validation Phase Complete ---")
@@ -145,9 +142,21 @@ def main():
     print("Proceeding to validation...")
     validate_agent(agent_process)
 
+    print("\n--- Interactive Session ---")
+    print("Type 'quit' to exit and shut down the agent.\n")
+    try:
+        while True:
+            user_input = input("You> ")
+            if user_input.strip().lower() in {"quit", "exit"}:
+                break
+            response = send_command(agent_process, f"LANGUAGE_INPUT:{user_input}")
+            print(f"Agent> {response}")
+    except KeyboardInterrupt:
+        print("\nInterrupted by user.")
+
     # Shutdown the agent
     print("\n--- Shutting Down Agent ---")
-    send_command(agent_process, "shutdown\n")
+    send_command(agent_process, "shutdown", expect_response=False)
     try:
         agent_process.wait(timeout=10)
         print("Agent process terminated gracefully.")
