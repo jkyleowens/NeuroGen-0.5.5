@@ -5,7 +5,6 @@
 
 #pragma once
 
-#include "NeuroGen/ScreenElement.h"
 #include <memory>
 #include <vector>
 #include <string>
@@ -14,7 +13,6 @@
 class ControllerModule;
 class NeuralModule; 
 class AutonomousLearningAgent;
-class VisualInterface;
 class CognitiveModule;
 class MotorModule;
 
@@ -36,7 +34,6 @@ public:
     
     // Main control interface
     void run(int cycles = 1);
-    void simulateNewScreenData(const std::vector<ScreenElement>& screen_elements);
     
     // System status
     bool isInitialized() const { return is_initialized_; }
@@ -47,7 +44,6 @@ private:
     // Internal components
     std::unique_ptr<ControllerModule> neuro_controller_;
     std::unique_ptr<AutonomousLearningAgent> learning_agent_;
-    std::unique_ptr<VisualInterface> visual_interface_;
     
     // Neural modules
     std::shared_ptr<NeuralModule> perception_module_;
@@ -59,14 +55,12 @@ private:
     std::shared_ptr<MotorModule> motor_task_module_;
     
     // Current state
-    std::vector<ScreenElement> current_screen_elements_;
     bool is_initialized_;
     int cycle_count_;
     
     // Internal methods
     void initialize_neural_modules();
     void initialize_task_modules();
-    void process_screen_elements();
     void execute_cognitive_cycle();
     void update_performance_metrics();
 };

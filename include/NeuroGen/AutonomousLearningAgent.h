@@ -7,16 +7,11 @@
 #define AUTONOMOUS_LEARNING_AGENT_H
 
 #include "NeuroGen/ControllerModule.h"
-#include "NeuroGen/ScreenElement.h"
 #include "NeuroGen/Network.h"
 #include "NeuroGen/NetworkConfig.h"
-#include "NeuroGen/VisualInterface.h"
 #include "NeuroGen/SpecializedModule.h"
 #include "NeuroGen/BrainModuleArchitecture.h"
-#include "NeuroGen/RealScreenCapture.h"
 #include "NeuroGen/InputController.h"
-#include "NeuroGen/OCRProcessor.h"
-#include "NeuroGen/GUIElementDetector.h"
 #include <iostream>
 #include <algorithm>
 #include <cmath>
@@ -362,15 +357,11 @@ private:
     // Core Components
     std::unique_ptr<ControllerModule> controller_module_;
     std::unique_ptr<MemorySystem> memory_system_;
-    std::unique_ptr<VisualInterface> visual_interface_;
     std::unique_ptr<AttentionController> attention_controller_;
     std::unique_ptr<BrainModuleArchitecture> brain_architecture_;
 
     // Input/Output Systems
-    std::unique_ptr<RealScreenCapture> real_screen_capture_;
     std::unique_ptr<InputController> input_controller_;
-    std::unique_ptr<OCRProcessor> ocr_processor_;
-    std::unique_ptr<GUIElementDetector> gui_detector_;
 
     // Neural Modules
     std::unordered_map<std::string, std::unique_ptr<SpecializedModule>> modules_;
@@ -388,11 +379,7 @@ private:
     // Action and Goal Management
     BrowsingAction selected_action_;
     std::vector<std::unique_ptr<AutonomousGoal>> learning_goals_;
-    std::vector<ScreenElement> detected_screen_elements_;
-    size_t previous_screen_elements_count_ = 0;
-
     // Language and Text
-    std::string last_screen_text_;
     std::string last_language_input_;
     std::vector<std::string> vocabulary_;
 
@@ -415,10 +402,9 @@ private:
     void initializeSpecializedModules();
     void setupDefaultLearningGoals();
     
-    // Real screen-based reinforcement learning methods
-    void processRealScreenInput();
+    // Reinforcement learning helpers
     void executeRealAction();
-    float computeScreenBasedReward();
+    float computeReward();
     float evaluateGoalProgress();
     float evaluateExplorationEffectiveness();
     float evaluateActionPenalties();

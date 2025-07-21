@@ -22,9 +22,6 @@
 #include <string>
 #include <vector>
 
-#ifdef USE_OPENCV
-#include <opencv2/opencv.hpp>
-#endif
 
 // ============================================================================
 // AUTONOMOUS LEARNING AGENT IMPLEMENTATION
@@ -40,14 +37,10 @@ AutonomousLearningAgent::AutonomousLearningAgent(const NetworkConfig& config)
     // Initialize core components for real computer control
     controller_module_ = std::make_unique<ControllerModule>(ControllerConfig());
     memory_system_ = std::make_unique<MemorySystem>();
-    visual_interface_ = std::make_unique<VisualInterface>(1920, 1080);
     attention_controller_ = std::make_unique<AttentionController>();
-    
+
     // Initialize input/output systems for real computer control
-    real_screen_capture_ = std::make_unique<RealScreenCapture>();
     input_controller_ = std::make_unique<InputController>();
-    ocr_processor_ = std::make_unique<OCRProcessor>();
-    gui_detector_ = std::make_unique<GUIElementDetector>();
     
     // Initialize brain module architecture
     brain_architecture_ = std::make_unique<BrainModuleArchitecture>();
@@ -90,16 +83,6 @@ bool AutonomousLearningAgent::initialize(bool reset_model) {
         return false;
     }
     
-    // Initialize visual capture system for real screen monitoring
-    if (!visual_interface_->initialize_capture()) {
-        std::cerr << "Warning: Failed to initialize visual capture" << std::endl;
-    }
-    
-    // Initialize real screen capture
-    if (real_screen_capture_ && !real_screen_capture_->initialize(1920, 1080)) {
-        std::cerr << "Failed to initialize screen capture" << std::endl;
-    }
-    
     // Initialize input controller for real computer control
     if (input_controller_ && !input_controller_->initialize()) {
         std::cerr << "Failed to initialize input controller" << std::endl;
@@ -111,18 +94,8 @@ bool AutonomousLearningAgent::initialize(bool reset_model) {
         std::cout << "✅ Safety bounds enabled for input controller" << std::endl;
     }
     
-    // Initialize OCR for text recognition
-    if (ocr_processor_ && !ocr_processor_->initialize()) {
-        std::cerr << "Warning: Failed to initialize OCR processor" << std::endl;
-    }
-    
-    // Initialize GUI element detector
-    if (gui_detector_ && !gui_detector_->initialize()) {
-        std::cerr << "Warning: Failed to initialize GUI detector" << std::endl;
-    }
     
     // Register neural modules with attention controller
-    attention_controller_->register_module("visual_cortex");
     attention_controller_->register_module("motor_cortex");
     attention_controller_->register_module("prefrontal_cortex");
     attention_controller_->register_module("working_memory");
@@ -165,12 +138,8 @@ void AutonomousLearningAgent::update(float dt) {
 void AutonomousLearningAgent::shutdown() {
     stopAutonomousLearning();
     
-    if (visual_interface_) {
-        visual_interface_->stop_capture();
-    }
-    if (real_screen_capture_) real_screen_capture_->shutdown();
+
     if (input_controller_) input_controller_->shutdown();
-    if (ocr_processor_) ocr_processor_->shutdown();
     
     std::cout << "AutonomousLearningAgent shutdown complete" << std::endl;
 }
@@ -181,9 +150,7 @@ void AutonomousLearningAgent::startAutonomousLearning() {
     is_learning_active_ = true;
     std::cout << "Starting autonomous learning mode..." << std::endl;
     
-    if (visual_interface_) {
-        visual_interface_->start_continuous_capture();
-    }
+
 }
 
 void AutonomousLearningAgent::stopAutonomousLearning() {
@@ -192,9 +159,7 @@ void AutonomousLearningAgent::stopAutonomousLearning() {
     is_learning_active_ = false;
     std::cout << "Stopping autonomous learning mode..." << std::endl;
     
-    if (visual_interface_) {
-        visual_interface_->stop_capture();
-    }
+
 }
 
 float AutonomousLearningAgent::autonomousLearningStep(float dt) {
@@ -208,10 +173,7 @@ float AutonomousLearningAgent::autonomousLearningStep(float dt) {
 
     // === ENHANCED REINFORCEMENT LEARNING CYCLE ===
     
-    // Step 1: Capture and process real screen input
-    processRealScreenInput();
-    
-    // Step 2: Update working memory with current visual context
+    // Update working memory with current context
     update_working_memory();
     
     // Step 2.5: Process network output
@@ -226,8 +188,8 @@ float AutonomousLearningAgent::autonomousLearningStep(float dt) {
     // Step 5: Execute selected action on real computer
     execute_action();
     
-    // Step 6: Compute reward based on screen changes and goal progress
-    float immediate_reward = computeScreenBasedReward();
+    // Step 6: Compute reward based on progress
+    float immediate_reward = computeReward();
     
     // Step 7: Learn from the action outcome using reinforcement learning
     learnFromActionOutcome(immediate_reward);
@@ -409,13 +371,6 @@ void AutonomousLearningAgent::initializeSpecializedModules() {
     // Create specialized neural modules for different cognitive functions
     // MASSIVE SCALE-UP: Creating a robust free-thinking agent with tens of thousands of neurons
     
-    // Visual Cortex - Primary visual processing (16,384 neurons)
-    auto visual_cortex_config = config_;
-    visual_cortex_config.num_neurons = 16384;     // 16K neurons for complex visual processing
-    visual_cortex_config.numColumns = 32;        // 32 visual columns
-    visual_cortex_config.neuronsPerColumn = 512; // 512 neurons per column
-    visual_cortex_config.localFanOut = 60;       // Rich connectivity for pattern recognition
-    modules_["visual_cortex"] = std::make_unique<SpecializedModule>("visual_cortex", visual_cortex_config);
     
     // Prefrontal Cortex - Executive function and reasoning (12,288 neurons)
     auto prefrontal_cortex_config = config_;
@@ -459,7 +414,6 @@ void AutonomousLearningAgent::initializeSpecializedModules() {
     
     std::cout << "✅ Specialized neural modules initialized for robust free-thinking agent:" << std::endl;
     std::cout << "   🧠 Total neurons across all modules: ~50,000+ neurons" << std::endl;
-    std::cout << "   👁️  Visual Cortex: 16,384 neurons (32 columns × 512)" << std::endl; 
     std::cout << "   🎯 Prefrontal Cortex: 12,288 neurons (24 columns × 512)" << std::endl;
     std::cout << "   🦾 Motor Cortex: 8,192 neurons (16 columns × 512)" << std::endl;
     std::cout << "   🧩 Working Memory: 6,144 neurons (12 columns × 512)" << std::endl;
@@ -525,14 +479,6 @@ void AutonomousLearningAgent::setupDefaultLearningGoals() {
     // Clear any existing goals
     learning_goals_.clear();
     
-    // Goal 1: Screen Observation and Understanding
-    auto observation_goal = std::make_unique<AutonomousGoal>();
-    observation_goal->goal_id = "screen_observation";
-    observation_goal->description = "Learn to observe and understand screen content";
-    observation_goal->priority = 0.9f;
-    observation_goal->is_active = true;
-    observation_goal->success_criteria = {"identify_UI_elements", "track_visual_changes", "recognize_text"};
-    learning_goals_.push_back(std::move(observation_goal));
     
     // Goal 2: Effective Mouse Control
     auto mouse_goal = std::make_unique<AutonomousGoal>();
@@ -577,45 +523,6 @@ void AutonomousLearningAgent::setupDefaultLearningGoals() {
 // REAL SCREEN-BASED REINFORCEMENT LEARNING METHODS
 // ============================================================================
 
-void AutonomousLearningAgent::processRealScreenInput() {
-    if (!visual_interface_ || !real_screen_capture_) return;
-    
-    // Capture current screen state
-    std::vector<float> raw_screen_features = visual_interface_->capture_and_process_screen();
-    
-    // Detect GUI elements on screen
-    auto screen_elements = visual_interface_->detect_screen_elements();
-    
-    // Process through visual cortex module
-    if (modules_.count("visual_cortex")) {
-        float visual_attention = attention_controller_->get_attention_weight("visual_cortex");
-        
-        // Apply attention to visual input
-        std::vector<float> attended_features = raw_screen_features;
-        for (size_t i = 0; i < attended_features.size(); ++i) {
-            attended_features[i] *= visual_attention;
-        }
-        
-        auto visual_output = modules_["visual_cortex"]->process(attended_features);
-        
-        // Update environmental context with processed visual information
-        size_t context_size = std::min(visual_output.size(), environmental_context_.size());
-        for (size_t i = 0; i < context_size; ++i) {
-            environmental_context_[i] = visual_output[i];
-        }
-    }
-    
-    // Store current screen elements for action planning
-    detected_screen_elements_ = screen_elements;
-
-    // Perform OCR on the screen
-    if (ocr_processor_ && visual_interface_) {
-        cv::Mat last_frame = visual_interface_->get_last_frame();
-        if (!last_frame.empty()) {
-            last_screen_text_ = ocr_processor_->extractText(last_frame);
-        }
-    }
-}
 
 void AutonomousLearningAgent::execute_action() {
     if (is_passive_mode_) {
@@ -693,7 +600,7 @@ void AutonomousLearningAgent::execute_action(const BrowsingAction& action) {
               << " with confidence " << action.confidence << std::endl;
 }
 
-float AutonomousLearningAgent::computeScreenBasedReward() {
+float AutonomousLearningAgent::computeReward() {
     float reward = 0.0f;
     
     // Base reward for successful action execution
@@ -701,12 +608,6 @@ float AutonomousLearningAgent::computeScreenBasedReward() {
         float success_rate = static_cast<float>(metrics_.successful_actions) / metrics_.total_actions;
         reward += success_rate * 0.1f;
     }
-    
-    // Reward for discovering new screen elements
-    if (detected_screen_elements_.size() > previous_screen_elements_count_) {
-        reward += 0.05f * (detected_screen_elements_.size() - previous_screen_elements_count_);
-    }
-    previous_screen_elements_count_ = detected_screen_elements_.size();
     
     // Reward for goal-oriented behavior
     reward += evaluateGoalProgress();
@@ -734,10 +635,7 @@ float AutonomousLearningAgent::evaluateGoalProgress() {
         float goal_progress = 0.0f;
         
         // Evaluate progress for different goal types
-        if (goal->goal_id == "screen_observation") {
-            // Reward for successfully detecting and processing screen elements
-            goal_progress = std::min(1.0f, detected_screen_elements_.size() / 10.0f) * 0.1f;
-        } else if (goal->goal_id == "mouse_control") {
+        if (goal->goal_id == "mouse_control") {
             // Reward for successful click actions
             if (selected_action_.type == ActionType::CLICK && selected_action_.confidence > 0.7f) {
                 goal_progress = 0.15f;
@@ -961,7 +859,6 @@ void AutonomousLearningAgent::logLearningProgress(int step, float reward) {
     std::cout << "   Success Rate: " << success_rate * 100 << "%" << std::endl;
     std::cout << "   Learning Progress: " << learning_progress * 100 << "%" << std::endl;
     std::cout << "   Exploration Rate: " << exploration_rate_ << std::endl;
-    std::cout << "   Screen Elements: " << detected_screen_elements_.size() << std::endl;
     std::cout << "   Action: " << actionTypeToString(selected_action_.type) 
               << " (confidence: " << selected_action_.confidence << ")" << std::endl;
 }
