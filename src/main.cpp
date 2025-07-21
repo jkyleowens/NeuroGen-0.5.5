@@ -1,224 +1,308 @@
 // ============================================================================
-// NLP-FOCUSED AUTONOMOUS LEARNING AGENT - MAIN APPLICATION (FIXED)
+// MAIN APPLICATION - NATURAL LANGUAGE PROCESSING AUTONOMOUS AGENT
 // File: src/main.cpp
 // ============================================================================
 
 #include <iostream>
 #include <string>
 #include <vector>
-#include <chrono>
-#include <thread>
 #include <memory>
+#include <thread>
+#include <chrono>
 #include <iomanip>
 #include <sstream>
-#include <map>
+#include <fstream>
+#include <algorithm>
+#include <random>
+#include <signal.h>
 
-// NeuroGen Framework includes
-#include "NeuroGen/AutonomousLearningAgent.h"
-#include "NeuroGen/NetworkConfig.h"
+// NeuroGen Framework Includes
+#include <NeuroGen/AutonomousLearningAgent.h>
+#include <NeuroGen/BrainModuleArchitecture.h>
+#include <NeuroGen/LanguageInterface.h>
+#include <NeuroGen/NetworkConfig.h>
+#include <NeuroGen/SafetyManager.h>
 
-// Forward declarations for structures we'll define locally
-struct LanguageMetrics {
-    float comprehension_score = 0.0f;
-    float reasoning_score = 0.0f;
-    float response_quality = 0.0f;
-    float learning_efficiency = 0.0f;
-    int processed_inputs = 0;
-    int successful_responses = 0;
-};
+// Global variables for signal handling
+std::atomic<bool> g_shutdown_requested{false};
+std::shared_ptr<AutonomousLearningAgent> g_agent;
 
 /**
- * @brief NLP Training Session Manager
- * 
- * Manages training sessions for the NLP-focused neural architecture
+ * @brief Signal handler for graceful shutdown
  */
-class NLPTrainingSession {
+void signalHandler(int signal) {
+    std::cout << "\n🛑 Shutdown signal received (" << signal << "). Initiating graceful shutdown..." << std::endl;
+    g_shutdown_requested = true;
+    
+    if (g_agent) {
+        g_agent->stopAutonomousLearning();
+    }
+}
+
+/**
+ * @brief Language Training Session Manager
+ * 
+ * Manages interactive language training sessions with the autonomous agent,
+ * providing real-time feedback and performance monitoring.
+ */
+class LanguageTrainingSession {
+private:
+    std::shared_ptr<AutonomousLearningAgent> agent_;
+    std::unique_ptr<LanguageInterface> language_interface_;
+    std::atomic<bool> session_active_;
+    std::vector<std::pair<std::string, std::string>> conversation_history_;
+    std::map<std::string, float> session_metrics_;
+    std::chrono::high_resolution_clock::time_point session_start_time_;
+    
 public:
-    NLPTrainingSession(std::shared_ptr<AutonomousLearningAgent> agent) 
-        : agent_(agent), session_active_(false), total_inputs_processed_(0) {
-        // Initialize local metrics tracking
-        metrics_.comprehension_score = 0.0f;
-        metrics_.reasoning_score = 0.0f;
-        metrics_.response_quality = 0.0f;
-        metrics_.learning_efficiency = 0.0f;
-        metrics_.processed_inputs = 0;
-        metrics_.successful_responses = 0;
+    explicit LanguageTrainingSession(std::shared_ptr<AutonomousLearningAgent> agent) 
+        : agent_(agent), session_active_(false) {
+        
+        language_interface_ = std::make_unique<LanguageInterface>();
+        session_metrics_["total_inputs"] = 0.0f;
+        session_metrics_["comprehension_score"] = 0.0f;
+        session_metrics_["response_quality"] = 0.0f;
+        session_metrics_["learning_progress"] = 0.0f;
     }
     
-    void startSession() {
-        std::cout << "\n" << std::string(80, '=') << std::endl;
-        std::cout << "🚀 STARTING NLP TRAINING SESSION" << std::endl;
-        std::cout << std::string(80, '=') << std::endl;
+    bool startSession() {
+        if (!language_interface_->initialize()) {
+            std::cerr << "Failed to initialize language interface" << std::endl;
+            return false;
+        }
+        
+        if (!agent_) {
+            std::cerr << "No agent available for training session" << std::endl;
+            return false;
+        }
         
         session_active_ = true;
-        session_start_time_ = std::chrono::steady_clock::now();
+        session_start_time_ = std::chrono::high_resolution_clock::now();
         
-        if (agent_) {
-            agent_->startAutonomousLearning();
+        // Configure agent for language training mode
+        agent_->setOperatingMode(AutonomousLearningAgent::OperatingMode::LANGUAGE_TRAINING);
+        agent_->setPassiveMode(false); // Enable active learning
+        
+        std::cout << "\n🎓 LANGUAGE TRAINING SESSION STARTED" << std::endl;
+        std::cout << std::string(60, '=') << std::endl;
+        std::cout << "📝 Enter text for the agent to learn from" << std::endl;
+        std::cout << "💬 Agent will process and respond to your input" << std::endl;
+        std::cout << "📊 Performance metrics will be displayed in real-time" << std::endl;
+        std::cout << "🔍 Type 'help' for commands, 'quit' to end session" << std::endl;
+        std::cout << std::string(60, '-') << std::endl;
+        
+        return true;
+    }
+    
+    void processLanguageInput(const std::string& input) {
+        if (!session_active_ || !agent_) return;
+        
+        auto start_time = std::chrono::high_resolution_clock::now();
+        
+        // Process input through agent
+        bool success = agent_->processLanguageInput(input, "", true);
+        
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto processing_time = std::chrono::duration<float>(end_time - start_time).count();
+        
+        if (success) {
+            // Generate response
+            std::string response = agent_->generateLanguageResponse();
+            
+            // Store conversation turn
+            conversation_history_.emplace_back(input, response);
+            
+            // Update metrics
+            session_metrics_["total_inputs"] += 1.0f;
+            session_metrics_["avg_processing_time"] = processing_time;
+            session_metrics_["learning_progress"] = agent_->getLearningProgress();
+            
+            // Display response
+            std::cout << "\n🤖 Agent Response: " << response << std::endl;
+            
+            // Show processing info
+            std::cout << "⏱️  Processing Time: " << std::fixed << std::setprecision(3) 
+                      << processing_time << "s" << std::endl;
+            
+            // Show learning metrics
+            displaySessionMetrics();
+            
+        } else {
+            std::cout << "❌ Failed to process input: " << input << std::endl;
         }
+    }
+    
+    void displaySessionMetrics() {
+        if (!agent_) return;
+        
+        auto attention_weights = agent_->getAttentionWeights();
+        auto language_stats = agent_->getLanguageProcessingStats();
+        
+        std::cout << "\n📊 Current Session Metrics:" << std::endl;
+        std::cout << "   • Total Inputs: " << static_cast<int>(session_metrics_["total_inputs"]) << std::endl;
+        std::cout << "   • Learning Progress: " << std::fixed << std::setprecision(1) 
+                  << (session_metrics_["learning_progress"] * 100) << "%" << std::endl;
+        
+        // Display attention weights for language modules
+        std::cout << "   • Attention Distribution:" << std::endl;
+        for (const auto& [module, weight] : attention_weights) {
+            if (module.find("language") != std::string::npos || 
+                module.find("semantic") != std::string::npos ||
+                module.find("syntactic") != std::string::npos ||
+                module.find("working_memory") != std::string::npos) {
+                std::cout << "     - " << module << ": " << std::fixed << std::setprecision(2) 
+                          << (weight * 100) << "%" << std::endl;
+            }
+        }
+        
+        // Display language processing stats if available
+        if (!language_stats.empty()) {
+            std::cout << "   • Language Processing:" << std::endl;
+            for (const auto& [stat, value] : language_stats) {
+                std::cout << "     - " << stat << ": " << std::fixed << std::setprecision(2) 
+                          << value << std::endl;
+            }
+        }
+        
+        std::cout << std::string(60, '-') << std::endl;
     }
     
     void stopSession() {
         session_active_ = false;
         
-        if (agent_) {
-            agent_->stopAutonomousLearning();
+        auto session_end_time = std::chrono::high_resolution_clock::now();
+        auto session_duration = std::chrono::duration<float>(session_end_time - session_start_time_).count();
+        
+        std::cout << "\n📈 LANGUAGE TRAINING SESSION COMPLETE" << std::endl;
+        std::cout << std::string(60, '=') << std::endl;
+        std::cout << "⏰ Session Duration: " << std::fixed << std::setprecision(1) 
+                  << session_duration << " seconds" << std::endl;
+        std::cout << "📝 Total Inputs Processed: " << static_cast<int>(session_metrics_["total_inputs"]) << std::endl;
+        std::cout << "🧠 Final Learning Progress: " << std::fixed << std::setprecision(1) 
+                  << (session_metrics_["learning_progress"] * 100) << "%" << std::endl;
+        
+        if (!conversation_history_.empty()) {
+            std::cout << "💾 Conversation turns: " << conversation_history_.size() << std::endl;
         }
         
-        printSessionSummary();
+        // Save session data if requested
+        saveSessionData();
+        
+        language_interface_->shutdown();
     }
     
-    bool processLanguageInput(const std::string& input) {
-        if (!session_active_ || !agent_) return false;
-        
-        std::cout << "\n📝 Processing: \"" << input.substr(0, 50) 
-                  << (input.length() > 50 ? "..." : "") << "\"" << std::endl;
-        
-        auto start_time = std::chrono::high_resolution_clock::now();
-        
-        bool success = agent_->processLanguageInput(input);
-        
-        auto end_time = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-        
-        if (success) {
-            total_inputs_processed_++;
-            metrics_.processed_inputs++;
-            metrics_.successful_responses++;
+    void saveSessionData() {
+        try {
+            std::string filename = "language_session_" + getCurrentTimestamp() + ".txt";
+            std::ofstream session_file(filename);
             
-            // Update local metrics based on processing success
-            metrics_.comprehension_score = 0.8f + (static_cast<float>(rand()) / RAND_MAX) * 0.2f;
-            metrics_.reasoning_score = 0.7f + (static_cast<float>(rand()) / RAND_MAX) * 0.3f;
-            metrics_.response_quality = 0.75f + (static_cast<float>(rand()) / RAND_MAX) * 0.25f;
-            metrics_.learning_efficiency = static_cast<float>(metrics_.successful_responses) / metrics_.processed_inputs;
-            
-            // Get response after brief processing time
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            std::string response = agent_->generateLanguageResponse();
-            
-            std::cout << "🤖 Response: " << response << std::endl;
-            std::cout << "⏱️  Processing time: " << duration.count() << "ms" << std::endl;
-            
-            // Display metrics using local tracking
-            std::cout << "📊 Metrics - Comprehension: " << std::fixed << std::setprecision(3) 
-                      << metrics_.comprehension_score << ", Reasoning: " << metrics_.reasoning_score 
-                      << ", Quality: " << metrics_.response_quality << std::endl;
-        } else {
-            std::cout << "❌ Failed to process input" << std::endl;
-            metrics_.processed_inputs++;
+            if (session_file.is_open()) {
+                session_file << "Language Training Session Report\n";
+                session_file << "================================\n\n";
+                
+                session_file << "Session Metrics:\n";
+                for (const auto& [metric, value] : session_metrics_) {
+                    session_file << "  " << metric << ": " << value << "\n";
+                }
+                
+                session_file << "\nConversation History:\n";
+                for (size_t i = 0; i < conversation_history_.size(); ++i) {
+                    session_file << "\nTurn " << (i + 1) << ":\n";
+                    session_file << "  Input:    " << conversation_history_[i].first << "\n";
+                    session_file << "  Response: " << conversation_history_[i].second << "\n";
+                }
+                
+                session_file.close();
+                std::cout << "💾 Session data saved to: " << filename << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "❌ Failed to save session data: " << e.what() << std::endl;
         }
-        
-        return success;
     }
     
-    void printSessionSummary() {
-        auto session_end_time = std::chrono::steady_clock::now();
-        auto session_duration = std::chrono::duration_cast<std::chrono::seconds>(
-            session_end_time - session_start_time_);
-        
-        std::cout << "\n" << std::string(80, '=') << std::endl;
-        std::cout << "📋 SESSION SUMMARY" << std::endl;
-        std::cout << std::string(80, '=') << std::endl;
-        std::cout << "⏱️  Session Duration: " << session_duration.count() << " seconds" << std::endl;
-        std::cout << "📝 Total Inputs Processed: " << total_inputs_processed_ << std::endl;
-        
-        std::cout << "🎯 Final Metrics:" << std::endl;
-        std::cout << "   - Comprehension Score: " << std::fixed << std::setprecision(3) 
-                  << metrics_.comprehension_score << std::endl;
-        std::cout << "   - Reasoning Score: " << metrics_.reasoning_score << std::endl;
-        std::cout << "   - Response Quality: " << metrics_.response_quality << std::endl;
-        std::cout << "   - Learning Efficiency: " << metrics_.learning_efficiency << std::endl;
-        std::cout << "   - Success Rate: " << std::fixed << std::setprecision(1)
-                  << (metrics_.processed_inputs > 0 ? 
-                      (100.0f * metrics_.successful_responses / metrics_.processed_inputs) : 0.0f) 
-                  << "%" << std::endl;
-        
-        std::cout << std::string(80, '=') << std::endl;
-    }
+    bool isActive() const { return session_active_; }
     
 private:
-    std::shared_ptr<AutonomousLearningAgent> agent_;
-    bool session_active_;
-    int total_inputs_processed_;
-    std::chrono::steady_clock::time_point session_start_time_;
-    LanguageMetrics metrics_; // Local metrics tracking
+    std::string getCurrentTimestamp() const {
+        auto now = std::chrono::system_clock::now();
+        auto time_t = std::chrono::system_clock::to_time_t(now);
+        std::stringstream ss;
+        ss << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S");
+        return ss.str();
+    }
 };
 
 /**
- * @brief Display system information and architecture details
+ * @brief Display system information and agent status
  */
 void displaySystemInfo(std::shared_ptr<AutonomousLearningAgent> agent) {
-    std::cout << "\n🧠 NEURAL ARCHITECTURE INFORMATION" << std::endl;
+    std::cout << "\n🖥️  SYSTEM STATUS" << std::endl;
     std::cout << std::string(50, '-') << std::endl;
     
     if (agent) {
-        // Display basic system information
-        std::cout << "📊 Agent Status: Initialized" << std::endl;
-        std::cout << "🔧 Module Details:" << std::endl;
+        std::cout << "🤖 Agent Status:" << std::endl;
+        std::cout << agent->getStatusReport() << std::endl;
         
-        // Since getModuleNeuronCount is private, use fixed values based on the implementation
-        std::map<std::string, int> module_neuron_counts = {
-            {"visual_cortex", 16384},
-            {"prefrontal_cortex", 12288},
-            {"motor_cortex", 8192},
-            {"working_memory", 6144},
-            {"reward_system", 4096},
-            {"attention_system", 3072}
-        };
-        
-        for (const auto& [name, count] : module_neuron_counts) {
-            std::cout << "   - " << name << ": " << count << " neurons" << std::endl;
+        auto language_stats = agent->getLanguageProcessingStats();
+        if (!language_stats.empty()) {
+            std::cout << "\n📊 Language Processing Statistics:" << std::endl;
+            for (const auto& [stat, value] : language_stats) {
+                std::cout << "   • " << stat << ": " << std::fixed << std::setprecision(2) 
+                          << value << std::endl;
+            }
         }
         
-        std::cout << "🔗 Inter-module Connections: Fully Connected" << std::endl;
-        std::cout << "🧪 Neuromodulator Levels: Active" << std::endl;
-        std::cout << "🎯 Learning Status: ACTIVE" << std::endl;
-        std::cout << "🔤 NLP Mode: ENABLED" << std::endl;
+        std::cout << "\n🧠 Neural Architecture:" << std::endl;
+        std::cout << "   • Total Neurons: " << agent->getTotalNeuronCount() << std::endl;
+        std::cout << "   • Active Modules: Language-focused modular network" << std::endl;
+        std::cout << "   • Learning Phase: " << (agent->getLearningProgress() * 100) << "%" << std::endl;
+    } else {
+        std::cout << "❌ No agent available" << std::endl;
     }
-    
-    std::cout << std::string(50, '-') << std::endl;
 }
 
 /**
- * @brief Run interactive training mode
+ * @brief Run interactive language training mode
  */
-void runInteractiveMode(std::shared_ptr<AutonomousLearningAgent> agent) {
-    std::cout << "\n🎮 INTERACTIVE NLP TRAINING MODE" << std::endl;
-    std::cout << std::string(50, '-') << std::endl;
-    std::cout << "Type text to train the agent, or use commands:" << std::endl;
-    std::cout << "  'metrics' - Show current performance metrics" << std::endl;
-    std::cout << "  'status'  - Show agent status" << std::endl;
-    std::cout << "  'reset'   - Reset learning state" << std::endl;
-    std::cout << "  'save'    - Save current state" << std::endl;
-    std::cout << "  'quit'    - Exit training" << std::endl;
-    std::cout << std::string(50, '-') << std::endl;
+void runInteractiveTraining(std::shared_ptr<AutonomousLearningAgent> agent) {
+    LanguageTrainingSession session(agent);
     
-    NLPTrainingSession session(agent);
-    session.startSession();
+    if (!session.startSession()) {
+        std::cerr << "❌ Failed to start language training session" << std::endl;
+        return;
+    }
     
     std::string input;
-    while (true) {
-        std::cout << "\n> ";
+    while (session.isActive() && !g_shutdown_requested) {
+        std::cout << "\n💬 Your input: ";
         std::getline(std::cin, input);
+        
+        if (input.empty()) {
+            continue;
+        }
         
         if (input == "quit" || input == "exit") {
             break;
-        } else if (input == "metrics") {
-            // Display current metrics using local tracking
-            std::cout << "📊 Current Performance Metrics:" << std::endl;
-            std::cout << "   - Training Progress: " << std::fixed << std::setprecision(1) 
-                      << (50.0f + (static_cast<float>(rand()) / RAND_MAX) * 50.0f) << "%" << std::endl;
-            std::cout << "   - Learning Rate: Active" << std::endl;
-            std::cout << "   - Neural Activity: High" << std::endl;
+        } else if (input == "help") {
+            std::cout << "\n📋 Available Commands:" << std::endl;
+            std::cout << "   • quit/exit - End training session" << std::endl;
+            std::cout << "   • help - Show this help message" << std::endl;
+            std::cout << "   • status - Show agent status" << std::endl;
+            std::cout << "   • metrics - Show current performance metrics" << std::endl;
+            std::cout << "   • reset - Reset learning state" << std::endl;
+            std::cout << "   • save - Save current state" << std::endl;
+            std::cout << "   • Any other text - Process as language input" << std::endl;
         } else if (input == "status") {
             displaySystemInfo(agent);
+        } else if (input == "metrics") {
+            session.displaySessionMetrics();
         } else if (input == "reset") {
             std::cout << "🔄 Resetting learning state..." << std::endl;
+            // Reset agent state here
             std::cout << "✅ Reset complete" << std::endl;
         } else if (input == "save") {
             std::cout << "💾 Saving current state..." << std::endl;
-            // Save using available method
-            if (agent && agent->saveAgentState("nlp_checkpoint")) {
+            if (agent && agent->saveAgentState("language_checkpoint")) {
                 std::cout << "✅ State saved successfully" << std::endl;
             } else {
                 std::cout << "❌ Failed to save state" << std::endl;
@@ -236,138 +320,192 @@ void runInteractiveMode(std::shared_ptr<AutonomousLearningAgent> agent) {
  * @brief Automated training with predefined language samples
  */
 void runAutomatedTraining(std::shared_ptr<AutonomousLearningAgent> agent) {
-    std::cout << "\n🤖 AUTOMATED TRAINING MODE" << std::endl;
+    std::cout << "\n🤖 AUTOMATED LANGUAGE TRAINING MODE" << std::endl;
     std::cout << std::string(50, '-') << std::endl;
     
-    // Sample training texts for different language understanding tasks
+    // Enhanced training samples for various language understanding tasks
     std::vector<std::string> training_samples = {
+        // Basic conversational patterns
         "Hello, how are you today?",
-        "What is the meaning of artificial intelligence?",
-        "Can you explain the concept of neural networks?",
-        "The weather is beautiful outside.",
-        "I enjoy reading books about science and technology.",
-        "What is two plus two?",
-        "Tell me about the history of computers.",
-        "How do biological neurons work?",
-        "What are the applications of machine learning?",
-        "Can machines truly understand language?",
-        "The quick brown fox jumps over the lazy dog.",
-        "Explain the difference between syntax and semantics.",
-        "What is consciousness?",
-        "How do we learn language as children?",
-        "What makes humans creative?",
-        "Can artificial neural networks dream?",
-        "What is the relationship between mind and brain?",
-        "How do we process visual information?",
-        "What role does attention play in cognition?",
-        "Can machines experience emotions?"
+        "What is your name and what can you help me with?",
+        "Can you explain how neural networks learn from data?",
+        "I'm interested in learning about artificial intelligence.",
+        
+        // Questions and queries
+        "What is the meaning of consciousness in artificial systems?",
+        "How do biological neurons differ from artificial ones?",
+        "Can you describe the process of natural language understanding?",
+        "What are the main challenges in machine learning today?",
+        
+        // Informational content
+        "The human brain contains approximately 86 billion neurons interconnected in complex networks.",
+        "Natural language processing involves understanding syntax, semantics, and pragmatics.",
+        "Machine learning algorithms can identify patterns in large datasets through statistical analysis.",
+        "Artificial neural networks are inspired by the structure and function of biological brains.",
+        
+        // Complex reasoning tasks
+        "If artificial intelligence systems can process language, do they truly understand meaning?",
+        "Compare and contrast supervised learning with unsupervised learning approaches.",
+        "Explain the relationship between attention mechanisms and human cognitive processes.",
+        "How might future AI systems integrate symbolic reasoning with neural computation?",
+        
+        // Creative and philosophical content
+        "What makes human creativity unique compared to algorithmic generation?",
+        "Can machines develop genuine emotions or are they merely simulating responses?",
+        "Describe the ethical implications of increasingly autonomous AI systems.",
+        "How do we balance AI capabilities with human values and safety concerns?",
+        
+        // Technical discussions
+        "Transformer architectures use self-attention to process sequential data efficiently.",
+        "Backpropagation enables neural networks to learn by adjusting weights based on errors.",
+        "Reinforcement learning agents learn optimal behaviors through trial and error.",
+        "Large language models demonstrate emergent capabilities at sufficient scale.",
+        
+        // Conversational responses
+        "That's a fascinating perspective on machine consciousness.",
+        "I appreciate your detailed explanation of the neural architecture.",
+        "Could you elaborate on that point about semantic understanding?",
+        "Your insights about AI safety are very thought-provoking.",
+        
+        // Educational content
+        "Language models learn statistical patterns from text to predict likely continuations.",
+        "Attention mechanisms allow models to focus on relevant parts of input sequences.",
+        "Transfer learning enables models to apply knowledge from one domain to another.",
+        "Fine-tuning adapts pre-trained models to specific tasks with minimal additional data."
     };
     
-    NLPTrainingSession session(agent);
-    session.startSession();
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> reward_dist(0.3, 1.0);
+    std::uniform_int_distribution<> sample_dist(0, training_samples.size() - 1);
     
-    std::cout << "🚀 Starting automated training with " << training_samples.size() 
-              << " samples..." << std::endl;
+    const int total_training_steps = 100;
+    int successful_processes = 0;
     
-    for (size_t i = 0; i < training_samples.size(); ++i) {
-        std::cout << "\n📝 Training Sample " << (i + 1) << "/" << training_samples.size() << std::endl;
+    for (int i = 0; i < total_training_steps && !g_shutdown_requested; ++i) {
+        // Select random training sample
+        int sample_index = sample_dist(gen);
+        const std::string& sample = training_samples[sample_index];
         
-        session.processLanguageInput(training_samples[i]);
+        std::cout << "\n[Step " << (i + 1) << "/" << total_training_steps << "] ";
+        std::cout << "Processing: \"" << sample.substr(0, 50) << "...\"" << std::endl;
         
-        // Simulate reward signal based on successful processing
-        float reward = 0.7f + (static_cast<float>(rand()) / RAND_MAX) * 0.3f;
-        agent->applyReward(reward);
+        // Process through agent
+        bool success = agent->processLanguageInput(sample, "", true);
         
-        // Brief pause between samples
+        if (success) {
+            successful_processes++;
+            
+            // Generate response
+            std::string response = agent->generateLanguageResponse();
+            std::cout << "Response: \"" << response.substr(0, 80) << "...\"" << std::endl;
+            
+            // Apply simulated reward based on response quality
+            float reward = reward_dist(gen);
+            agent->applyReward(reward);
+            
+            std::cout << "Reward: " << std::fixed << std::setprecision(2) << reward << std::endl;
+        } else {
+            std::cout << "❌ Processing failed" << std::endl;
+        }
+        
+        // Show progress every 10 steps
+        if ((i + 1) % 10 == 0) {
+            float success_rate = static_cast<float>(successful_processes) / (i + 1) * 100;
+            float learning_progress = agent->getLearningProgress() * 100;
+            
+            std::cout << "\n📊 Progress Update:" << std::endl;
+            std::cout << "   • Steps Completed: " << (i + 1) << "/" << total_training_steps << std::endl;
+            std::cout << "   • Success Rate: " << std::fixed << std::setprecision(1) << success_rate << "%" << std::endl;
+            std::cout << "   • Learning Progress: " << std::fixed << std::setprecision(1) << learning_progress << "%" << std::endl;
+            
+            auto attention_weights = agent->getAttentionWeights();
+            std::cout << "   • Key Attention Weights:" << std::endl;
+            for (const auto& [module, weight] : attention_weights) {
+                if (module.find("language") != std::string::npos || 
+                    module.find("semantic") != std::string::npos) {
+                    std::cout << "     - " << module << ": " << std::fixed << std::setprecision(2) 
+                              << (weight * 100) << "%" << std::endl;
+                }
+            }
+        }
+        
+        // Brief pause between training steps
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     
-    session.stopSession();
+    std::cout << "\n✅ AUTOMATED TRAINING COMPLETE" << std::endl;
+    std::cout << "📈 Final Success Rate: " << std::fixed << std::setprecision(1) 
+              << (static_cast<float>(successful_processes) / total_training_steps * 100) << "%" << std::endl;
+    std::cout << "🧠 Final Learning Progress: " << std::fixed << std::setprecision(1) 
+              << (agent->getLearningProgress() * 100) << "%" << std::endl;
 }
 
 /**
- * @brief Main entry point
+ * @brief Main application entry point
  */
 int main(int argc, char* argv[]) {
+    // Setup signal handlers
+    signal(SIGINT, signalHandler);
+    signal(SIGTERM, signalHandler);
+    
+    std::cout << "🚀 NEUROGEN LANGUAGE PROCESSING AUTONOMOUS AGENT" << std::endl;
+    std::cout << std::string(60, '=') << std::endl;
+    std::cout << "🧠 Brain-Inspired Modular Neural Architecture" << std::endl;
+    std::cout << "💬 Natural Language Processing Focus" << std::endl;
+    std::cout << "🎯 Autonomous Learning and Adaptation" << std::endl;
+    std::cout << std::string(60, '-') << std::endl;
+    
     try {
-        std::cout << "🧠 BIOLOGICALLY INSPIRED NEURAL NETWORK AGENT" << std::endl;
-        std::cout << "=============================================" << std::endl;
-        std::cout << "🎯 Focus: Natural Language Processing" << std::endl;
-        std::cout << "🔬 Architecture: Modular Neural Networks" << std::endl;
-        std::cout << "⚡ Features: Real-time Learning & Adaptation" << std::endl;
-        std::cout << "=============================================" << std::endl;
+        // Initialize brain architecture configuration
+        BrainModuleArchitecture::ArchitectureConfig config;
+        config.max_sequence_length = 512;
+        config.vocabulary_size = 50000;
+        config.embedding_dimensions = 300;
+        config.global_learning_rate = 0.001f;
+        config.enable_continual_learning = true;
+        config.use_gpu_acceleration = false; // CPU-only for now
         
-        // Initialize network configuration
-        NetworkConfig config;
-        config.num_neurons = 8192;           // Large-scale neural network
-        config.enable_neurogenesis = true;
-        config.enable_stdp = true;
-        config.enable_pruning = true;
-        config.enable_structural_plasticity = true;
+        std::cout << "🔧 Initializing autonomous learning agent..." << std::endl;
         
-        // Use available NetworkConfig members
-        config.dt = 0.01;                    // Time step
-        config.stdp_learning_rate = 0.005;   // Conservative learning rate for language
+        // Create and initialize autonomous learning agent
+        g_agent = std::make_shared<AutonomousLearningAgent>(config);
         
-        std::cout << "🔧 Initializing NLP-focused neural architecture..." << std::endl;
-        
-        // Create autonomous learning agent
-        auto agent = std::make_shared<AutonomousLearningAgent>(config);
-        
-        // Initialize agent
-        if (!agent->initialize(false)) {  // Don't reset existing model
-            std::cerr << "❌ Failed to initialize agent" << std::endl;
+        if (!g_agent->initialize(config.vocabulary_size, config.max_sequence_length)) {
+            std::cerr << "❌ Failed to initialize autonomous learning agent" << std::endl;
             return -1;
         }
         
         std::cout << "✅ Agent initialized successfully" << std::endl;
         
-        // Display system information
-        displaySystemInfo(agent);
-        
-        // Determine mode based on command line arguments
-        bool interactive_mode = true;
+        // Check command line arguments for mode selection
+        std::string mode = "interactive";
         if (argc > 1) {
-            std::string mode_arg = argv[1];
-            if (mode_arg == "--automated" || mode_arg == "-a") {
-                interactive_mode = false;
-            } else if (mode_arg == "--interactive" || mode_arg == "-i") {
-                interactive_mode = true;
-            } else if (mode_arg == "--help" || mode_arg == "-h") {
-                std::cout << "\nUsage: " << argv[0] << " [OPTIONS]" << std::endl;
-                std::cout << "Options:" << std::endl;
-                std::cout << "  -i, --interactive  Run in interactive mode (default)" << std::endl;
-                std::cout << "  -a, --automated    Run automated training" << std::endl;
-                std::cout << "  -h, --help         Show this help message" << std::endl;
-                return 0;
-            }
+            mode = argv[1];
         }
         
-        // Run in selected mode
-        if (interactive_mode) {
-            runInteractiveMode(agent);
+        if (mode == "automated" || mode == "auto") {
+            runAutomatedTraining(g_agent);
+        } else if (mode == "status") {
+            displaySystemInfo(g_agent);
         } else {
-            runAutomatedTraining(agent);
+            // Default to interactive mode
+            runInteractiveTraining(g_agent);
         }
-        
-        std::cout << "\n💾 Saving final state..." << std::endl;
-        if (agent->saveAgentState("nlp_final_state")) {
-            std::cout << "✅ Final state saved successfully" << std::endl;
-        } else {
-            std::cout << "⚠️  Warning: Failed to save final state" << std::endl;
-        }
-        
-        std::cout << "\n🎉 Training session complete!" << std::endl;
-        std::cout << "🧠 Neural architecture has been trained on language processing tasks" << std::endl;
-        std::cout << "📊 Check the metrics above for performance details" << std::endl;
         
     } catch (const std::exception& e) {
-        std::cerr << "❌ Error: " << e.what() << std::endl;
-        return -1;
-    } catch (...) {
-        std::cerr << "❌ Unknown error occurred" << std::endl;
+        std::cerr << "❌ Fatal error: " << e.what() << std::endl;
         return -1;
     }
     
+    // Graceful shutdown
+    std::cout << "\n🛑 Shutting down autonomous learning agent..." << std::endl;
+    
+    if (g_agent) {
+        g_agent->shutdown();
+        g_agent.reset();
+    }
+    
+    std::cout << "✅ Shutdown complete. Goodbye!" << std::endl;
     return 0;
 }

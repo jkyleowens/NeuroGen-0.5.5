@@ -1,2 +1,2 @@
 obj/AttentionController.o: src/AttentionController.cpp \
-  include/NeuroGen/AttentionController.h
+ include/NeuroGen/AttentionController.h
