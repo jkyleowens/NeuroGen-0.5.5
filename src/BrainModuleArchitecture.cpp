@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <sstream>
 #include <iomanip>
+#include <fstream>
+#include <chrono>
 
 // ============================================================================
 // CONSTRUCTION AND INITIALIZATION
@@ -375,7 +377,7 @@ std::pair<bool, std::string> BrainModuleArchitecture::addLanguageModule(const Mo
         // Create NetworkConfig for the module
         NetworkConfig net_config;
         net_config.num_neurons = config.internal_neurons;
-        net_config.learning_rate = config.learning_rate;
+        net_config.stdp_learning_rate = config.learning_rate; // Use stdp_learning_rate instead
         
         // Create the module
         auto module = std::make_shared<EnhancedNeuralModule>(config.name, net_config);
@@ -524,10 +526,10 @@ bool BrainModuleArchitecture::loadState(const std::string& filepath, bool merge_
             ModuleConfig config;
             file.read(reinterpret_cast<char*>(&config), sizeof(config));
             
-            // Add the module
+            // Recreate module
             auto [success, error_msg] = addLanguageModule(config);
             if (!success) {
-                std::cerr << "Failed to load module " << name << ": " << error_msg << std::endl;
+                std::cerr << "Failed to recreate module " << name << ": " << error_msg << std::endl;
             }
         }
         
@@ -535,29 +537,31 @@ bool BrainModuleArchitecture::loadState(const std::string& filepath, bool merge_
         size_t connection_count;
         file.read(reinterpret_cast<char*>(&connection_count), sizeof(connection_count));
         
+        connections_.clear();
         for (size_t i = 0; i < connection_count; ++i) {
             size_t src_len, tgt_len, type_len;
             file.read(reinterpret_cast<char*>(&src_len), sizeof(src_len));
             
-            std::string src_module(src_len, '\0');
-            file.read(&src_module[0], src_len);
+            std::string source_module(src_len, '\0');
+            file.read(&source_module[0], src_len);
             
             file.read(reinterpret_cast<char*>(&tgt_len), sizeof(tgt_len));
-            std::string tgt_module(tgt_len, '\0');
-            file.read(&tgt_module[0], tgt_len);
+            std::string target_module(tgt_len, '\0');
+            file.read(&target_module[0], tgt_len);
             
             file.read(reinterpret_cast<char*>(&type_len), sizeof(type_len));
-            std::string conn_type(type_len, '\0');
-            file.read(&conn_type[0], type_len);
+            std::string connection_type(type_len, '\0');
+            file.read(&connection_type[0], type_len);
             
-            float strength;
-            bool bidirectional;
-            float delay;
-            file.read(reinterpret_cast<char*>(&strength), sizeof(strength));
-            file.read(reinterpret_cast<char*>(&bidirectional), sizeof(bidirectional));
-            file.read(reinterpret_cast<char*>(&delay), sizeof(delay));
+            float connection_strength;
+            bool is_bidirectional;
+            float delay_ms;
+            file.read(reinterpret_cast<char*>(&connection_strength), sizeof(connection_strength));
+            file.read(reinterpret_cast<char*>(&is_bidirectional), sizeof(is_bidirectional));
+            file.read(reinterpret_cast<char*>(&delay_ms), sizeof(delay_ms));
             
-            connections_.emplace_back(src_module, tgt_module, strength, conn_type, bidirectional, delay);
+            connections_.emplace_back(source_module, target_module, connection_strength, 
+                                    connection_type, is_bidirectional, delay_ms);
         }
         
         file.close();
@@ -571,14 +575,15 @@ bool BrainModuleArchitecture::loadState(const std::string& filepath, bool merge_
 }
 
 // ============================================================================
-// MONITORING AND DIAGNOSTICS
+// METRICS AND STATUS
 // ============================================================================
 
-std::map<std::string, float> BrainModuleArchitecture::getLanguageProcessingStats() const {
+std::map<std::string, float> BrainModuleArchitecture::getPerformanceMetrics() const {
     std::map<std::string, float> stats;
     
-    stats["total_modules"] = static_cast<float>(modules_.size());
-    stats["total_connections"] = static_cast<float>(connections_.size());
+    // Basic statistics
+    stats["module_count"] = static_cast<float>(modules_.size());
+    stats["connection_count"] = static_cast<float>(connections_.size());
     stats["is_processing"] = is_processing_ ? 1.0f : 0.0f;
     stats["learning_enabled"] = is_learning_enabled_ ? 1.0f : 0.0f;
     
@@ -646,67 +651,90 @@ void BrainModuleArchitecture::setPerformanceMonitoring(bool enable_monitoring) {
 }
 
 // ============================================================================
-// INTERNAL HELPER METHODS
+// HELPER METHODS
 // ============================================================================
 
 std::vector<float> BrainModuleArchitecture::extractLanguageFeatures(const LanguageInput& input) {
-    std::vector<float> features;
-    features.reserve(config_.embedding_dimensions);
+    // Simplified feature extraction - would be much more sophisticated in practice
+    std::vector<float> features(768, 0.0f); // Standard embedding size
     
-    // Simple feature extraction (in a real implementation, this would use sophisticated NLP)
-    const std::string& text = input.text;
+    // Basic word count and length features
+    features[0] = static_cast<float>(input.text.length()) / 1000.0f; // Normalized text length
     
-    // Basic text statistics
-    features.push_back(static_cast<float>(text.length()) / 1000.0f); // Normalized length
-    features.push_back(static_cast<float>(std::count(text.begin(), text.end(), ' ')) / 100.0f); // Word count
-    features.push_back(static_cast<float>(std::count(text.begin(), text.end(), '.')) / 10.0f); // Sentence count
+    // Count common words (simplified)
+    size_t word_count = std::count(input.text.begin(), input.text.end(), ' ') + 1;
+    features[1] = static_cast<float>(word_count) / 100.0f; // Normalized word count
     
-    // Character-level features (simplified)
-    for (size_t i = 0; i < text.length() && features.size() < config_.embedding_dimensions; ++i) {
-        features.push_back(static_cast<float>(text[i]) / 255.0f);
+    // Use provided embeddings if available
+    if (!input.embeddings.empty()) {
+        size_t copy_size = std::min(input.embeddings.size(), features.size() - 2);
+        std::copy(input.embeddings.begin(), input.embeddings.begin() + copy_size, 
+                 features.begin() + 2);
     }
     
-    // Pad to desired size
-    while (features.size() < config_.embedding_dimensions) {
-        features.push_back(0.0f);
+    // Use linguistic features if available
+    for (const auto& [feature_name, value] : input.linguistic_features) {
+        // Simple hash-based feature mapping (would be more sophisticated in practice)
+        size_t hash = std::hash<std::string>{}(feature_name);
+        size_t index = (hash % (features.size() - 100)) + 100; // Leave space for other features
+        features[index] = value;
     }
     
     return features;
 }
 
 std::string BrainModuleArchitecture::convertNeuralToText(const std::vector<float>& neural_output) {
+    // Simplified neural-to-text conversion
+    // In a real implementation, this would use a vocabulary and proper decoding
+    
     if (neural_output.empty()) {
-        return "No response generated.";
+        return "Empty response";
     }
     
-    // Simple conversion (in a real implementation, this would use a proper decoder)
+    // Simple approach: generate text based on neural activation patterns
+    std::ostringstream text;
+    
+    // Find dominant activations
+    float max_activation = *std::max_element(neural_output.begin(), neural_output.end());
+    
+    if (max_activation > 0.8f) {
+        text << "High confidence response: ";
+    } else if (max_activation > 0.5f) {
+        text << "Moderate response: ";
+    } else {
+        text << "Low confidence response: ";
+    }
+    
+    // Generate simple response based on activation pattern
     float avg_activation = 0.0f;
-    for (float value : neural_output) {
-        avg_activation += value;
+    for (float val : neural_output) {
+        avg_activation += val;
     }
     avg_activation /= neural_output.size();
     
-    if (avg_activation > 0.7f) {
-        return "I understand your input and can provide a comprehensive response based on my language processing.";
-    } else if (avg_activation > 0.4f) {
-        return "I'm processing your request and working to understand the context.";
+    if (avg_activation > 0.3f) {
+        text << "The neural processing indicates strong semantic understanding.";
     } else if (avg_activation > 0.1f) {
-        return "Could you provide more details? I'm working to understand your request.";
+        text << "Processing shows moderate semantic activation.";
     } else {
-        return "I'm having difficulty processing that input. Please try rephrasing.";
+        text << "Minimal neural response detected.";
     }
+    
+    return text.str();
 }
 
 float BrainModuleArchitecture::calculateOutputConfidence(const std::vector<float>& output) {
-    if (output.empty()) return 0.0f;
-    
-    float sum = 0.0f;
-    float max_val = -1.0f;
-    for (float val : output) {
-        sum += std::abs(val);
-        max_val = std::max(max_val, std::abs(val));
+    if (output.empty()) {
+        return 0.0f;
     }
     
-    float avg = sum / output.size();
-    return std::min(1.0f, (avg + max_val) / 2.0f);
+    // Calculate confidence based on activation statistics
+    float max_val = *std::max_element(output.begin(), output.end());
+    float min_val = *std::min_element(output.begin(), output.end());
+    
+    // Simple confidence metric based on dynamic range
+    float range = max_val - min_val;
+    float confidence = std::min(1.0f, range * 2.0f);
+    
+    return confidence;
 }

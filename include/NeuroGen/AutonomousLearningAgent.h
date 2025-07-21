@@ -238,11 +238,6 @@ public:
     void make_decision();
     
     /**
-     * @brief Execute language-based actions
-     */
-    void execute_action();
-    
-    /**
      * @brief Learn from recent language experiences
      */
     void learn_from_experience();
@@ -332,12 +327,6 @@ public:
     // ========================================================================
     
     /**
-     * @brief Set passive mode (observation only, no actions)
-     * @param is_passive Whether to enable passive mode
-     */
-    void setPassiveMode(bool is_passive);
-    
-    /**
      * @brief Enable or disable detailed logging
      * @param detailed_logging Whether to enable detailed logging
      */
@@ -405,6 +394,87 @@ public:
      * @return Comprehension score [0.0, 1.0]
      */
     float computeLanguageComprehension(const std::vector<float>& neural_output) const;
+
+        /**
+    * @brief Check if learning is currently enabled
+    * @return True if learning is enabled, false otherwise
+    */
+    bool isLearningEnabled() const { return is_learning_enabled_.load(); }
+
+    /**
+    * @brief Enable or disable learning
+    * @param enabled Learning state to set
+    */
+    void setLearningEnabled(bool enabled) { is_learning_enabled_.store(enabled); }
+
+    /**
+    * @brief Check if the agent is currently running
+    * @return True if running, false otherwise
+    */
+    bool isRunning() const { return is_running_.load(); }
+
+    /**
+    * @brief Check if the agent is in passive mode
+    * @return True if in passive mode, false otherwise
+    */
+    bool isPassiveMode() const { return is_passive_mode_.load(); }
+
+    /**
+    * @brief Set passive mode
+    * @param passive Passive mode state to set
+    */
+    void setPassiveMode(bool passive) { is_passive_mode_.store(passive); }
+
+    /**
+     * @brief Make autonomous decision based on current state
+     */
+    void make_autonomous_decision();
+    
+    /**
+     * @brief Execute action based on current decision
+     */
+    void execute_action();
+    
+    /**
+     * @brief Extract linguistic features from text
+     * @param text Input text to analyze
+     * @return Vector of linguistic features
+     */
+    std::vector<float> extractLanguageFeatures(const std::string& text);
+    
+    /**
+     * @brief Calculate current reward signal
+     * @return Current reward value
+     */
+    float calculateCurrentReward();
+
+// ============================================================================
+// ADDITIONAL METHODS TO ADD TO PUBLIC SECTION (if needed for external access)
+// ============================================================================
+
+    /**
+     * @brief Get current decision
+     * @return Current decision string
+     */
+    const std::string& getCurrentDecision() const { return current_decision_; }
+    
+    /**
+     * @brief Get decision confidence
+     * @return Decision confidence [0.0-1.0]
+     */
+    float getDecisionConfidence() const { return decision_confidence_; }
+    
+    /**
+     * @brief Get global reward signal
+     * @return Current global reward
+     */
+    float getGlobalReward() const { return global_reward_signal_; }
+    
+    /**
+     * @brief Get simulation time
+     * @return Current simulation time
+     */
+    float getSimulationTime() const { return simulation_time_; }
 
 private:
     // ========================================================================

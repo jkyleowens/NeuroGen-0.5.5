@@ -28,6 +28,10 @@
 class LearningStateManager;
 class NetworkCUDA;
 class ContinuousLearningAgent;
+class LanguageTokenizer;
+class EmbeddingManager;
+class AttentionController;
+class MemoryConsolidator;
 
 /**
  * @brief Brain-inspired modular architecture for natural language processing
@@ -184,7 +188,6 @@ public:
     
     std::pair<bool, std::string> initializeLanguagePipeline();
     std::pair<bool, std::string> validateConfiguration() const;
-    
     void reset(bool preserve_language_knowledge = true);
 
     // ========================================================================
@@ -193,13 +196,7 @@ public:
     
     LanguageOutput processLanguage(const LanguageInput& input, bool learning_enabled = true);
     std::string processText(const std::string& text, bool learning_enabled = true);
-    
-    LanguageOutput generateResponse(const LanguageInput& context, 
-                                  size_t max_length = 100, 
-                                  float temperature = 0.7f);
-    
-    LanguageOutput processConversation(const std::vector<LanguageInput>& conversation_history,
-                                     const LanguageInput& current_input);
+    LanguageOutput generateResponse(const LanguageInput& context, size_t max_length = 256, float temperature = 0.7f);
 
     // ========================================================================
     // MODULE MANAGEMENT
@@ -207,32 +204,7 @@ public:
     
     std::pair<bool, std::string> addLanguageModule(const ModuleConfig& config);
     bool removeModule(const std::string& module_name, bool cleanup_connections = true);
-    bool updateModuleConfig(const std::string& module_name, const ModuleConfig& config);
-    
-    std::shared_ptr<EnhancedNeuralModule> getModule(const std::string& module_name) const;
     std::vector<std::shared_ptr<EnhancedNeuralModule>> getModulesByType(ModuleType type) const;
-    std::vector<std::string> getModuleNames() const;
-    
-    std::shared_ptr<EnhancedNeuralModule> getTaskOptimizedModule(const std::string& task) const;
-
-    // ========================================================================
-    // ATTENTION AND CONTROL MECHANISMS
-    // ========================================================================
-    
-    void updateLanguageAttention(const LanguageInput& input, const std::string& task_context = "");
-    std::map<std::string, float> getAttentionWeights() const;
-    void focusAttentionOn(const std::string& aspect, float strength);
-
-    // ========================================================================
-    // LEARNING AND ADAPTATION
-    // ========================================================================
-    
-    void applyLanguageLearning(float reward, const LanguageInput& language_context);
-    void consolidateLanguageLearning(float consolidation_strength = 0.1f);
-    
-    void transferLanguageKnowledge(const std::string& source_task, 
-                                 const std::string& target_task,
-                                 float transfer_strength = 0.1f);
 
     // ========================================================================
     // STATE MANAGEMENT AND PERSISTENCE
@@ -240,86 +212,58 @@ public:
     
     bool saveState(const std::string& filepath, bool include_language_knowledge = true);
     bool loadState(const std::string& filepath, bool merge_with_current = false);
-    
-    std::pair<bool, std::string> exportLanguageModel(const std::string& export_path,
-                                                   const std::string& format = "onnx");
 
     // ========================================================================
-    // MONITORING AND DIAGNOSTICS
+    // METRICS AND STATUS
     // ========================================================================
     
-    std::map<std::string, float> getLanguageProcessingStats() const;
+    std::map<std::string, float> getPerformanceMetrics() const;
     std::string getDetailedStatus() const;
     void setPerformanceMonitoring(bool enable_monitoring);
-    ArchitectureConfig getConfiguration() const { return config_; }
 
     // ========================================================================
-    // CONNECTION MANAGEMENT
+    // ACCESS AND UTILITY
     // ========================================================================
     
-    bool addConnection(const std::string& source_module, const std::string& target_module, 
-                      float strength);
-    bool removeConnection(const std::string& source_module, const std::string& target_module);
-    std::vector<InterModuleConnection> getConnections() const;
+    size_t getModuleCount() const { return modules_.size(); }
+    bool isProcessing() const { return is_processing_; }
+    bool isLearningEnabled() const { return is_learning_enabled_; }
+    void setLearningEnabled(bool enabled) { is_learning_enabled_ = enabled; }
     
-    bool hasConnection(const std::string& source_module, const std::string& target_module) const;
-
-    // ========================================================================
-    // PROCESSING CONTROL
-    // ========================================================================
-    
-    std::map<std::string, std::vector<float>> processInput(const std::vector<float>& inputs);
-    
-    std::map<std::string, std::vector<float>> processInputWithLearning(
-        const std::vector<float>& inputs, 
-        float reward = 0.0f, 
-        float novelty_signal = 0.0f);
-    
-    void update(float dt, float global_reward = 0.0f);
-    
-    std::vector<float> getModuleOutput(const std::string& module_name) const;
+    const ArchitectureConfig& getConfig() const { return config_; }
 
 private:
     // ========================================================================
-    // INTERNAL STATE MANAGEMENT
+    // MEMBER VARIABLES
     // ========================================================================
     
+    // Core configuration and state
     ArchitectureConfig config_;
-    
-    std::map<std::string, std::shared_ptr<EnhancedNeuralModule>> modules_;
-    std::vector<InterModuleConnection> connections_;
-    std::map<std::string, ModuleConfig> module_configs_;
-    
     std::atomic<bool> is_processing_;
     std::atomic<bool> is_learning_enabled_;
-    std::map<std::string, std::vector<float>> module_outputs_;
-    std::vector<float> global_linguistic_state_;
-    
     std::chrono::high_resolution_clock::time_point last_update_time_;
+    
+    // Module management
+    std::map<std::string, std::shared_ptr<EnhancedNeuralModule>> modules_;
+    std::map<std::string, ModuleConfig> module_configs_;
+    std::vector<InterModuleConnection> connections_;
+    
+    // Processing state
+    std::vector<float> global_linguistic_state_;
+    std::map<std::string, std::vector<float>> module_outputs_;
     std::map<std::string, float> processing_times_;
     std::map<std::string, float> language_metrics_;
     
-    mutable std::recursive_mutex architecture_mutex_;
+    // Threading and synchronization
     mutable std::mutex processing_mutex_;
-
-    // ========================================================================
-    // INTERNAL HELPER METHODS
-    // ========================================================================
     
-    bool initializeLanguageModules();
-    bool createDefaultConnections();
-    void updateInternalState(float dt);
+    // ========================================================================
+    // HELPER METHODS
+    // ========================================================================
     
     std::vector<float> extractLanguageFeatures(const LanguageInput& input);
     std::string convertNeuralToText(const std::vector<float>& neural_output);
     float calculateOutputConfidence(const std::vector<float>& output);
-    
-    void routeLanguageSignals();
-    void optimizeModulePerformance();
-    
-    bool validateConnection(const InterModuleConnection& connection) const;
-    void propagateLanguageSignal(const std::string& source_module, 
-                               const std::vector<float>& signal);
 };
 
 #endif // BRAIN_MODULE_ARCHITECTURE_H

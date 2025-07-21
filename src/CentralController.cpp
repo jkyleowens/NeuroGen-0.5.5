@@ -10,10 +10,14 @@
 #include "NeuroGen/NeuralModule.h"
 #include "NeuroGen/Network.h"
 #include "NeuroGen/NetworkConfig.h"
+#include "NeuroGen/BrainModuleArchitecture.h"
 #include <iostream>
 #include <memory>
 #include <algorithm>
 #include <vector>
+#include <sstream>
+#include <unordered_map>
+#include <iomanip>
 
 // ============================================================================
 // CONSTRUCTOR AND DESTRUCTOR
@@ -46,9 +50,8 @@ bool CentralController::initialize() {
         
         // Step 2: Initialize controller module with proper configuration
         ControllerConfig controller_config;
-        // **FIXED: Use correct member names that exist in ControllerConfig**
         controller_config.initial_dopamine_level = 0.4f;
-        controller_config.reward_learning_rate = 0.02f;  // Use correct member name
+        controller_config.reward_learning_rate = 0.02f;
         controller_config.enable_detailed_logging = true;
         
         neuro_controller_ = std::make_unique<ControllerModule>(controller_config);
@@ -61,10 +64,16 @@ bool CentralController::initialize() {
         // Step 3: Initialize task modules
         initialize_task_modules();
         
-        // Step 4: Initialize autonomous learning agent
-        NetworkConfig agent_config;
-        agent_config.hidden_size = 512;
-        // **FIXED: NetworkConfig doesn't have learning_rate - removed this line**
+        // Step 4: Initialize autonomous learning agent with correct configuration type
+        // **FIXED: Use BrainModuleArchitecture::ArchitectureConfig instead of NetworkConfig**
+        BrainModuleArchitecture::ArchitectureConfig agent_config;
+        agent_config.vocabulary_size = 50000;
+        agent_config.max_sequence_length = 512;
+        agent_config.embedding_dimensions = 300;
+        agent_config.global_learning_rate = 0.001f;
+        agent_config.enable_continual_learning = true;
+        agent_config.working_memory_capacity = 1024;
+        
         learning_agent_ = std::make_unique<AutonomousLearningAgent>(agent_config);
         learning_agent_->initialize();
         
@@ -84,18 +93,33 @@ void CentralController::initialize_neural_modules() {
     // Create configurations
     NetworkConfig cognitive_config;
     cognitive_config.hidden_size = 512;
-    // **FIXED: NetworkConfig doesn't have learning_rate - removed this line**
+    cognitive_config.num_neurons = 2048;
+    cognitive_config.hidden_hidden_prob = 0.05f;
+    cognitive_config.input_hidden_prob = 0.15f;
     
     NetworkConfig motor_config;
     motor_config.hidden_size = 256;
-    // **FIXED: NetworkConfig doesn't have learning_rate - removed this line**
+    motor_config.num_neurons = 1024;
+    motor_config.hidden_hidden_prob = 0.08f;
+    motor_config.input_hidden_prob = 0.2f;
     
     // Create neural modules
     perception_module_ = std::make_shared<NeuralModule>("PerceptionNet", cognitive_config);
     planning_module_ = std::make_shared<NeuralModule>("PlanningNet", cognitive_config);
     motor_module_ = std::make_shared<NeuralModule>("MotorControlNet", motor_config);
     
-    std::cout << "✅ Neural modules created" << std::endl;
+    // Initialize the modules
+    if (!perception_module_->initialize()) {
+        throw std::runtime_error("Failed to initialize PerceptionNet");
+    }
+    if (!planning_module_->initialize()) {
+        throw std::runtime_error("Failed to initialize PlanningNet");
+    }
+    if (!motor_module_->initialize()) {
+        throw std::runtime_error("Failed to initialize MotorControlNet");
+    }
+    
+    std::cout << "✅ Neural modules created and initialized" << std::endl;
 }
 
 void CentralController::initialize_task_modules() {
@@ -115,7 +139,6 @@ void CentralController::initialize_task_modules() {
 // ============================================================================
 // MAIN CONTROL INTERFACE
 // ============================================================================
-
 
 void CentralController::run(int cycles) {
     if (!is_initialized_) {
@@ -142,8 +165,10 @@ void CentralController::execute_cognitive_cycle() {
     // Update controller module
     neuro_controller_->update(dt);
     
-    // Update learning agent
-    learning_agent_->update(dt);
+    // **FIXED: Use autonomousLearningStep instead of update**
+    // Update learning agent with autonomous learning step
+    float learning_progress = learning_agent_->autonomousLearningStep(dt);
+    std::cout << "Learning progress: " << learning_progress << std::endl;
     
     // Generate attention allocation
     std::unordered_map<std::string, float> attention_weights;
@@ -151,7 +176,6 @@ void CentralController::execute_cognitive_cycle() {
     attention_weights["PlanningNet"] = 0.4f;
     attention_weights["MotorControlNet"] = 0.2f;
     
-    // **FIXED: Use available method for attention allocation**
     // Apply attention through individual module updates
     for (const auto& [module_name, weight] : attention_weights) {
         auto module = neuro_controller_->get_module(module_name);
@@ -164,16 +188,43 @@ void CentralController::execute_cognitive_cycle() {
     // Coordinate neural activity
     neuro_controller_->coordinate_module_activities();
     
+    // Update neural modules with time step
+    std::vector<float> dummy_input(128, 0.1f); // Small input signal
+    perception_module_->update(dt, dummy_input);
+    planning_module_->update(dt, dummy_input);
+    motor_module_->update(dt, dummy_input);
+    
     std::cout << "CentralController: Cognitive cycle completed" << std::endl;
 }
 
 void CentralController::update_performance_metrics() {
-    // **FIXED: Use available methods to get neuromodulator information**
     std::cout << "CentralController: Performance Metrics:" << std::endl;
-    std::cout << "  - Dopamine: " << neuro_controller_->get_concentration(NeuromodulatorType::DOPAMINE) << std::endl;
-    std::cout << "  - Serotonin: " << neuro_controller_->get_concentration(NeuromodulatorType::SEROTONIN) << std::endl;
-    std::cout << "  - Norepinephrine: " << neuro_controller_->get_concentration(NeuromodulatorType::NOREPINEPHRINE) << std::endl;
-    std::cout << "  - System Coherence: " << neuro_controller_->get_system_coherence() << std::endl;
+    
+    if (neuro_controller_) {
+        std::cout << "  - Dopamine: " << neuro_controller_->get_concentration(NeuromodulatorType::DOPAMINE) << std::endl;
+        std::cout << "  - Serotonin: " << neuro_controller_->get_concentration(NeuromodulatorType::SEROTONIN) << std::endl;
+        std::cout << "  - Norepinephrine: " << neuro_controller_->get_concentration(NeuromodulatorType::NOREPINEPHRINE) << std::endl;
+        std::cout << "  - System Coherence: " << neuro_controller_->get_system_coherence() << std::endl;
+    }
+    
+    // Display module activity levels
+    if (perception_module_) {
+        auto perception_stats = perception_module_->get_stats();
+        std::cout << "  - Perception Activity: " << perception_stats.mean_firing_rate << " Hz" << std::endl;
+        std::cout << "  - Perception Active Ratio: " << perception_stats.neuron_activity_ratio << std::endl;
+    }
+    
+    if (planning_module_) {
+        auto planning_stats = planning_module_->get_stats();
+        std::cout << "  - Planning Activity: " << planning_stats.mean_firing_rate << " Hz" << std::endl;
+        std::cout << "  - Planning Active Ratio: " << planning_stats.neuron_activity_ratio << std::endl;
+    }
+    
+    if (motor_module_) {
+        auto motor_stats = motor_module_->get_stats();
+        std::cout << "  - Motor Activity: " << motor_stats.mean_firing_rate << " Hz" << std::endl;
+        std::cout << "  - Motor Active Ratio: " << motor_stats.neuron_activity_ratio << std::endl;
+    }
 }
 
 // ============================================================================
@@ -189,10 +240,16 @@ void CentralController::shutdown() {
         learning_agent_->shutdown();
     }
     
-    
     if (neuro_controller_) {
         neuro_controller_->emergency_stop();
     }
+    
+    // Reset modules
+    perception_module_.reset();
+    planning_module_.reset();
+    motor_module_.reset();
+    cognitive_module_.reset();
+    motor_task_module_.reset();
     
     is_initialized_ = false;
     std::cout << "CentralController: Shutdown complete" << std::endl;
@@ -211,6 +268,27 @@ std::string CentralController::getSystemStatus() const {
     if (neuro_controller_) {
         ss << "  Controller active: Yes\n";
         ss << "  Registered modules: " << neuro_controller_->get_registered_modules().size() << "\n";
+        ss << "  System coherence: " << neuro_controller_->get_system_coherence() << "\n";
+    }
+    
+    if (learning_agent_) {
+        ss << "  Learning agent active: Yes\n";
+        ss << "  Learning enabled: " << (learning_agent_->isLearningEnabled() ? "Yes" : "No") << "\n";
+        ss << "  Current decision: " << learning_agent_->getCurrentDecision() << "\n";
+        ss << "  Decision confidence: " << std::fixed << std::setprecision(2) 
+           << learning_agent_->getDecisionConfidence() << "\n";
+    }
+    
+    // Module status
+    ss << "  Neural Modules:\n";
+    if (perception_module_) {
+        ss << "    - PerceptionNet: Active\n";
+    }
+    if (planning_module_) {
+        ss << "    - PlanningNet: Active\n";
+    }
+    if (motor_module_) {
+        ss << "    - MotorControlNet: Active\n";
     }
     
     return ss.str();
@@ -224,7 +302,32 @@ float CentralController::getSystemPerformance() const {
     // Calculate performance based on system coherence and activity
     float performance = neuro_controller_->get_system_coherence();
     
-
+    // Factor in neural module activity
+    float total_activity = 0.0f;
+    int active_modules = 0;
+    
+    if (perception_module_) {
+        auto stats = perception_module_->get_stats();
+        total_activity += stats.mean_firing_rate;
+        active_modules++;
+    }
+    
+    if (planning_module_) {
+        auto stats = planning_module_->get_stats();
+        total_activity += stats.mean_firing_rate;
+        active_modules++;
+    }
+    
+    if (motor_module_) {
+        auto stats = motor_module_->get_stats();
+        total_activity += stats.mean_firing_rate;
+        active_modules++;
+    }
+    
+    if (active_modules > 0) {
+        float average_activity = total_activity / active_modules;
+        performance = (performance + average_activity) / 2.0f;
+    }
     
     return std::min(1.0f, performance);
 }

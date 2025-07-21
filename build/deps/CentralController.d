@@ -1,10 +1,12 @@
-obj/AutonomousLearningAgent.o: src/AutonomousLearningAgent.cpp \
+obj/CentralController.o: src/CentralController.cpp \
+ include/NeuroGen/CentralController.h include/NeuroGen/ControllerModule.h \
+ include/NeuroGen/NeuralModule.h include/NeuroGen/Network.h \
+ include/NeuroGen/Neuron.h include/NeuroGen/Synapse.h \
+ include/NeuroGen/NetworkStats.h include/NeuroGen/NetworkConfig.h \
  include/NeuroGen/AutonomousLearningAgent.h \
  include/NeuroGen/BrainModuleArchitecture.h \
- include/NeuroGen/EnhancedNeuralModule.h include/NeuroGen/NeuralModule.h \
- include/NeuroGen/Network.h include/NeuroGen/Neuron.h \
- include/NeuroGen/Synapse.h include/NeuroGen/NetworkStats.h \
- include/NeuroGen/NetworkConfig.h include/NeuroGen/TopologyGenerator.h \
+ include/NeuroGen/EnhancedNeuralModule.h \
+ include/NeuroGen/TopologyGenerator.h \
  include/NeuroGen/cuda/GPUNeuralStructures.h \
  include/NeuroGen/NeuralConstants.h include/NeuroGen/LearningState.h \
  include/NeuroGen/LanguageInterface.h include/NeuroGen/MemorySystem.h \
@@ -37,4 +39,5 @@ obj/AutonomousLearningAgent.o: src/AutonomousLearningAgent.cpp \
  /usr/include/opencv4/opencv2/core/optim.hpp \
  /usr/include/opencv4/opencv2/core/ovx.hpp \
  /usr/include/opencv4/opencv2/core/cvdef.h \
- include/NeuroGen/InputController.h include/NeuroGen/LearningGoal.h
+ include/NeuroGen/InputController.h include/NeuroGen/LearningGoal.h \
+ include/NeuroGen/TaskAutomationModules.h

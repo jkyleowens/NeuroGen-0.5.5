@@ -191,8 +191,7 @@ public:
      * @param input Vector of input values
      * @return Vector of specialized processing outputs
      */
-    std::vector<float> processSpecialized(const std::vector<float>& input) override;
-    
+    std::vector<float> processSpecialized(const std::vector<float>& input);
     /**
      * @brief Process with specific linguistic context
      * @param input Vector of input values
