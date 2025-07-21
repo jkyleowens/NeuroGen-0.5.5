@@ -124,6 +124,7 @@ obj/CentralController.o: src/CentralController.cpp \
   include/NeuroGen/TopologyGenerator.h \
   include/NeuroGen/cuda/GPUNeuralStructures.h \
   include/NeuroGen/NeuralConstants.h include/NeuroGen/LearningState.h \
+  include/NeuroGen/AttentionController.h \
   include/NeuroGen/BrainModuleArchitecture.h \
   include/NeuroGen/ModularNeuralNetwork.h \
   include/NeuroGen/LearningStateManager.h \

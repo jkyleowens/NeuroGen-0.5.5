@@ -123,6 +123,7 @@ obj/DecisionAndActionSystems.o: src/DecisionAndActionSystems.cpp \
   /usr/include/opencv4/opencv2/video/background_segm.hpp \
   include/NeuroGen/GUIElementDetector.h include/NeuroGen/OCRProcessor.h \
   include/NeuroGen/BioVisualProcessor.h \
+  include/NeuroGen/AttentionController.h \
   include/NeuroGen/BrainModuleArchitecture.h \
   include/NeuroGen/ModularNeuralNetwork.h \
   include/NeuroGen/LearningStateManager.h \

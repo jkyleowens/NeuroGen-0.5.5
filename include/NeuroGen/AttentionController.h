@@ -114,9 +114,6 @@ public:
      * @return Success status
      */
     bool register_module(const std::string& module_name, float baseline_weight = 1.0f);
-    inline bool register_module(const std::string& module_name) {
-        return register_module(module_name, 1.0f);
-    }
     
     /**
      * @brief Unregister a neural module

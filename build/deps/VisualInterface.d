@@ -1,11 +1,14 @@
-obj/SafetyManager.o: src/SafetyManager.cpp \
-  include/NeuroGen/SafetyManager.h /usr/include/opencv4/opencv2/core.hpp \
+obj/VisualInterface.o: src/VisualInterface.cpp \
+  include/NeuroGen/VisualInterface.h include/NeuroGen/ScreenElement.h \
+  include/NeuroGen/RealScreenCapture.h \
+  /usr/include/opencv4/opencv2/opencv.hpp \
+  /usr/include/opencv4/opencv2/opencv_modules.hpp \
+  /usr/include/opencv4/opencv2/core.hpp \
   /usr/include/opencv4/opencv2/core/cvdef.h \
   /usr/include/opencv4/opencv2/core/version.hpp \
   /usr/include/opencv4/opencv2/core/hal/interface.h \
   /usr/include/opencv4/opencv2/core/cv_cpu_dispatch.h \
   /usr/include/opencv4/opencv2/core/base.hpp \
-  /usr/include/opencv4/opencv2/opencv_modules.hpp \
   /usr/include/opencv4/opencv2/core/cvstd.hpp \
   /usr/include/opencv4/opencv2/core/cvstd_wrapper.hpp \
   /usr/include/opencv4/opencv2/core/neon_utils.hpp \
@@ -26,15 +29,6 @@ obj/SafetyManager.o: src/SafetyManager.cpp \
   /usr/include/opencv4/opencv2/core/utility.hpp \
   /usr/include/opencv4/opencv2/core/optim.hpp \
   /usr/include/opencv4/opencv2/core/ovx.hpp \
-  include/NeuroGen/InputController.h \
-  include/NeuroGen/AutonomousLearningAgent.h \
-  include/NeuroGen/ControllerModule.h include/NeuroGen/NeuralModule.h \
-  include/NeuroGen/Network.h include/NeuroGen/Neuron.h \
-  include/NeuroGen/Synapse.h include/NeuroGen/NetworkStats.h \
-  include/NeuroGen/NetworkConfig.h include/NeuroGen/ScreenElement.h \
-  include/NeuroGen/VisualInterface.h \
-  include/NeuroGen/RealScreenCapture.h \
-  /usr/include/opencv4/opencv2/opencv.hpp \
   /usr/include/opencv4/opencv2/calib3d.hpp \
   /usr/include/opencv4/opencv2/features2d.hpp \
   /usr/include/opencv4/opencv2/flann/miniflann.hpp \
@@ -121,10 +115,10 @@ obj/SafetyManager.o: src/SafetyManager.cpp \
   include/NeuroGen/BioVisualProcessor.h \
   include/NeuroGen/SpecializedModule.h \
   include/NeuroGen/EnhancedNeuralModule.h \
+  include/NeuroGen/NeuralModule.h include/NeuroGen/Network.h \
+  include/NeuroGen/Neuron.h include/NeuroGen/Synapse.h \
+  include/NeuroGen/NetworkStats.h include/NeuroGen/NetworkConfig.h \
   include/NeuroGen/TopologyGenerator.h \
   include/NeuroGen/cuda/GPUNeuralStructures.h \
   include/NeuroGen/NeuralConstants.h include/NeuroGen/LearningState.h \
-  include/NeuroGen/AttentionController.h \
-  include/NeuroGen/BrainModuleArchitecture.h \
-  include/NeuroGen/ModularNeuralNetwork.h \
-  include/NeuroGen/LearningStateManager.h
+  include/NeuroGen/AttentionController.h
