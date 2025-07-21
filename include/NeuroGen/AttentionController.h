@@ -114,6 +114,9 @@ public:
      * @return Success status
      */
     bool register_module(const std::string& module_name, float baseline_weight = 1.0f);
+    inline bool register_module(const std::string& module_name) {
+        return register_module(module_name, 1.0f);
+    }
     
     /**
      * @brief Unregister a neural module
@@ -216,6 +219,11 @@ public:
      * @param priority Priority value (0.0 to 2.0)
      */
     void set_context_priority(const std::string& context, float priority);
+
+    // Compatibility wrapper for legacy calls
+    inline void set_priority(const std::string& context, float priority) {
+        set_context_priority(context, priority);
+    }
     
     /**
      * @brief Get current context priorities
