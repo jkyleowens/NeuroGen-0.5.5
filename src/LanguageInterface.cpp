@@ -205,7 +205,7 @@ bool LanguageInterface::addConversationalInput(const std::string& user_input,
     return processTextInput(user_input, conversation_context);
 }
 
-std::vector<float> LanguageInterface::getLanguageImportanceMap() const {
+std::vector<float> LanguageInterface::getLanguageImportanceMap() {
     std::lock_guard<std::mutex> lock(metrics_mutex_);
     return text_importance_map_;
 }
@@ -477,7 +477,7 @@ std::string LanguageInterface::getConversationContext() const {
 // PERFORMANCE MONITORING
 // ============================================================================
 
-LanguageInterface::LanguageMetrics LanguageInterface::getCurrentMetrics() const {
+LanguageInterface::LanguageMetrics LanguageInterface::getCurrentMetrics() {
     std::lock_guard<std::mutex> lock(metrics_mutex_);
     return current_metrics_;
 }

@@ -19,6 +19,11 @@
 #include <fstream>
 #include <sstream>
 
+// Forward declarations for classes used by LanguageInterface
+class TextTokenizer;
+class LanguageAnalyzer;
+class ResponseGenerator;
+
 /**
  * @brief Language Interface for Natural Language Processing
  * 
@@ -119,9 +124,9 @@ private:
     std::string pending_response_;
     
     // Language processing components
-    std::unique_ptr<class TextTokenizer> tokenizer_;
-    std::unique_ptr<class LanguageAnalyzer> analyzer_;
-    std::unique_ptr<class ResponseGenerator> response_generator_;
+    // std::unique_ptr<TextTokenizer> tokenizer_;
+    // std::unique_ptr<LanguageAnalyzer> analyzer_;
+    // std::unique_ptr<ResponseGenerator> response_generator_;
     
     // Attention and importance mapping
     std::vector<float> text_importance_map_;
@@ -240,7 +245,7 @@ public:
      * @brief Get language importance mapping
      * @return Vector of importance scores for current text
      */
-    std::vector<float> getLanguageImportanceMap() const;
+    std::vector<float> getLanguageImportanceMap();
     
     /**
      * @brief Get attention guidance for language processing
@@ -354,7 +359,7 @@ public:
      * @brief Get current language processing metrics
      * @return Current performance metrics
      */
-    LanguageMetrics getCurrentMetrics() const;
+    LanguageMetrics getCurrentMetrics();
     
     /**
      * @brief Get performance history

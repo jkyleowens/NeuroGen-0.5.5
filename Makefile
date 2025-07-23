@@ -1,7 +1,7 @@
 # Compiler and Linker
-CXX := g++
+CXX := clang++
 NVCC := /opt/cuda/bin/nvcc
-LINK := g++
+LINK := clang++
 
 # Directories
 SRC_DIR := src
@@ -22,36 +22,30 @@ TARGET_AUTONOMOUS := NeuroGen_Autonomous
 
 # Compiler Flags
 # Note: The -I$(INCLUDE_DIR) flag tells the compilers where to find your header files.
-CXXFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -I/usr/include/opencv4 -O3 -g -fPIC -Wall -fmax-errors=50
-NVCCFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -I/usr/include/opencv4 -arch=sm_75 -O3 -g -lineinfo \
+CXXFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -O3 -g -fPIC -Wall -ferror-limit=50
+NVCCFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -arch=sm_75 -O3 -g -lineinfo \
              -Xcompiler -fPIC -Xcompiler -Wall -use_fast_math \
              --expt-relaxed-constexpr --expt-extended-lambda -ccbin /usr/bin/clang++
 
 # Linker Flags
 LDFLAGS := -L$(CUDA_PATH)/lib64 -L/usr/lib
-LDLIBS := -lcudart -lcurand -lcublas -lcufft \
-          -lopencv_core -lopencv_imgproc -lopencv_imgcodecs -lopencv_objdetect \
-          -lX11 -lXext -lXfixes -lXtst \
-          -ltesseract -lleptonica
+LDLIBS := -ljsoncpp -lcudart -lcurand -lcublas -lcufft
 
 # --- Source Files ---
 
-# Automatically find all .cpp and .cu files
+# Automatically find all .cpp files
 CPP_SOURCES := $(wildcard $(SRC_DIR)/*.cpp)
-CUDA_SOURCES := $(wildcard $(CUDA_SRC_DIR)/*.cu)
 
 # --- Object Files ---
 
 # Generate object file names from source file names
 CPP_OBJECTS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(CPP_SOURCES))
-CUDA_OBJECTS := $(patsubst $(CUDA_SRC_DIR)/%.cu,$(CUDA_OBJ_DIR)/%.o,$(CUDA_SOURCES))
 
 # Combine all object files
-OBJECTS := $(CPP_OBJECTS) $(CUDA_OBJECTS)
+OBJECTS := $(CPP_OBJECTS)
 
 # --- Dependency Files ---
 DEPS := $(patsubst $(SRC_DIR)/%.cpp,$(DEPS_DIR)/%.d,$(CPP_SOURCES))
-CUDA_DEPS := $(patsubst $(CUDA_SRC_DIR)/%.cu,$(CUDA_DEPS_DIR)/%.d,$(CUDA_SOURCES))
 
 # --- Build Rules ---
 
@@ -75,16 +69,10 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR) $(DEPS_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 	@$(CXX) $(CXXFLAGS) -MM $< -MT $@ -MF $(patsubst $(SRC_DIR)/%.cpp,$(DEPS_DIR)/%.d,$<)
 
-# CUDA compilation rule
-$(CUDA_OBJ_DIR)/%.o: $(CUDA_SRC_DIR)/%.cu | $(CUDA_OBJ_DIR) $(CUDA_DEPS_DIR)
-	@echo "Compiling CUDA source: $<"
-	$(NVCC) $(NVCCFLAGS) -c $< -o $@
-	@$(NVCC) $(NVCCFLAGS) -M $< -MT $@ -MF $(patsubst $(CUDA_SRC_DIR)/%.cu,$(CUDA_DEPS_DIR)/%.d,$<)
-
 # --- Directory Creation ---
 
 # Create directories if they don't exist
-$(OBJ_DIR) $(CUDA_OBJ_DIR) $(DEPS_DIR) $(CUDA_DEPS_DIR):
+$(OBJ_DIR) $(DEPS_DIR):
 	mkdir -p $@
 
 # --- Housekeeping ---
@@ -101,4 +89,3 @@ test_brain_architecture: test_brain_module_architecture.cpp $(OBJECTS)
 
 # Include dependency files
 -include $(DEPS)
--include $(CUDA_DEPS)

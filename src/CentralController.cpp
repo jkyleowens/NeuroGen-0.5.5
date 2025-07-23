@@ -64,15 +64,13 @@ bool CentralController::initialize() {
         // Step 3: Initialize task modules
         initialize_task_modules();
         
-        // Step 4: Initialize autonomous learning agent with correct configuration type
-        // **FIXED: Use BrainModuleArchitecture::ArchitectureConfig instead of NetworkConfig**
-        BrainModuleArchitecture::ArchitectureConfig agent_config;
-        agent_config.vocabulary_size = 50000;
-        agent_config.max_sequence_length = 512;
-        agent_config.embedding_dimensions = 300;
-        agent_config.global_learning_rate = 0.001f;
-        agent_config.enable_continual_learning = true;
-        agent_config.working_memory_capacity = 1024;
+        // Step 4: Initialize autonomous learning agent with NetworkConfig
+        // The AutonomousLearningAgent constructor takes NetworkConfig, not ArchitectureConfig
+        NetworkConfig agent_config;
+        agent_config.num_neurons = 10000;         // Base neuron count
+        agent_config.enable_stdp = true;          // Enable spike-timing dependent plasticity
+        agent_config.enable_neurogenesis = true;  // Enable neurogenesis
+        agent_config.enable_pruning = true;       // Enable synaptic pruning
         
         learning_agent_ = std::make_unique<AutonomousLearningAgent>(agent_config);
         learning_agent_->initialize();
@@ -273,8 +271,20 @@ std::string CentralController::getSystemStatus() const {
     
     if (learning_agent_) {
         ss << "  Learning agent active: Yes\n";
-        ss << "  Learning enabled: " << (learning_agent_->isLearningEnabled() ? "Yes" : "No") << "\n";
-        ss << "  Current decision: " << learning_agent_->getCurrentDecision() << "\n";
+        ss << "  Learning enabled: " << (learning_agent_->isLearningActive() ? "Yes" : "No") << "\n";
+        
+        OperatingMode mode = learning_agent_->getCurrentMode();
+        std::string mode_str = (mode == OperatingMode::AUTONOMOUS ? "AUTONOMOUS" : 
+                               mode == OperatingMode::IDLE ? "IDLE" : "MANUAL");
+        ss << "  Current mode: " << mode_str << "\n";
+        
+        std::string decision = learning_agent_->getCurrentDecision();
+        if (!decision.empty()) {
+            ss << "  Current action: " << decision << "\n";
+        } else {
+            ss << "  Current action: None\n";
+        }
+        
         ss << "  Decision confidence: " << std::fixed << std::setprecision(2) 
            << learning_agent_->getDecisionConfidence() << "\n";
     }
