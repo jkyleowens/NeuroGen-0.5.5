@@ -1,91 +1,78 @@
-# Compiler and Linker
-CXX := clang++
-NVCC := /opt/cuda/bin/nvcc
-LINK := clang++
+# ============================================================================
+# NEUROGEN MODULAR NEURAL NETWORK - FIXED MAKEFILE
+# ============================================================================
 
-# Directories
-SRC_DIR := src
-OBJ_DIR := obj
-BUILD_DIR := build
-INCLUDE_DIR := include
-CUDA_SRC_DIR := $(SRC_DIR)/cuda
-CUDA_OBJ_DIR := $(OBJ_DIR)/cuda
-DEPS_DIR := $(BUILD_DIR)/deps
-CUDA_DEPS_DIR := $(DEPS_DIR)/cuda
+# Compiler settings
+CXX = clang++
+NVCC = nvcc
+CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -fPIC -I./include -ferror-limit=50
+NVCCFLAGS = -std=c++17 -O3 -Xcompiler -fPIC -I./include
 
-# CUDA Path
-CUDA_PATH := /opt/cuda
+# Library paths and links - FIXED X11 LINKING
+CUDA_PATH = /opt/cuda
+LDFLAGS = -L$(CUDA_PATH)/lib64 -L/usr/lib -L/usr/lib/x86_64-linux-gnu
+LIBS = -ljsoncpp -lcudart -lcurand -lcublas -lcufft
 
-# Executable Name
-TARGET := NeuroGen
-TARGET_AUTONOMOUS := NeuroGen_Autonomous
+# Source directories
+SRC_DIR = src
+CUDA_SRC_DIR = src/cuda
+OBJ_DIR = obj
 
-# Compiler Flags
-# Note: The -I$(INCLUDE_DIR) flag tells the compilers where to find your header files.
-CXXFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -O3 -g -fPIC -Wall -ferror-limit=50
-NVCCFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -arch=sm_75 -O3 -g -lineinfo \
-             -Xcompiler -fPIC -Xcompiler -Wall -use_fast_math \
-             --expt-relaxed-constexpr --expt-extended-lambda -ccbin /usr/bin/clang++
+# Create object directory
+$(shell mkdir -p $(OBJ_DIR))
 
-# Linker Flags
-LDFLAGS := -L$(CUDA_PATH)/lib64 -L/usr/lib
-LDLIBS := -ljsoncpp -lcudart -lcurand -lcublas -lcufft
+# C++ source files - EXCLUDE CONFLICTING SOURCES
+CPP_SOURCES = $(filter-out $(SRC_DIR)/main.cpp $(SRC_DIR)/NlpAgentImplementation.cpp $(SRC_DIR)/InputController.cpp, $(wildcard $(SRC_DIR)/*.cpp))
 
-# --- Source Files ---
+# CUDA source files
+CUDA_SOURCES = $(wildcard $(CUDA_SRC_DIR)/*.cu)
 
-# Automatically find all .cpp files
-CPP_SOURCES := $(wildcard $(SRC_DIR)/*.cpp)
+# Object files
+CPP_OBJECTS = $(CPP_SOURCES:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
+CUDA_OBJECTS = $(CUDA_SOURCES:$(CUDA_SRC_DIR)/%.cu=$(OBJ_DIR)/%.o)
 
-# --- Object Files ---
+# Final targets
+TARGET = NeuroGen
+AUTONOMOUS_TARGET = NeuroGenAutonomous
 
-# Generate object file names from source file names
-CPP_OBJECTS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(CPP_SOURCES))
+# Default target
+all: $(AUTONOMOUS_TARGET)
 
-# Combine all object files
-OBJECTS := $(CPP_OBJECTS)
+# Build autonomous version only (main_autonomous.cpp)
+$(AUTONOMOUS_TARGET): $(CPP_OBJECTS) $(CUDA_OBJECTS) $(OBJ_DIR)/main_autonomous.o
+	@echo "Linking $(AUTONOMOUS_TARGET)..."
+	$(CXX) -o $@ $^ $(LDFLAGS) $(LIBS)
+	@echo "✅ Build complete: $(AUTONOMOUS_TARGET)"
 
-# --- Dependency Files ---
-DEPS := $(patsubst $(SRC_DIR)/%.cpp,$(DEPS_DIR)/%.d,$(CPP_SOURCES))
-
-# --- Build Rules ---
-
-all: $(TARGET)
-
-autonomous: $(TARGET_AUTONOMOUS)
-
-# Linking the final executable
-$(TARGET): $(OBJECTS)
+# Original main (if needed separately)
+$(TARGET): $(CPP_OBJECTS) $(CUDA_OBJECTS) $(OBJ_DIR)/main.o
 	@echo "Linking $(TARGET)..."
-	$(LINK) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+	$(CXX) -o $@ $^ $(LDFLAGS) $(LIBS)
+	@echo "✅ Build complete: $(TARGET)"
 
-# Linking the autonomous learning executable
-$(TARGET_AUTONOMOUS): $(filter-out $(OBJ_DIR)/main.o,$(OBJECTS)) $(OBJ_DIR)/main_autonomous.o
-	@echo "Linking $(TARGET_AUTONOMOUS)..."
-	$(LINK) -o $@ $^ $(LDFLAGS) $(LDLIBS)
-
-# C++ compilation rule
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR) $(DEPS_DIR)
-	@echo "Compiling C++ source: $<"
+# Compile C++ source files
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
+	@echo "Compiling $<..."
 	$(CXX) $(CXXFLAGS) -c $< -o $@
-	@$(CXX) $(CXXFLAGS) -MM $< -MT $@ -MF $(patsubst $(SRC_DIR)/%.cpp,$(DEPS_DIR)/%.d,$<)
 
-# --- Directory Creation ---
+# Compile CUDA source files
+$(OBJ_DIR)/%.o: $(CUDA_SRC_DIR)/%.cu
+	@echo "Compiling CUDA $<..."
+	$(NVCC) $(NVCCFLAGS) -c $< -o $@
 
-# Create directories if they don't exist
-$(OBJ_DIR) $(DEPS_DIR):
-	mkdir -p $@
-
-# --- Housekeeping ---
-
+# Clean build artifacts
 clean:
-	@echo "Cleaning up..."
-	rm -rf $(OBJ_DIR) $(TARGET) $(TARGET_AUTONOMOUS) $(DEPS_DIR)
+	rm -rf $(OBJ_DIR)
+	rm -f $(TARGET) $(AUTONOMOUS_TARGET)
 
-# Test targets
-test_brain_architecture: test_brain_module_architecture.cpp $(OBJECTS)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS)
+# Install dependencies (Ubuntu/Debian)
+deps:
+	sudo apt-get update
+	sudo apt-get install -y libx11-dev libxtst-dev libxi-dev libjsoncpp-dev
 
-.PHONY: all autonomous clean test_brain_architecture
+# Debug build
+debug: CXXFLAGS += -g -DDEBUG
+debug: NVCCFLAGS += -g -DDEBUG
+debug: $(AUTONOMOUS_TARGET)
 
-# Include dependency files
--include $(DEPS)
+.PHONY: all clean deps debug

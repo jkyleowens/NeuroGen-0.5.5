@@ -54,67 +54,56 @@ AutonomousLearningAgent::~AutonomousLearningAgent() {
 }
 
 void AutonomousLearningAgent::initializeSpecializedModules() {
-    // Create specialized neural modules for different cognitive functions
-    // MASSIVE SCALE-UP: Creating a robust free-thinking agent with tens of thousands of neurons
-
-    // Prefrontal Cortex - Executive function and reasoning (12,288 neurons)
-    auto prefrontal_cortex_config = config_;
-    prefrontal_cortex_config.num_neurons = 12288;  // 12K neurons for executive control
-    prefrontal_cortex_config.numColumns = 24;      // 24 executive columns
-    prefrontal_cortex_config.neuronsPerColumn = 512;
-    prefrontal_cortex_config.localFanOut = 80;     // High connectivity for complex reasoning
-    modules_["prefrontal_cortex"] = std::make_unique<SpecializedModule>("prefrontal_cortex", prefrontal_cortex_config);
-
-    // Motor Cortex - Precise motor control (8,192 neurons)
-    auto motor_cortex_config = config_;
-    motor_cortex_config.num_neurons = 8192;       // 8K neurons for motor control
-    motor_cortex_config.numColumns = 16;          // 16 motor columns
-    motor_cortex_config.neuronsPerColumn = 512;
-    motor_cortex_config.localFanOut = 50;         // Moderate connectivity for precise control
-    modules_["motor_cortex"] = std::make_unique<SpecializedModule>("motor_cortex", motor_cortex_config);
-
-    // Working Memory - Short-term memory and manipulation (6,144 neurons)
-    auto working_memory_config = config_;
-    working_memory_config.num_neurons = 6144;     // 6K neurons for working memory
-    working_memory_config.numColumns = 12;        // 12 memory columns
-    working_memory_config.neuronsPerColumn = 512;
-    working_memory_config.localFanOut = 40;
-    modules_["working_memory"] = std::make_unique<SpecializedModule>("working_memory", working_memory_config);
-
-    // Reward System - Value estimation and reinforcement (4,096 neurons)
-    auto reward_system_config = config_;
-    reward_system_config.num_neurons = 4096;      // 4K neurons for reward processing
-    reward_system_config.numColumns = 8;          // 8 reward columns
-    reward_system_config.neuronsPerColumn = 512;
-    reward_system_config.localFanOut = 30;
-    modules_["reward_system"] = std::make_unique<SpecializedModule>("reward_system", reward_system_config);
-
-    // Attention System - Dynamic focus and resource allocation (4,096 neurons)
-    auto attention_system_config = config_;
-    attention_system_config.num_neurons = 4096;   // 4K neurons for attention control
-    attention_system_config.numColumns = 8;       // 8 attention columns
-    attention_system_config.neuronsPerColumn = 512;
-    attention_system_config.localFanOut = 35;
-    modules_["attention_system"] = std::make_unique<SpecializedModule>("attention_system", attention_system_config);
+    // Remove visual modules, add language modules
+    
+    // Language Encoder Module (text → features)
+    auto language_encoder = std::make_shared<EnhancedNeuralModule>(
+        "language_encoder", 1024, 512  // vocab_size → hidden_size
+    );
+    modules_["language_encoder"] = language_encoder;
+    
+    // Language Processor Module (feature processing)
+    auto language_processor = std::make_shared<EnhancedNeuralModule>(
+        "language_processor", 512, 512  // hidden processing
+    );
+    modules_["language_processor"] = language_processor;
+    
+    // Language Decoder Module (features → output)
+    auto language_decoder = std::make_shared<EnhancedNeuralModule>(
+        "language_decoder", 512, 1024  // hidden_size → vocab_size
+    );
+    modules_["language_decoder"] = language_decoder;
+    
+    // Working Memory Module (for context)
+    auto working_memory = std::make_shared<EnhancedNeuralModule>(
+        "working_memory", 512, 256
+    );
+    modules_["working_memory"] = working_memory;
+    
+    std::cout << "✅ Initialized " << modules_.size() << " language processing modules" << std::endl;
 }
 
-bool AutonomousLearningAgent::initialize(bool real_time_capture) {
-    std::cout << "🤖 Initializing Autonomous Learning Agent..." << std::endl;
-
-    // Initialize specialized modules
+bool AutonomousLearningAgent::initialize(bool reset_model) {
+    std::cout << "🤖 Initializing NLP Learning Agent..." << std::endl;
+    
+    // Remove input_controller initialization
+    // input_controller_ = std::make_unique<InputController>(); // REMOVED
+    
+    // Initialize language dataset reader
+    dataset_reader_ = std::make_unique<LanguageDatasetReader>();
+    
+    // Initialize text tokenizer
+    text_tokenizer_ = std::make_unique<TextTokenizer>(vocab_size_);
+    
+    // Initialize language modules
     initializeSpecializedModules();
-
-    // Register neural modules with attention controller
-    attention_controller_->register_module("motor_cortex");
-    attention_controller_->register_module("prefrontal_cortex");
-    attention_controller_->register_module("working_memory");
-    attention_controller_->register_module("reward_system");
-    attention_controller_->register_module("attention_system");
-
-    // Initialize the safety manager with screen dimensions
-    SafetyManager::getInstance().setScreenDimensions(1920, 1080);
-
-    std::cout << "✅ Agent initialization complete." << std::endl;
+    
+    // Initialize brain architecture for language processing
+    if (brain_architecture_) {
+        brain_architecture_->initialize(vocab_size_, max_sequence_length_);
+    }
+    
+    std::cout << "✅ NLP Agent initialization complete" << std::endl;
     return true;
 }
 
@@ -174,38 +163,31 @@ void AutonomousLearningAgent::stopAutonomousLearning() {
 float AutonomousLearningAgent::autonomousLearningStep(float dt) {
     if (!is_learning_active_) return getLearningProgress();
 
-    // === NLP-FOCUSED LEARNING CYCLE (No autonomous browsing) ===
+    // === NLP-FOCUSED LEARNING CYCLE ===
     
-    // Step 1: Update neural working memory with current language context
-    update_working_memory();
+    // Step 1: Process current text batch from dataset
+    processTextBatch();
     
-    // Step 2: Process context through prefrontal cortex (language understanding)
-    std::vector<float> processed_output;
-    if (modules_.count("prefrontal_cortex") > 0) {
-        processed_output = modules_["prefrontal_cortex"]->process(environmental_context_);
+    // Step 2: Language understanding through neural modules
+    std::vector<float> language_output;
+    if (modules_.count("language_processor") > 0) {
+        language_output = modules_["language_processor"]->process(current_text_features_);
     }
     
-    // Step 3: Coordinate neural modules for language processing
-    coordinate_modules();
+    // Step 3: Coordinate language processing modules
+    coordinate_language_modules();
     
-    // Step 4: Update language processing metrics (simplified)
-    float immediate_reward = 0.1f; // Small constant reward for language learning
+    // Step 4: Compute language learning reward
+    float language_reward = computeLanguageLearningReward(language_output);
     
-    // Step 5: Store language processing experience
+    // Step 5: Store language learning experience
     if (memory_system_) {
-        storeEpisodeInMemory(immediate_reward);
+        storeLanguageEpisode(language_reward);
     }
     
-    // Step 6: Update attention weights based on language context
-    update_attention_weights();
+    // Step 6: Update attention for next text processing
+    update_language_attention_weights();
 
-    // Log learning progress periodically
-    static int step_count = 0;
-    if (++step_count % 50 == 0) {
-        logLearningProgress(step_count, immediate_reward);
-    }
-
-    // Return learning progress (based on accumulated experience and performance)
     return getLearningProgress();
 }
 
@@ -275,9 +257,15 @@ void AutonomousLearningAgent::set_learning_goal(const std::string& goal) {
     learning_goals_.push_back(goal);
 }
 
-void AutonomousLearningAgent::execute_action(const BrowsingAction& action) {
-    if (action_executor_) {
-        action_executor_(action);
+void AutonomousLearningAgent::execute_action() {
+    // NLP Agent: No physical actions, only text processing
+    metrics_.total_actions++;
+    last_action_time_ = std::chrono::steady_clock::now();
+    
+    // Log language processing step instead
+    if (detailed_logging_) {
+        std::cout << "[NLP Agent] Processed text sequence, length: " 
+                  << current_text_input_.length() << " chars" << std::endl;
     }
 }
 
@@ -337,6 +325,25 @@ void AutonomousLearningAgent::setupDefaultLearningGoals() {
 void AutonomousLearningAgent::processRealScreenInput() {
     // This method is disabled for NLP focus - no visual processing required
     return;
+}
+
+void AutonomousLearningAgent::processTextBatch() {
+    if (!dataset_reader_ || !dataset_reader_->hasNextBatch()) {
+        return;
+    }
+    
+    // Get next text batch from dataset
+    auto text_batch = dataset_reader_->getNextBatch(batch_size_);
+    
+    for (const auto& text_sample : text_batch) {
+        current_text_input_ = text_sample.text;
+        current_text_features_ = extractLanguageFeatures(text_sample.text);
+        
+        // Set target for supervised learning if available
+        if (!text_sample.target.empty()) {
+            current_text_target_ = extractLanguageFeatures(text_sample.target);
+        }
+    }
 }
 
 float AutonomousLearningAgent::computeScreenBasedReward() {
@@ -452,4 +459,92 @@ void AutonomousLearningAgent::execute_action() {
     if (detailed_logging_) {
         std::cout << "[NLP Agent] Action execution disabled (NLP-only mode)" << std::endl;
     }
+}
+
+void AutonomousLearningAgent::coordinate_language_modules() {
+    // Inter-module coordination for language processing
+    
+    // Language encoder → Language processor
+    if (modules_.count("language_encoder") && modules_.count("language_processor")) {
+        auto encoded_features = modules_["language_encoder"]->getOutput();
+        modules_["language_processor"]->receiveInput(encoded_features);
+    }
+    
+    // Language processor → Language decoder
+    if (modules_.count("language_processor") && modules_.count("language_decoder")) {
+        auto processed_features = modules_["language_processor"]->getOutput();
+        modules_["language_decoder"]->receiveInput(processed_features);
+    }
+    
+    // Apply attention weighting
+    float attention_weight = attention_weights_.count("language_processor") > 0 ? 
+                           attention_weights_["language_processor"] : 1.0f;
+    
+    for (auto& [name, module] : modules_) {
+        if (name.find("language") != std::string::npos && module) {
+            auto output = module->getOutput();
+            for (float& val : output) {
+                val *= attention_weight;
+            }
+        }
+    }
+}
+
+float AutonomousLearningAgent::computeLanguageLearningReward(const std::vector<float>& output) {
+    if (output.empty() || current_text_target_.empty()) {
+        return 0.1f; // Small reward for processing
+    }
+    
+    // Compute similarity between output and target
+    float similarity = 0.0f;
+    size_t min_size = std::min(output.size(), current_text_target_.size());
+    
+    for (size_t i = 0; i < min_size; ++i) {
+        similarity += 1.0f - std::abs(output[i] - current_text_target_[i]);
+    }
+    
+    return similarity / min_size;
+}
+
+void AutonomousLearningAgent::storeLanguageEpisode(float reward) {
+    if (!memory_system_) return;
+    
+    MemorySystem::MemoryTrace trace;
+    trace.episode_id = episode_counter_++;
+    trace.timestamp = std::chrono::system_clock::now();
+    trace.reward = reward;
+    trace.environmental_state = current_text_features_;
+    trace.action_type = 0; // Text processing action
+    
+    // Store text-specific data
+    trace.text_content = current_text_input_;
+    trace.language_features = current_text_features_;
+    
+    memory_system_->store(trace);
+    
+    // Update language metrics
+    metrics_.total_actions++;
+    metrics_.total_reward += reward;
+    if (reward > 0.5f) {
+        metrics_.successful_actions++;
+    }
+}
+
+void AutonomousLearningAgent::update_language_attention_weights() {
+    if (!attention_controller_) return;
+    
+    std::lock_guard<std::mutex> lock(attention_mutex_);
+    
+    // Compute attention based on language processing performance
+    std::map<std::string, std::vector<float>> module_outputs;
+    for (const auto& [name, module] : modules_) {
+        if (name.find("language") != std::string::npos && module && module->isInitialized()) {
+            module_outputs[name] = module->getOutput();
+        }
+    }
+    
+    // Update attention weights for language modules
+    attention_weights_ = attention_controller_->computeLanguageAttentionWeights(
+        module_outputs, current_text_features_
+    );
 }

@@ -22,16 +22,15 @@ BrainModuleArchitecture::~BrainModuleArchitecture() {
     // Cleanup logic here
 }
 
-bool BrainModuleArchitecture::initialize(int visual_input_width, int visual_input_height) {
-    visual_input_width_ = visual_input_width;
-    visual_input_height_ = visual_input_height;
-    visual_feature_size_ = visual_input_width * visual_input_height;
-
-    if (!initializeDefaultModules()) {
+bool BrainModuleArchitecture::initialize(int vocab_size, int max_seq_length) {
+    vocab_size_ = vocab_size;
+    max_sequence_length_ = max_seq_length;
+    
+    if (!initializeLanguageModules()) {
         return false;
     }
     
-    initializeInterModuleConnections();
+    initializeLanguageConnections();
     return true;
 }
 
@@ -598,6 +597,46 @@ bool BrainModuleArchitecture::initializeDefaultModules() {
 void BrainModuleArchitecture::initializeInterModuleConnections() {
     // Implement inter-module connection initialization
     // This method should set up the connections between modules
+}
+
+bool BrainModuleArchitecture::initializeLanguageModules() {
+    // Create language-specific modules instead of visual ones
+    
+    // Language encoder
+    ModuleConfig encoder_config;
+    encoder_config.module_name = "language_encoder";
+    encoder_config.input_size = vocab_size_;
+    encoder_config.hidden_size = 512;
+    encoder_config.output_size = 512;
+    encoder_config.module_type = "transformer_encoder";
+    
+    auto encoder_module = std::make_shared<EnhancedNeuralModule>(encoder_config);
+    modules_["language_encoder"] = encoder_module;
+    
+    // Language processor
+    ModuleConfig processor_config;
+    processor_config.module_name = "language_processor";
+    processor_config.input_size = 512;
+    processor_config.hidden_size = 512;
+    processor_config.output_size = 512;
+    processor_config.module_type = "transformer_layer";
+    
+    auto processor_module = std::make_shared<EnhancedNeuralModule>(processor_config);
+    modules_["language_processor"] = processor_module;
+    
+    // Language decoder
+    ModuleConfig decoder_config;
+    decoder_config.module_name = "language_decoder";
+    decoder_config.input_size = 512;
+    decoder_config.hidden_size = 512;
+    decoder_config.output_size = vocab_size_;
+    decoder_config.module_type = "transformer_decoder";
+    
+    auto decoder_module = std::make_shared<EnhancedNeuralModule>(decoder_config);
+    modules_["language_decoder"] = decoder_module;
+    
+    std::cout << "✅ Initialized language processing modules" << std::endl;
+    return true;
 }
 
 // ============================================================================
