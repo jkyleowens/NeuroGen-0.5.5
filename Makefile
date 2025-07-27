@@ -5,7 +5,7 @@
 # Compiler settings
 CXX = clang++
 NVCC = nvcc
-CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -fPIC -I./include -ferror-limit=50
+CXXFLAGS = -std=c++17 -O3 -Wall -Wextra -fPIC -I./include -I/opt/cuda/include -DCUDA_ENABLED -ferror-limit=100
 NVCCFLAGS = -std=c++17 -O3 -Xcompiler -fPIC -I./include
 
 # Library paths and links - FIXED X11 LINKING
