@@ -44,3 +44,75 @@ __global__ void intrinsicPlasticityKernel(GPUNeuronState* neurons, int num_neuro
 
     neuron.excitability = fmaxf(0.8f, fminf(1.2f, neuron.excitability + excitability_change));
 }
+
+// ============================================================================
+
+/**
+ * @brief Kernel to apply synaptic scaling to maintain network stability.
+ * This kernel is currently disabled to simplify the initial model.
+ * To enable, uncomment the code below and ensure it's called from a wrapper.
+ */
+__global__ void applySynapticScalingKernel(GPUSynapse* d_synapses, const GPUNeuronState* d_neurons, int num_synapses) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_synapses) return;
+
+    // --- FIX 1: Changed target_neuron_idx to post_neuron_idx ---
+    int neuron_idx = d_synapses[idx].post_neuron_idx;
+    float scaling_factor = d_neurons[neuron_idx].synaptic_scaling_factor;
+
+    // Apply scaling factor to the synaptic weight
+    d_synapses[idx].weight *= scaling_factor;
+
+    // Clamp weight to a reasonable range
+    d_synapses[idx].weight = fmaxf(0.001f, fminf(d_synapses[idx].weight, 1.0f));
+}
+
+/**
+ * @brief Kernel for weight normalization to prevent runaway synaptic strengths.
+ * This kernel is currently disabled.
+ * To enable, uncomment the code below.
+ */
+__global__ void weightNormalizationKernel(GPUSynapse* d_synapses, int* d_neuron_synapse_indices, int num_neurons, int synapses_per_neuron) {
+    int neuron_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (neuron_idx >= num_neurons) return;
+
+    float sum_squared_weights = 0.0f;
+    int start_idx = neuron_idx * synapses_per_neuron;
+
+    // Calculate sum of squared weights for the neuron's synapses
+    for (int i = 0; i < synapses_per_neuron; ++i) {
+        int synapse_idx = d_neuron_synapse_indices[start_idx + i];
+        sum_squared_weights += d_synapses[synapse_idx].weight * d_synapses[synapse_idx].weight;
+    }
+
+    // Normalize if the sum is greater than 1
+    if (sum_squared_weights > 1.0f) {
+        float norm_factor = 1.0f / sqrtf(sum_squared_weights);
+        for (int i = 0; i < synapses_per_neuron; ++i) {
+            int synapse_idx = d_neuron_synapse_indices[start_idx + i];
+            d_synapses[synapse_idx].weight *= norm_factor;
+        }
+    }
+}
+
+/**
+ * @brief Kernel to regulate neuron activity levels.
+ * This kernel is currently disabled.
+ * To enable, uncomment the code below.
+ */
+__global__ void activityRegulationKernel(GPUNeuronState* d_neurons, float target_activity, float regulation_strength, int num_neurons) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= num_neurons) return;
+
+    // --- FIX 2: Changed firing_rate to average_firing_rate ---
+    float current_activity = d_neurons[idx].average_firing_rate;
+    float activity_error = target_activity - current_activity;
+
+    // Adjust neuron's excitability based on the error
+    // --- FIX 3: Changed threshold to excitability ---
+    d_neurons[idx].excitability += regulation_strength * activity_error;
+
+    // Clamp excitability to a reasonable range
+    // --- FIX 4 & 5: Changed threshold to excitability ---
+    d_neurons[idx].excitability = fmaxf(0.1f, fminf(d_neurons[idx].excitability, 2.0f));
+}
