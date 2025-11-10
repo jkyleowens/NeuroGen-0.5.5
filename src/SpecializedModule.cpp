@@ -318,11 +318,26 @@ float sigmoid(float x) {
 void SpecializedModule::initializeSpecializedComponents() {
     // Initialize processing buffers based on specialization
     size_t buffer_size = config_.num_neurons;
-    
+
     processing_buffer_.resize(buffer_size, 0.0f);
     integration_buffer_.resize(buffer_size, 0.0f);
     output_buffer_.resize(config_.output_size, 0.0f);
-    
+
+    // NEW: Initialize biological neural substrate with REAL spiking neurons!
+    if (use_biological_neurons_) {
+        biological_module_ = std::make_unique<BiologicalNeuronModule>(
+            module_name_ + "_biological",
+            config_.num_neurons,
+            config_
+        );
+
+        // Initialize with 80% excitatory neurons and sparse connectivity
+        float connection_prob = 0.1f; // 10% connection probability
+        biological_module_->initialize(0.8f, connection_prob);
+
+        std::cout << "✅ Biological neurons enabled for module: " << module_name_ << std::endl;
+    }
+
     // Initialize specialized state based on module type
     if (specialization_type_ == "neuromodulatory_control") {
         initializeNeuromodulatoryControl();
@@ -416,10 +431,33 @@ std::vector<float> SpecializedModule::process(const std::vector<float>& input) {
     if (!is_initialized_ || !active_) {
         return std::vector<float>(config_.output_size, 0.0f);
     }
-    
+
     std::lock_guard<std::mutex> lock(module_mutex_);
-    
-    // Apply specialized processing based on module type
+
+    // NEW: Use biological spiking neurons if enabled!
+    if (use_biological_neurons_ && biological_module_) {
+        // Process through real spiking neural network
+        std::vector<float> bio_output = biological_module_->process(input);
+
+        // Apply specialization-specific post-processing if needed
+        if (specialization_type_ == "text_input_processing") {
+            // For input module, pass spikes through encoding
+            return processTextInput(bio_output);
+        } else if (specialization_type_ == "spike_to_action") {
+            // For output module, decode spikes to actions
+            return processSpikeToAction(bio_output);
+        }
+
+        // For other modules, return biological output directly or with scaling
+        if (bio_output.size() != config_.output_size) {
+            // Resize if needed
+            bio_output.resize(config_.output_size, 0.0f);
+        }
+
+        return bio_output;
+    }
+
+    // LEGACY: Abstract processing (fallback if biological neurons disabled)
     if (specialization_type_ == "neuromodulatory_control") {
         return processNeuromodulatoryControl(input);
     } else if (specialization_type_ == "text_input_processing") {
@@ -431,39 +469,51 @@ std::vector<float> SpecializedModule::process(const std::vector<float>& input) {
     } else if (specialization_type_ == "spike_to_action") {
         return processSpikeToAction(input);
     }
-    
+
     // Fallback to base processing
     return EnhancedNeuralModule::process(input);
 }
 
 std::vector<float> SpecializedModule::processNeuromodulatoryControl(const std::vector<float>& input) {
     // Central Controller: Generate neuromodulatory signals for other modules
-    
+
     // Analyze input to determine appropriate neuromodulation
     float input_novelty = computeInputNovelty(input);
     float input_complexity = computeInputComplexity(input);
     float attention_demand = computeAttentionDemand(input);
-    
+
     // Update neuromodulator levels
     updateNeuromodulatorLevels(input_novelty, input_complexity, attention_demand);
-    
+
+    // NEW: Apply neuromodulation to biological neurons
+    if (use_biological_neurons_ && biological_module_) {
+        float avg_dopamine = std::accumulate(dopamine_signals_.begin(), dopamine_signals_.end(), 0.0f)
+                           / dopamine_signals_.size();
+        float avg_acetylcholine = std::accumulate(acetylcholine_signals_.begin(), acetylcholine_signals_.end(), 0.0f)
+                                / acetylcholine_signals_.size();
+        float avg_norepinephrine = std::accumulate(norepinephrine_signals_.begin(), norepinephrine_signals_.end(), 0.0f)
+                                 / norepinephrine_signals_.size();
+
+        biological_module_->setNeuromodulators(avg_dopamine, avg_acetylcholine, avg_norepinephrine);
+    }
+
     // Generate control signals
     std::vector<float> control_output(config_.output_size, 0.0f);
-    
+
     for (size_t i = 0; i < control_output.size(); ++i) {
         // Combine multiple neuromodulatory signals
         float dopamine_component = dopamine_signals_[i % dopamine_signals_.size()];
         float acetylcholine_component = acetylcholine_signals_[i % acetylcholine_signals_.size()];
         float norepinephrine_component = norepinephrine_signals_[i % norepinephrine_signals_.size()];
-        
-        control_output[i] = 0.4f * dopamine_component + 
-                           0.3f * acetylcholine_component + 
+
+        control_output[i] = 0.4f * dopamine_component +
+                           0.3f * acetylcholine_component +
                            0.3f * norepinephrine_component;
-        
+
         // Apply sigmoid activation for smooth control
         control_output[i] = std::tanh(control_output[i]);
     }
-    
+
     return control_output;
 }
 
@@ -709,12 +759,17 @@ float SpecializedModule::get_attention_weight() const {
 // ============================================================================
 
 void SpecializedModule::update(float dt, const std::vector<float>& inputs, float reward) {
+    // NEW: Update biological neurons with reward-modulated learning
+    if (use_biological_neurons_ && biological_module_) {
+        biological_module_->update(dt, inputs, reward);
+    }
+
     // Call parent update
     EnhancedNeuralModule::update(dt, inputs, reward);
-    
+
     // Apply specialized learning updates
     applySpecializedLearning(reward, dt);
-    
+
     // Update attention weights based on performance
     updateAttentionBasedOnPerformance(reward);
 }
