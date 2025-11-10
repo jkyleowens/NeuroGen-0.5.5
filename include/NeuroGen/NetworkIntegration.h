@@ -2,8 +2,13 @@
 #define NETWORK_INTEGRATION_H
 
 #include <NeuroGen/Network.h>
+
+// Only include CUDA headers if CUDA is available
+#ifdef __CUDACC__
 #include <NeuroGen/cuda/GPUNeuralStructures.h>
 #include <NeuroGen/cuda/GridBlockUtils.cuh>
+#endif
+
 #include <NeuroGen/EnhancedLearningSystem.h>
 #include <NeuroGen/LearningRuleConstants.h>
 

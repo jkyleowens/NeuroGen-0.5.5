@@ -88,31 +88,7 @@ private:
 // ATTENTION CONTROLLER CLASS DECLARATION
 // ============================================================================
 
-/**
- * @brief Attention Controller for Module Coordination
- */
-class AttentionController {
-public:
-    AttentionController();
-    virtual ~AttentionController() = default;
-    
-    void register_module(const std::string& module_name);
-    void update_context(const std::vector<float>& new_context);
-    void compute_attention_weights();
-    float get_attention_weight(const std::string& module_name) const;
-    void set_priority(const std::string& context, float priority);
-    void apply_global_inhibition(float strength);
-    std::vector<float> get_all_attention_weights() const;
-
-private:
-    std::vector<std::string> module_names_;
-    std::vector<float> module_attention_weights_;
-    std::vector<float> current_context_;
-    std::vector<float> context_features_;
-    std::map<std::string, float> context_priorities_;
-    float attention_decay_rate_;
-    float attention_boost_threshold_;
-    float global_inhibition_strength_;
-};
+// AttentionController is now defined in AttentionController.h
+// Removed duplicate definition to avoid redefinition errors
 
 #endif // VISUAL_INTERFACE_H
