@@ -146,6 +146,8 @@ struct GPUNeuronState {
     float synaptic_scaling_factor;      // Global synaptic scaling
     float bcm_threshold;                // BCM learning threshold
     float plasticity_threshold;         // Plasticity induction threshold
+    float threshold;                    // Firing threshold
+    float firing_rate;                  // Instantaneous firing rate
     
     // === NEUROMODULATION ===
     float dopamine_concentration;       // Local dopamine level
@@ -193,6 +195,7 @@ struct GPUSynapse {
     // === CONNECTIVITY ===
     int pre_neuron_idx;                 // Presynaptic neuron index
     int post_neuron_idx;                // Postsynaptic neuron index
+    int target_neuron_idx;              // Target neuron index (for homeostatic scaling)
     int post_compartment;               // Target compartment
     int receptor_index;                 // Receptor type
     int active;                         // Activity flag

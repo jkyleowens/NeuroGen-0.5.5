@@ -56,8 +56,7 @@ __global__ void applySynapticScalingKernel(GPUSynapse* d_synapses, const GPUNeur
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= num_synapses) return;
 
-    // --- FIX 1: Changed target_neuron_idx to post_neuron_idx ---
-    int neuron_idx = d_synapses[idx].post_neuron_idx;
+    int neuron_idx = d_synapses[idx].target_neuron_idx;
     float scaling_factor = d_neurons[neuron_idx].synaptic_scaling_factor;
 
     // Apply scaling factor to the synaptic weight
@@ -104,15 +103,12 @@ __global__ void activityRegulationKernel(GPUNeuronState* d_neurons, float target
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= num_neurons) return;
 
-    // --- FIX 2: Changed firing_rate to average_firing_rate ---
-    float current_activity = d_neurons[idx].average_firing_rate;
+    float current_activity = d_neurons[idx].firing_rate;
     float activity_error = target_activity - current_activity;
 
     // Adjust neuron's excitability based on the error
-    // --- FIX 3: Changed threshold to excitability ---
-    d_neurons[idx].excitability += regulation_strength * activity_error;
+    d_neurons[idx].threshold += regulation_strength * activity_error;
 
-    // Clamp excitability to a reasonable range
-    // --- FIX 4 & 5: Changed threshold to excitability ---
-    d_neurons[idx].excitability = fmaxf(0.1f, fminf(d_neurons[idx].excitability, 2.0f));
+    // Clamp threshold to a reasonable range
+    d_neurons[idx].threshold = fmaxf(0.1f, fminf(d_neurons[idx].threshold, 2.0f));
 }

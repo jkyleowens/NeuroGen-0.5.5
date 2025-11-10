@@ -184,6 +184,97 @@ void AutonomousLearningAgent::process_visual_input() {
     return;
 }
 
+void AutonomousLearningAgent::update_working_memory() {
+    if (!modules_.count("working_memory")) return;
+    
+    // Combine current sensory input with existing working memory
+    std::vector<float> working_memory_input;
+    working_memory_input.reserve(512);
+    
+    // Add visual context
+    for (size_t i = 0; i < std::min(environmental_context_.size() / 2, size_t(256)); ++i) {
+        working_memory_input.push_back(environmental_context_[i]);
+    }
+    
+    // Add current goals
+    for (size_t i = 0; i < std::min(current_goals_.size(), size_t(128)); ++i) {
+        working_memory_input.push_back(current_goals_[i]);
+    }
+    
+    // Add previous working memory content
+    auto prev_working_memory = memory_system_->get_working_memory();
+    for (size_t i = 0; i < std::min(prev_working_memory.size(), size_t(128)); ++i) {
+        working_memory_input.push_back(prev_working_memory[i]);
+    }
+    
+    // Process through working memory module
+    float wm_attention = attention_controller_->get_attention_weight("working_memory");
+    
+    // Apply attention to input before processing
+    std::vector<float> attended_wm_input = working_memory_input;
+    for (size_t i = 0; i < attended_wm_input.size(); ++i) {
+        attended_wm_input[i] *= wm_attention;
+    }
+    
+    auto wm_output = modules_["working_memory"]->process(attended_wm_input);
+    
+    // Update memory system
+    memory_system_->update_working_memory(wm_output);
+}
+
+void AutonomousLearningAgent::update_attention_weights() {
+    // Prepare context for attention computation
+    std::vector<float> attention_context;
+    attention_context.reserve(256);
+    
+    // NLP-focused: No visual saliency in NLP mode
+    
+    // Add goal relevance
+    for (size_t i = 0; i < std::min(current_goals_.size(), size_t(64)); ++i) {
+        attention_context.push_back(current_goals_[i]);
+    }
+    
+    // Add environmental complexity
+    float env_complexity = 0.0f;
+    for (float val : environmental_context_) {
+        env_complexity += val * val;
+    }
+    attention_context.push_back(std::tanh(env_complexity / 100.0f));
+    
+    // Add task urgency
+    attention_context.push_back(exploration_rate_); // Use exploration rate as urgency proxy
+    
+    // Update attention controller
+    attention_controller_->update_context(attention_context);
+    
+    // Note: Learning system removed to avoid CUDA dependencies
+    // TODO: Re-implement attention learning without CUDA when needed
+}
+
+void AutonomousLearningAgent::coordinate_modules() {
+    // Get current attention weights
+    auto attention_weights = attention_controller_->get_all_attention_weights();
+    
+    // Process each module with its attention weight and inter-module signals
+    for (auto& [module_name, module] : modules_) {
+        float attention_weight = attention_controller_->get_attention_weight(module_name);
+        
+        // Collect input from connected modules
+        std::vector<float> module_input = collect_inter_module_signals(module_name);
+        
+        // Apply attention weighting to input
+        for (size_t i = 0; i < module_input.size(); ++i) {
+            module_input[i] *= attention_weight;
+        }
+        
+        // Process the module
+        auto module_output = module->process(module_input);
+        
+        // Send output to connected modules
+        distribute_module_output(module_name, module_output);
+    }
+}
+
 std::vector<float> AutonomousLearningAgent::collect_inter_module_signals(const std::string& target_module) {
     std::vector<float> combined_input;
     combined_input.reserve(512);
@@ -305,11 +396,6 @@ std::vector<BrowsingAction> AutonomousLearningAgent::translate_neural_output_to_
         case ActionType::ENTER:
         case ActionType::BACKSPACE:
             break;
-        // --- FIX: Added missing enum cases to resolve warning ---
-        case ActionType::NAVIGATE:
-        case ActionType::WAIT:
-        case ActionType::NONE:
-            break;
     }
     candidates.push_back(action);
 
@@ -352,12 +438,6 @@ std::vector<float> AutonomousLearningAgent::evaluate_action_candidates(
                 break;
             case ActionType::BACKSPACE:
                 value = 0.5f;
-                break;
-            // --- FIX: Added missing enum cases to resolve warning ---
-            case ActionType::NAVIGATE:
-            case ActionType::WAIT:
-            case ActionType::NONE:
-                value = 0.0f; // No base value
                 break;
         }
         
@@ -412,7 +492,6 @@ void AutonomousLearningAgent::select_action_with_exploration(
     }
     
     std::random_device rd;
-    // --- FIX: Corrected typo from 'mt19f_rng_gen' to 'mt19937' ---
     std::mt19937 gen(rd());
     std::uniform_real_distribution<float> dist(0.0f, 1.0f);
     
@@ -531,7 +610,6 @@ std::vector<float> AutonomousLearningAgent::convert_action_to_motor_command(cons
     
     // Add motor noise for biological realism
     std::random_device rd;
-    // --- FIX: Corrected typo from 'mt19f_rng_gen' to 'mt19937' ---
     std::mt19937 gen(rd());
     std::normal_distribution<float> noise(0.0f, 0.02f);
     
@@ -600,11 +678,6 @@ float AutonomousLearningAgent::compute_action_reward() {
         case ActionType::BACKSPACE:
             reward += selected_action_.confidence * 0.03f;
             break;
-        // --- FIX: Added missing enum cases to resolve warning ---
-        case ActionType::NAVIGATE:
-        case ActionType::WAIT:
-        case ActionType::NONE:
-            break; // No specific reward
     }
     
     // Penalty for excessive exploration
@@ -650,11 +723,6 @@ void AutonomousLearningAgent::apply_modular_learning(float reward) {
         case ActionType::BACKSPACE:
             relevant_modules = {"prefrontal_cortex", "working_memory", "motor_cortex"};
             break;
-        // --- FIX: Added missing enum cases to resolve warning ---
-        case ActionType::NAVIGATE:
-        case ActionType::WAIT:
-        case ActionType::NONE:
-            break; // No relevant modules for these actions
     }
     
     // Note: Module-specific learning would be applied here if learning_system_ was available

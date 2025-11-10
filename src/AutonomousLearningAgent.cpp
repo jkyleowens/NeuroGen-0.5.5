@@ -1,5 +1,5 @@
 // ============================================================================
-// AUTONOMOUS LEARNING AGENT IMPLEMENTATION (FUNCTIONAL NLP - V3 - FIXES)
+// AUTONOMOUS LEARNING AGENT IMPLEMENTATION
 // File: src/AutonomousLearningAgent.cpp
 // ============================================================================
 
@@ -21,7 +21,6 @@
 #include <random>
 #include <string>
 #include <vector>
-#include <numeric> // For std::iota
 
 #ifdef USE_OPENCV
 #include <opencv2/opencv.hpp>
@@ -33,13 +32,12 @@
 AutonomousLearningAgent::AutonomousLearningAgent(const NetworkConfig& config)
     : config_(config), gen(std::random_device{}()), save_path_("neural_agent_saves") {
     controller_module_ = std::make_unique<ControllerModule>();
-    memory_system_ = std::make_unique<MemorySystem>(10000, 512); // Assuming 512-dim state
+    memory_system_ = std::make_unique<MemorySystem>(10000, 512);
     attention_controller_ = std::make_unique<AttentionController>();
     input_controller_ = std::make_unique<InputController>();
     brain_architecture_ = std::make_unique<BrainModuleArchitecture>();
 
     // Initialize environmental context and global state
-    // These vector sizes should match your network's I/O
     environmental_context_.resize(1024, 0.0f);
     global_state_.resize(2048, 0.0f);
     global_reward_signal_ = 0.0f;
@@ -49,59 +47,55 @@ AutonomousLearningAgent::AutonomousLearningAgent(const NetworkConfig& config)
     is_passive_mode_ = false;
     simulation_time_ = 0.0f;
     last_action_time_ = std::chrono::steady_clock::now();
-
-    // Ensure state/context sizes are non-zero
-    if (environmental_context_.empty()) environmental_context_.resize(1024, 0.0f);
-    if (global_state_.empty()) global_state_.resize(2048, 0.0f);
 }
 
 AutonomousLearningAgent::~AutonomousLearningAgent() {
     // Destructor logic
-    shutdown();
 }
 
 void AutonomousLearningAgent::initializeSpecializedModules() {
     // Create specialized neural modules for different cognitive functions
-    // MASSIVE SCALE-UP: Creating a robust free-thinking agent with tens of thousands of neurons
+    // LAPTOP-FRIENDLY CONFIGURATION: Reduced scale for gaming laptop (ASUS TUF)
+    // Total neurons: ~5K (down from ~35K) for better performance on consumer hardware
 
-    // Prefrontal Cortex - Executive function and reasoning (12,288 neurons)
+    // Prefrontal Cortex - Executive function and reasoning (2,048 neurons)
     auto prefrontal_cortex_config = config_;
-    prefrontal_cortex_config.num_neurons = 12288;  // 12K neurons for executive control
-    prefrontal_cortex_config.numColumns = 24;      // 24 executive columns
-    prefrontal_cortex_config.neuronsPerColumn = 512;
-    prefrontal_cortex_config.localFanOut = 80;     // High connectivity for complex reasoning
+    prefrontal_cortex_config.num_neurons = 2048;   // Reduced to 2K neurons
+    prefrontal_cortex_config.numColumns = 8;       // 8 executive columns
+    prefrontal_cortex_config.neuronsPerColumn = 256;
+    prefrontal_cortex_config.localFanOut = 40;     // Reduced connectivity for efficiency
     modules_["prefrontal_cortex"] = std::make_unique<SpecializedModule>("prefrontal_cortex", prefrontal_cortex_config);
 
-    // Motor Cortex - Precise motor control / language generation (8,192 neurons)
+    // Motor Cortex - Precise motor control (1,024 neurons)
     auto motor_cortex_config = config_;
-    motor_cortex_config.num_neurons = 8192;       // 8K neurons for motor control
-    motor_cortex_config.numColumns = 16;          // 16 motor columns
-    motor_cortex_config.neuronsPerColumn = 512;
-    motor_cortex_config.localFanOut = 50;         // Moderate connectivity for precise control
+    motor_cortex_config.num_neurons = 1024;        // Reduced to 1K neurons
+    motor_cortex_config.numColumns = 4;            // 4 motor columns
+    motor_cortex_config.neuronsPerColumn = 256;
+    motor_cortex_config.localFanOut = 25;          // Reduced connectivity
     modules_["motor_cortex"] = std::make_unique<SpecializedModule>("motor_cortex", motor_cortex_config);
 
-    // Working Memory - Short-term memory and manipulation (6,144 neurons)
+    // Working Memory - Short-term memory and manipulation (1,024 neurons)
     auto working_memory_config = config_;
-    working_memory_config.num_neurons = 6144;     // 6K neurons for working memory
-    working_memory_config.numColumns = 12;        // 12 memory columns
-    working_memory_config.neuronsPerColumn = 512;
-    working_memory_config.localFanOut = 40;
+    working_memory_config.num_neurons = 1024;      // Reduced to 1K neurons
+    working_memory_config.numColumns = 4;          // 4 memory columns
+    working_memory_config.neuronsPerColumn = 256;
+    working_memory_config.localFanOut = 20;
     modules_["working_memory"] = std::make_unique<SpecializedModule>("working_memory", working_memory_config);
 
-    // Reward System - Value estimation and reinforcement (4,096 neurons)
+    // Reward System - Value estimation and reinforcement (512 neurons)
     auto reward_system_config = config_;
-    reward_system_config.num_neurons = 4096;      // 4K neurons for reward processing
-    reward_system_config.numColumns = 8;          // 8 reward columns
-    reward_system_config.neuronsPerColumn = 512;
-    reward_system_config.localFanOut = 30;
+    reward_system_config.num_neurons = 512;        // Reduced to 512 neurons
+    reward_system_config.numColumns = 2;           // 2 reward columns
+    reward_system_config.neuronsPerColumn = 256;
+    reward_system_config.localFanOut = 15;
     modules_["reward_system"] = std::make_unique<SpecializedModule>("reward_system", reward_system_config);
 
-    // Attention System - Dynamic focus and resource allocation (4,096 neurons)
+    // Attention System - Dynamic focus and resource allocation (512 neurons)
     auto attention_system_config = config_;
-    attention_system_config.num_neurons = 4096;   // 4K neurons for attention control
-    attention_system_config.numColumns = 8;       // 8 attention columns
-    attention_system_config.neuronsPerColumn = 512;
-    attention_system_config.localFanOut = 35;
+    attention_system_config.num_neurons = 512;     // Reduced to 512 neurons
+    attention_system_config.numColumns = 2;        // 2 attention columns
+    attention_system_config.neuronsPerColumn = 256;
+    attention_system_config.localFanOut = 15;
     modules_["attention_system"] = std::make_unique<SpecializedModule>("attention_system", attention_system_config);
 }
 
@@ -121,32 +115,13 @@ bool AutonomousLearningAgent::initialize(bool real_time_capture) {
     // Initialize the safety manager with screen dimensions
     SafetyManager::getInstance().setScreenDimensions(1920, 1080);
 
-    // Initialize all modules (this will init their internal NetworkCUDA)
-    for (auto const& [name, module] : modules_) {
-        if (module) {
-            std::cout << "   Initializing module: " << name << "..." << std::endl;
-            if (!module->initialize()) {
-                std::cerr << "❌ FAILED to initialize module: " << name << std::endl;
-                return false;
-            }
-        }
-    }
-
     std::cout << "✅ Agent initialization complete." << std::endl;
     return true;
 }
 
 void AutonomousLearningAgent::shutdown() {
     std::cout << "🤖 Shutting down Autonomous Learning Agent..." << std::endl;
-    
-    // Module cleanup is handled by their destructors when 'modules_' is cleared.
-    for (auto const& [name, module] : modules_) {
-        if (module) {
-            // module->shutdown(); // SpecializedModule does not have this method.
-        }
-    }
-    modules_.clear(); // Destructors are called here.
-    
+    // Shutdown logic here
     std::cout << "✅ Agent shutdown complete." << std::endl;
 }
 
@@ -200,29 +175,22 @@ void AutonomousLearningAgent::stopAutonomousLearning() {
 float AutonomousLearningAgent::autonomousLearningStep(float dt) {
     if (!is_learning_active_) return getLearningProgress();
 
-    // === NLP-FOCUSED AUTONOMOUS LEARNING CYCLE ===
+    // === NLP-FOCUSED LEARNING CYCLE (No autonomous browsing) ===
     
     // Step 1: Update neural working memory with current language context
-    // This simulates "thinking" or retrieving memory.
     update_working_memory();
     
     // Step 2: Process context through prefrontal cortex (language understanding)
     std::vector<float> processed_output;
     if (modules_.count("prefrontal_cortex") > 0) {
-        // Process the current environmental context (which holds language features)
-        // Pass a small reward to keep plasticity active
-        float internal_reward = 0.01f; 
-        modules_["prefrontal_cortex"]->update(dt, environmental_context_, internal_reward);
-        processed_output = modules_["prefrontal_cortex"]->get_output();
+        processed_output = modules_["prefrontal_cortex"]->process(environmental_context_);
     }
     
     // Step 3: Coordinate neural modules for language processing
     coordinate_modules();
     
     // Step 4: Update language processing metrics (simplified)
-    // The "reward" here is intrinsic motivation, e.g., "prediction error"
-    float immediate_reward = computeLanguageComprehension(processed_output);
-    global_reward_signal_ = global_reward_signal_ * 0.9f + immediate_reward * 0.1f;
+    float immediate_reward = 0.1f; // Small constant reward for language learning
     
     // Step 5: Store language processing experience
     if (memory_system_) {
@@ -242,312 +210,62 @@ float AutonomousLearningAgent::autonomousLearningStep(float dt) {
     return getLearningProgress();
 }
 
-// ============================================================================
-// LANGUAGE TRAINING INTERFACE IMPLEMENTATION (REPLACED STUBS)
-// ============================================================================
-
-bool AutonomousLearningAgent::processLanguageInput(const std::string& language_input) {
-    try {
-        std::cout << "🔤 Processing language input: " << language_input.substr(0, 50) << "..." << std::endl;
-
-        // Step 1: Convert language to neural input patterns
-        std::vector<float> language_features = extractLanguageFeatures(language_input);
-        
-        // Store this input as the current context
-        // Pad or truncate to fit the environmental_context_ size
-        std::fill(environmental_context_.begin(), environmental_context_.end(), 0.0f);
-        size_t copy_size = std::min(language_features.size(), environmental_context_.size());
-        std::copy(language_features.begin(), language_features.begin() + copy_size, environmental_context_.begin());
-
-        // Step 2: Process through language understanding module (PFC)
-        // We pass 0.1f as a small "awareness" reward for processing new input
-        if (modules_.count("prefrontal_cortex")) {
-            modules_["prefrontal_cortex"]->update(0.1f, environmental_context_, 0.1f);
-            auto language_output = modules_["prefrontal_cortex"]->get_output();
-
-            // Step 3: Update language understanding metrics (for future training)
-            float comprehension_score = computeLanguageComprehension(language_output);
-            updateLanguageMetrics(comprehension_score);
-
-            // Step 4: Generate next word prediction
-            // This now uses the *motor cortex* to generate a response to the PFC's output
-            std::string predicted_word = generateNextWordPrediction(language_input, language_output);
-
-            // Output prediction in the format expected by Python script
-            std::cout << "NEXT_WORD_PREDICTION:" << predicted_word << std::endl;
-            std::cout.flush(); // Ensure immediate output
-
-            return true;
-        }
-
-        std::cerr << "Warning: 'prefrontal_cortex' module not found." << std::endl;
-        return false;
-
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to process language input: " << e.what() << std::endl;
-        return false;
-    }
-}
-
-std::string AutonomousLearningAgent::generateLanguageResponse() {
-    try {
-        // Generate response using motor cortex based on its current internal state
-        if (modules_.count("motor_cortex")) {
-            // Get the current output state of the motor cortex
-            auto response_features = modules_["motor_cortex"]->get_output();
-
-            // Convert neural output to language
-            if (response_features.empty()) {
-                return "[Network is silent]";
-            }
-            return convertNeuralToLanguage(response_features);
-        }
-
-        return "I am processing your request (motor_cortex not found).";
-
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to generate language response: " << e.what() << std::endl;
-        return "Error generating response.";
-    }
-}
-
-/**
- * @brief (REWRITTEN) Generates a language prediction.
- * This now simulates a full thought-to-speech pipeline:
- * 1. PFC processes the input (done in processLanguageInput).
- * 2. Motor cortex takes PFC output as its *new* input.
- * 3. Motor cortex output is decoded into language.
- */
-std::string AutonomousLearningAgent::generateNextWordPrediction(const std::string& context, const std::vector<float>& pfc_output) {
-    if (!modules_.count("motor_cortex")) {
-        return "[motor_cortex offline]";
-    }
-
-    // Step 1: Use the PFC's output as the *input* for the motor cortex
-    // This simulates the "thought" (PFC) driving the "speech" (motor cortex)
-    // We pass 0.0f reward, as this is just inference
-    modules_["motor_cortex"]->update(0.1f, pfc_output, 0.0f);
-    
-    // Step 2: Get the resulting output from the motor cortex
-    auto motor_output = modules_["motor_cortex"]->get_output();
-
-    // Step 3: Decode the motor cortex's neural pattern into language
-    return convertNeuralToLanguage(motor_output);
-}
-
-/**
- * @brief (NEW) Converts text into a normalized float vector.
- * This is a simple byte-based "tokenizer" and "embedding".
- */
-std::vector<float> AutonomousLearningAgent::extractLanguageFeatures(const std::string& text) const {
-    std::vector<float> features;
-    features.reserve(text.length());
-    for (char c : text) {
-        // Normalize character byte value (0-255) to a float (0.0-1.0)
-        features.push_back(static_cast<float>(static_cast<unsigned char>(c)) / 255.0f);
-    }
-    return features;
-}
-
-/**
- * @brief (NEW) Converts a neural output vector back into text.
- * This is the inverse of extractLanguageFeatures.
- */
-std::string AutonomousLearningAgent::convertNeuralToLanguage(const std::vector<float>& neural_features) const {
-    if (neural_features.empty()) {
-        return "";
-    }
-    
-    std::string text;
-    text.reserve(neural_features.size());
-    
-    for (float val : neural_features) {
-        // De-normalize float (0.0-1.0) back to a character byte (0-255)
-        // Clamp values to ensure they are in the valid range
-        float clamped_val = std::max(0.0f, std::min(1.0f, val));
-        char c = static_cast<char>(static_cast<unsigned char>(clamped_val * 255.0f));
-        
-        // Only append printable characters or spaces
-        if (std::isprint(c) || c == ' ') {
-            text.push_back(c);
-        }
-        // A simple "end of sentence" marker
-        if (text.length() > 3 && c == '\0') {
-             break;
-        }
-    }
-
-    // Often the network output is noisy; we can try to find the "active" part
-    // This is a simple heuristic: find first non-zero and last non-zero
-    auto first_char = std::find_if(text.begin(), text.end(), [](char c){ return c != '\0' && c != ' '; });
-    auto last_char = std::find_if(text.rbegin(), text.rend(), [](char c){ return c != '\0' && c != ' '; });
-
-    if (first_char == text.end() || last_char == text.rend()) {
-        return ""; // Empty or all-null output
-    }
-    
-    return std::string(first_char, last_char.base());
-}
-
-/**
- * @brief (NEW) Calculates a simple "comprehension" score.
- * A real version would compare against a target, but for autonomous
- * learning, we can reward "complex" or "non-trivial" activity.
- */
-float AutonomousLearningAgent::computeLanguageComprehension(const std::vector<float>& neural_output) const {
-    if (neural_output.empty()) {
-        return 0.0f;
-    }
-
-    // Calculate mean and variance of the output
-    float sum = std::accumulate(neural_output.begin(), neural_output.end(), 0.0f);
-    float mean = sum / neural_output.size();
-
-    float sq_sum = std::inner_product(neural_output.begin(), neural_output.end(), neural_output.begin(), 0.0f);
-    float variance = (sq_sum / neural_output.size()) - (mean * mean);
-
-    // Reward non-zero variance (i.e., the network produced a pattern, not just a flat line)
-    // Normalize to a 0-1 range (variance of a 0-1 vector is max 0.25)
-    return std::min(1.0f, variance * 4.0f);
-}
-
-
-// ============================================================================
-// FUNCTIONAL IMPLEMENTATIONS OF AGENT HELPERS (REPLACED STUBS)
-// ============================================================================
-
-void AutonomousLearningAgent::storeEpisodeInMemory(float reward) {
-    if (!memory_system_) return;
-    
-    // Create a snapshot of the current state (context + module outputs)
-    std::vector<float> state_snapshot = environmental_context_;
-    
-    // We'd also append other module states, e.g.:
-    // if (modules_.count("working_memory")) {
-    //     auto wm_out = modules_["working_memory"]->get_output();
-    //     state_snapshot.insert(state_snapshot.end(), wm_out.begin(), wm_out.end());
-    // }
-    // (Ensure state_snapshot size matches MemorySystem config)
-    
-    // For now, just store the environmental context
-    if (state_snapshot.size() > 512) {
-        state_snapshot.resize(512); // Match memory system config
-    } else if (state_snapshot.size() < 512) {
-        state_snapshot.resize(512, 0.0f);
-    }
-    
-    // Create a placeholder for "action" (in NLP, this is the generated output)
-    std::vector<float> action_vec(5, 0.0f); // Placeholder
-    
-    memory_system_->store_episode(state_snapshot, action_vec, reward, 1.0f - exploration_rate_);
-}
-
-void AutonomousLearningAgent::update_working_memory() {
-    if (!memory_system_ || !modules_.count("working_memory")) {
-        return;
-    }
-    
-    // Retrieve a relevant past episode from memory
-    auto episodes = memory_system_->retrieveSimilarEpisodes(environmental_context_, "default", 1);
-    
-    std::vector<float> memory_input;
-    if (!episodes.empty()) {
-        // --- FIX 1: Changed 'state_snapshot' to 'state_vector' ---
-        memory_input = episodes[0].state_vector; // Load state from past episode
-    } else {
-        memory_input = environmental_context_; // Or just use current context
-    }
-    
-    // "Inject" this memory into the working_memory module
-    modules_["working_memory"]->update(0.1f, memory_input, 0.0f);
-}
-
-void AutonomousLearningAgent::coordinate_modules() {
-    if (!attention_controller_ || !modules_.count("prefrontal_cortex")) return;
-
-    const std::vector<float> pfc_output = modules_["prefrontal_cortex"]->get_output();
-
-    // Use the PFC output to guide attention
-    // Simple heuristic: if PFC output has high variance, increase attention
-    float comprehension_score = computeLanguageComprehension(pfc_output);
-    
-    if (comprehension_score > 0.5f) {
-        // High cognitive activity, focus!
-        // --- FIX 2: Changed 'set_attention_focus' to 'set_attention_weight' ---
-        attention_controller_->set_attention_weight("prefrontal_cortex", 0.8f);
-        // --- FIX 3: Changed 'set_attention_focus' to 'set_attention_weight' ---
-        attention_controller_->set_attention_weight("working_memory", 0.6f);
-    } else {
-        // Low activity, reset attention
-        // --- FIX 4: Changed 'set_attention_focus' to 'set_attention_weight' ---
-        attention_controller_->set_attention_weight("prefrontal_cortex", 0.5f);
-        // --- FIX 5: Changed 'set_attention_focus' to 'set_attention_weight' ---
-        attention_controller_->set_attention_weight("working_memory", 0.5f);
-    }
-    
-    // Apply attention weights to modules (e.g., by adjusting learning rates)
-    // --- FIX 6: Changed to 'get_attention_weight_map' which returns a map ---
-    auto weights = attention_controller_->get_attention_weight_map();
-    
-    // --- FIX 7: This structured binding now works with the map ---
-    for (auto const& [name, weight] : weights) {
-        if (modules_.count(name)) {
-            // This is where you'd link attention to a real parameter
-            // e.g., modules_[name]->setLearningRate(default_rate * weight);
-        }
-    }
-}
-
-void AutonomousLearningAgent::update_attention_weights() {
-     if (!attention_controller_) return;
-     // --- FIX 8: Changed 'update' to 'update_attention_dynamics' ---
-     attention_controller_->update_attention_dynamics(0.01f); // 10ms tick
-}
-
-void AutonomousLearningAgent::logLearningProgress(int step, float reward) {
-    if (!detailed_logging_) return;
-    metrics_.average_reward = metrics_.average_reward * 0.99f + reward * 0.01f;
-    std::cout << "[LearningProgress] step=" << step
-              << " reward=" << std::fixed << std::setprecision(4) << reward
-              << " avg_reward=" << std::fixed << std::setprecision(4) << metrics_.average_reward
-              << " exploration=" << std::fixed << std::setprecision(2) << exploration_rate_ << std::endl;
-}
-
-// ============================================================================
-// STUBS RETAINED (Not part of core NLP loop)
-// ============================================================================
-
-void AutonomousLearningAgent::execute_action() {
-    // This method is disabled for NLP focus
-    metrics_.total_actions++;
-    last_action_time_ = std::chrono::steady_clock::now();
-    
-    if (detailed_logging_) {
-        std::cout << "[NLP Agent] Action execution disabled (NLP-only mode)" << std::endl;
-    }
-}
-
 void AutonomousLearningAgent::select_and_execute_action() {
-    // NLP agent doesn't "act" in the same way, so we just log
-    log_action("NLP agent thinking...");
-    execute_action(); // Call the empty execute_action
+    // Use decision-making system from DecisionAndActionSystems.cpp
+
+    // Exploration vs. Exploitation
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(0.0, 1.0);
+
+    if (dis(gen) < exploration_rate_) {
+        // Explore: select a random action
+        int random_action_idx = std::uniform_int_distribution<>(0, static_cast<int>(ActionType::BACKSPACE))(gen);
+        selected_action_.type = static_cast<ActionType>(random_action_idx);
+        selected_action_.confidence = 1.0f; // Confidence is high for exploration
+        log_action("Exploring with random action: " + actionTypeToString(selected_action_.type));
+    } else {
+        // Exploit: use the decision-making system
+        make_decision();
+    }
+
+    execute_action();
 }
 
 float AutonomousLearningAgent::calculate_immediate_reward() {
-    // This is now handled by computeLanguageComprehension
-    return 0.0f;
-}
+    float reward = 0.0f;
 
-void AutonomousLearningAgent::processRealScreenInput() {
-    return; // Disabled for NLP focus
-}
+    // Reward for successful actions
+    if (metrics_.successful_actions > 0) {
+        reward += 0.1f * metrics_.successful_actions;
+    }
 
-float AutonomousLearningAgent::computeScreenBasedReward() {
-    return 0.0f; // Disabled for NLP focus
+    // Penalizing WAIT is no longer applicable
+
+    // Reward for exploration and novelty
+    float novelty_bonus = 0.0f;
+    if (memory_system_ && !environmental_context_.empty()) {
+        auto similar_episodes = memory_system_->retrieveSimilarEpisodes(environmental_context_, "default", 3);
+        if (similar_episodes.size() < 2) {
+            novelty_bonus = 0.2f; // High novelty
+        } else {
+            novelty_bonus = 0.05f; // Some novelty
+        }
+    }
+    reward += novelty_bonus;
+
+    // Reward for progressing towards a goal
+    if (!learning_goals_.empty()) {
+        // Implement logic to check if the agent is making progress towards its goals
+        // For example, if a goal is to click a specific button, and the agent does so,
+        // provide a large reward.
+    }
+
+    return std::max(-0.5f, std::min(reward, 0.5f));
 }
 
 // ============================================================================
-// INTERFACE METHODS (Mostly unchanged)
+// ADDITIONAL INTERFACE METHODS
 // ============================================================================
 
 void AutonomousLearningAgent::addLearningGoal(std::unique_ptr<AutonomousGoal> goal) {
@@ -573,14 +291,43 @@ void AutonomousLearningAgent::setActionExecutor(std::function<void(const Browsin
 }
 
 bool AutonomousLearningAgent::isActionValid(const BrowsingAction& action) {
+    // Basic validation, can be expanded
+    if (action.type == ActionType::CLICK) {
+        // Check if coordinates are within reasonable bounds
+        // This requires knowledge of the screen/window size, which should be in the state
+    }
     return true; // Placeholder
 }
 
+// ============================================================================
+// MISSING DECLARATION IMPLEMENTATIONS (Stubs for linker resolution)
+// ============================================================================
+
 float AutonomousLearningAgent::getLearningProgress() const {
-    return std::clamp(metrics_.average_reward, 0.0f, 1.0f);
+    // Simplified: derive progress from average reward proxy
+    return std::clamp(metrics_.average_reward + 0.5f, 0.0f, 1.0f);
+}
+
+void AutonomousLearningAgent::storeEpisodeInMemory(float reward) {
+    if (!memory_system_) return;
+    std::vector<float> state_snapshot = global_state_;
+    std::vector<float> action_vec(5, 0.0f);
+    if (static_cast<int>(selected_action_.type) < static_cast<int>(action_vec.size())) {
+        action_vec[static_cast<int>(selected_action_.type)] = 1.0f;
+    }
+    memory_system_->store_episode(state_snapshot, action_vec, reward, selected_action_.confidence);
+}
+
+void AutonomousLearningAgent::logLearningProgress(int step, float reward) {
+    if (!detailed_logging_) return;
+    std::cout << "[LearningProgress] step=" << step
+              << " reward=" << reward
+              << " avg_reward=" << metrics_.average_reward
+              << " exploration=" << exploration_rate_ << std::endl;
 }
 
 void AutonomousLearningAgent::update_learning_goals() {
+    // NLP-only mode: no dynamic goal adjustment beyond maintaining list size
     if (learning_goals_.size() > 50) {
         learning_goals_.erase(learning_goals_.begin());
     }
@@ -593,7 +340,40 @@ void AutonomousLearningAgent::log_action(const std::string& action) {
 }
 
 void AutonomousLearningAgent::setupDefaultLearningGoals() {
-    // Not implemented
+    // Not implemented in this version
+}
+
+// ============================================================================
+// REAL SCREEN-BASED REINFORCEMENT LEARNING METHODS
+// ============================================================================
+
+void AutonomousLearningAgent::processRealScreenInput() {
+    // This method is disabled for NLP focus - no visual processing required
+    return;
+}
+
+float AutonomousLearningAgent::computeScreenBasedReward() {
+    float reward = 0.0f;
+
+    // Reward for successful actions
+    if (metrics_.total_actions > 0) {
+        float success_rate = static_cast<float>(metrics_.successful_actions) / metrics_.total_actions;
+        reward += success_rate * 0.1f;
+    }
+
+    // Reward for exploration and discovery (simplified)
+    if (exploration_rate_ > 0.5f) {
+        reward += 0.02f;
+    }
+
+    // Penalty for inaction
+    auto current_time = std::chrono::steady_clock::now();
+    auto time_since_last_action = std::chrono::duration_cast<std::chrono::seconds>(current_time - last_action_time_).count();
+    if (time_since_last_action > 15) {
+        reward -= 0.1f;
+    }
+
+    return reward;
 }
 
 // Placeholder implementations for new private methods
@@ -603,16 +383,15 @@ float AutonomousLearningAgent::evaluateActionPenalties() { return 0.0f; }
 float AutonomousLearningAgent::evaluateLearningEfficiency() { return 0.0f; }
 float AutonomousLearningAgent::evaluateTaskCompletion() { return 0.0f; }
 float AutonomousLearningAgent::evaluateLearningImprovement() { return 0.0f; }
-void AutonomousLearningAgent::updateLanguageMetrics(float comprehension_score) {
-    // This is where you would update tracking for your training loop
-    // metrics_.comprehension_score = comprehension_score; // This member doesn't exist in the header
-}
-void AutonomousLearningAgent::applyReward(float reward) {
-    global_reward_signal_ = reward;
-}
+void AutonomousLearningAgent::updateLanguageMetrics(float comprehension_score) {}
+void AutonomousLearningAgent::applyReward(float reward) {}
 int AutonomousLearningAgent::getTotalNeuronCount() const { return 0; }
 int AutonomousLearningAgent::getModuleNeuronCount(const std::string& module_name) const { return 0; }
 std::string AutonomousLearningAgent::getCurrentTimestamp() const { return ""; }
+std::vector<float> AutonomousLearningAgent::extractLanguageFeatures(const std::string& text) const { return {}; }
+float AutonomousLearningAgent::computeLanguageComprehension(const std::vector<float>& neural_output) const { return 0.0f; }
+std::string AutonomousLearningAgent::convertNeuralToLanguage(const std::vector<float>& neural_features) const { return ""; }
+std::string AutonomousLearningAgent::generateNextWordPrediction(const std::string& context, const std::vector<float>& neural_output) { return ""; }
 bool AutonomousLearningAgent::saveAgentState(const std::string& save_path) { return true; }
 bool AutonomousLearningAgent::loadAgentState(const std::string& load_path) { return true; }
 bool AutonomousLearningAgent::saveModule(const std::string& module_name, const std::string& save_path) { return true; }
@@ -620,3 +399,70 @@ bool AutonomousLearningAgent::loadModule(const std::string& module_name, const s
 std::string AutonomousLearningAgent::getTrainingStatistics() const { return ""; }
 void AutonomousLearningAgent::setTrainingStatistics(const std::string& stats_json) {}
 void AutonomousLearningAgent::setPassiveMode(bool passive) { is_passive_mode_ = passive; }
+
+// ============================================================================
+// LANGUAGE TRAINING INTERFACE IMPLEMENTATION
+// ============================================================================
+
+bool AutonomousLearningAgent::processLanguageInput(const std::string& language_input) {
+    try {
+        std::cout << "🔤 Processing language input: " << language_input.substr(0, 50) << "..." << std::endl;
+
+        // Convert language to neural input patterns
+        std::vector<float> language_features = extractLanguageFeatures(language_input);
+
+        // Process through language understanding modules
+        if (modules_.count("prefrontal_cortex")) {
+            auto language_output = modules_["prefrontal_cortex"]->process(language_features);
+
+            // Update language understanding metrics
+            float comprehension_score = computeLanguageComprehension(language_output);
+            updateLanguageMetrics(comprehension_score);
+
+            // Generate next word prediction
+            std::string predicted_word = generateNextWordPrediction(language_input, language_output);
+
+            // Output prediction in the format expected by Python script
+            std::cout << "NEXT_WORD_PREDICTION:" << predicted_word << std::endl;
+            std::cout.flush(); // Ensure immediate output
+
+            return true;
+        }
+
+        return false;
+
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to process language input: " << e.what() << std::endl;
+        return false;
+    }
+}
+
+std::string AutonomousLearningAgent::generateLanguageResponse() {
+    try {
+        // Generate response using motor cortex for language generation
+        if (modules_.count("motor_cortex")) {
+            std::vector<float> current_context = environmental_context_;
+            auto response_features = modules_["motor_cortex"]->process(current_context);
+
+            // Convert neural output to language
+            return convertNeuralToLanguage(response_features);
+        }
+
+        return "I am processing your request with my neural networks.";
+
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to generate language response: " << e.what() << std::endl;
+        return "Error generating response.";
+    }
+}
+
+void AutonomousLearningAgent::execute_action() {
+    // This method is disabled for NLP focus - no actions to execute
+    // Just update metrics for compatibility
+    metrics_.total_actions++;
+    last_action_time_ = std::chrono::steady_clock::now();
+    
+    if (detailed_logging_) {
+        std::cout << "[NLP Agent] Action execution disabled (NLP-only mode)" << std::endl;
+    }
+}
