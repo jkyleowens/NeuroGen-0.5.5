@@ -6,8 +6,7 @@
 #include "NeuroGen/AutonomousLearningAgent.h"
 #include "NeuroGen/NetworkIntegration.h"
 #include "NeuroGen/ControllerModule.h"
-// SafetyManager disabled - not needed for NLP-only mode
-// #include "NeuroGen/SafetyManager.h"
+#include "NeuroGen/SafetyManager.h"
 #include <iostream>
 #include <vector>
 #include <memory>
@@ -70,14 +69,10 @@ AutonomousLearningAgent::AutonomousLearningAgent(const NetworkConfig& config)
     language_metrics_.processed_inputs = 0;
     language_metrics_.successful_responses = 0;
     language_metrics_.last_update = std::chrono::steady_clock::now();
-
-    // NEW - Initialize vocabulary for text generation
-    initializeVocabulary();
-
+    
     std::cout << "✅ AutonomousLearningAgent constructed with NLP-focused architecture" << std::endl;
     std::cout << "🚫 Autonomous computer control DISABLED" << std::endl;
     std::cout << "🔤 Natural Language Processing mode ENABLED" << std::endl;
-    std::cout << "📚 Vocabulary initialized with " << vocabulary_.size() << " words" << std::endl;
 }
 
 AutonomousLearningAgent::~AutonomousLearningAgent() {
@@ -210,26 +205,13 @@ void AutonomousLearningAgent::initializeNLPModules() {
     modules_["output_module"] = std::make_unique<SpecializedModule>(
         "output_module", output_config, "spike_to_action");
     
-    // Initialize all modules with validation
-    bool all_modules_initialized = true;
+    // Initialize all modules
     for (auto& [name, module] : modules_) {
-        if (!module) {
-            std::cerr << "❌ CRITICAL: Module '" << name << "' is null!" << std::endl;
-            all_modules_initialized = false;
-            continue;
-        }
-
         if (!module->initialize()) {
-            std::cerr << "❌ CRITICAL: Failed to initialize module: " << name << std::endl;
-            all_modules_initialized = false;
+            std::cerr << "⚠️ Failed to initialize module: " << name << std::endl;
         } else {
             std::cout << "✅ Initialized " << name << " module" << std::endl;
         }
-    }
-
-    if (!all_modules_initialized) {
-        std::cerr << "❌ WARNING: Not all modules initialized successfully!" << std::endl;
-        std::cerr << "   This will cause blank or incorrect outputs!" << std::endl;
     }
 }
 
@@ -350,56 +332,27 @@ bool AutonomousLearningAgent::processLanguageInput(const std::string& language_i
 void AutonomousLearningAgent::processLanguageInputPipeline(const std::string& input) {
     // STEP 1: Input Module - Convert text to neural representation
     std::vector<float> tokenized_input = tokenizeTextInput(input);
-    if (tokenized_input.empty()) {
-        std::cerr << "❌ ERROR: Tokenization produced empty input!" << std::endl;
-        current_language_response_ = "[ERROR: Tokenization failed]";
-        return;
-    }
-
     auto input_output = modules_["input_module"]->process(tokenized_input);
-    if (input_output.empty()) {
-        std::cerr << "❌ ERROR: Input module produced empty output!" << std::endl;
-    }
-
+    
     // STEP 2: Central Controller - Apply neuromodulatory control
     auto control_signals = modules_["central_controller"]->process(input_output);
-    if (control_signals.empty()) {
-        std::cerr << "❌ ERROR: Central controller produced empty output!" << std::endl;
-    }
-
+    
     // STEP 3: Language Processing - Deep language understanding
     std::vector<float> modulated_input = modulateWithControl(input_output, control_signals);
     auto language_output = modules_["language_processing"]->process(modulated_input);
-    if (language_output.empty()) {
-        std::cerr << "❌ ERROR: Language processing module produced empty output!" << std::endl;
-    }
-
+    
     // STEP 4: Reasoning Module - Logical reasoning and inference
     auto reasoning_output = modules_["reasoning_module"]->process(language_output);
-    if (reasoning_output.empty()) {
-        std::cerr << "❌ ERROR: Reasoning module produced empty output!" << std::endl;
-    }
-
+    
     // STEP 5: Output Module - Convert to actionable response
     auto final_output = modules_["output_module"]->process(reasoning_output);
-    if (final_output.empty()) {
-        std::cerr << "❌ ERROR: Output module produced empty output!" << std::endl;
-        current_language_response_ = "[ERROR: No neural output generated]";
-        return;
-    }
-
+    
     // Generate and cache language response
     current_language_response_ = generateLanguageResponseFromSpikes(final_output);
-
-    // Validate generated response
-    if (current_language_response_.empty()) {
-        std::cerr << "⚠️  WARNING: Generated response is empty despite valid neural output!" << std::endl;
-        current_language_response_ = "[WARNING: Response generation incomplete]";
-    }
-
+    
     // Update environmental context with processed information
     updateContextFromLanguageProcessing(language_output, reasoning_output);
-
+    
     std::cout << "✅ Language processing pipeline complete" << std::endl;
 }
 
@@ -454,23 +407,15 @@ std::vector<float> AutonomousLearningAgent::modulateWithControl(
 
 std::string AutonomousLearningAgent::generateLanguageResponseFromSpikes(
     const std::vector<float>& spike_data) {
-
+    
     if (spike_data.empty()) {
         return "Neural processing incomplete.";
     }
-
-    // NEW FIX: Actually decode neural output to text
-    std::string decoded_text = decodeNeuralOutputToText(spike_data, 8);
-
-    if (!decoded_text.empty()) {
-        // Successfully generated text from neural output
-        return decoded_text;
-    }
-
-    // Fallback: Use template responses if decoding fails
+    
+    // Convert spike patterns to language
     float avg_activation = std::accumulate(spike_data.begin(), spike_data.end(), 0.0f) / spike_data.size();
-    float response_confidence = std::min(1.0f, std::abs(avg_activation) * 2.0f);
-
+    float response_confidence = std::min(1.0f, avg_activation * 2.0f);
+    
     // Response generation based on spike patterns
     if (response_confidence > 0.8f) {
         return "I understand your request with high confidence and am generating a comprehensive response.";
@@ -801,160 +746,6 @@ std::string AutonomousLearningAgent::convertNeuralToLanguage(const std::vector<f
     } else {
         return "I am processing your request. Please provide more information if needed.";
     }
-}
-
-// ============================================================================
-// VOCABULARY AND TEXT GENERATION METHODS (NEW - FIX FOR BLANK OUTPUTS)
-// ============================================================================
-
-void AutonomousLearningAgent::initializeVocabulary() {
-    // Build a basic vocabulary with common words
-    vocabulary_ = {
-        // Common verbs
-        "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did",
-        "can", "could", "will", "would", "shall", "should", "may", "might", "must",
-        "understand", "process", "analyze", "learn", "recognize", "know", "think",
-        "see", "look", "find", "search", "explore", "discover",
-        "create", "make", "build", "generate", "produce",
-        "help", "assist", "support", "guide", "teach",
-
-        // Common nouns
-        "information", "data", "knowledge", "pattern", "concept", "idea", "thought",
-        "language", "text", "word", "sentence", "phrase", "message", "response",
-        "question", "answer", "solution", "problem", "task", "goal",
-        "system", "network", "module", "agent", "model", "algorithm",
-        "input", "output", "process", "result", "outcome",
-        "computer", "machine", "program", "code", "software",
-        "neural", "brain", "neuron", "synapse", "connection",
-
-        // Common adjectives
-        "good", "better", "best", "bad", "worse", "worst",
-        "big", "small", "large", "huge", "tiny",
-        "high", "low", "deep", "shallow",
-        "fast", "slow", "quick", "rapid",
-        "complex", "simple", "difficult", "easy",
-        "important", "significant", "relevant", "useful",
-        "correct", "accurate", "precise", "exact",
-        "new", "old", "recent", "current", "latest",
-
-        // Pronouns and articles
-        "I", "you", "we", "they", "it", "this", "that", "these", "those",
-        "the", "a", "an", "some", "any", "all", "each", "every",
-        "my", "your", "our", "their", "its",
-
-        // Prepositions
-        "in", "on", "at", "to", "from", "with", "without", "by", "for",
-        "about", "through", "during", "before", "after", "between", "among",
-        "over", "under", "above", "below",
-
-        // Conjunctions and common words
-        "and", "or", "but", "if", "then", "because", "so", "when", "where",
-        "what", "which", "who", "how", "why",
-        "not", "no", "yes", "maybe", "perhaps", "possibly",
-
-        // NLP specific
-        "processing", "understanding", "comprehension", "reasoning", "inference",
-        "semantic", "syntactic", "linguistic", "grammar", "vocabulary",
-        "token", "embedding", "representation", "feature", "activation",
-        "attention", "context", "memory", "learning", "training",
-
-        // Response-building words
-        "currently", "based", "using", "through", "via",
-        "indicates", "suggests", "shows", "demonstrates",
-        "appears", "seems", "looks", "sounds",
-        "analyzing", "processing", "working", "computing",
-        "ready", "able", "capable", "designed", "intended",
-
-        // Filler/connecting words
-        "very", "quite", "rather", "somewhat", "fairly",
-        "more", "most", "less", "least", "much", "many",
-        "just", "only", "even", "also", "too", "as", "well",
-        "now", "then", "here", "there",
-
-        // Punctuation as words (for sentence structure)
-        ".", ",", "?", "!", ";", ":"
-    };
-
-    // Build word-to-index and index-to-word mappings
-    word_to_index_.clear();
-    index_to_word_.clear();
-
-    for (size_t i = 0; i < vocabulary_.size(); ++i) {
-        word_to_index_[vocabulary_[i]] = static_cast<int>(i);
-        index_to_word_[static_cast<int>(i)] = vocabulary_[i];
-    }
-
-    std::cout << "📚 Vocabulary initialized with " << vocabulary_.size() << " words" << std::endl;
-}
-
-int AutonomousLearningAgent::getWordIndexFromActivation(float activation) const {
-    // Map activation (0.0 to 1.0) to vocabulary index
-    if (vocabulary_.empty()) return 0;
-
-    // Use absolute value and scale to vocabulary size
-    float normalized = std::abs(activation);
-    int index = static_cast<int>(normalized * vocabulary_.size()) % vocabulary_.size();
-
-    return index;
-}
-
-std::vector<std::string> AutonomousLearningAgent::selectWordsFromActivations(
-    const std::vector<float>& activations, int num_words) {
-
-    std::vector<std::string> selected_words;
-    if (activations.empty() || vocabulary_.empty()) {
-        return selected_words;
-    }
-
-    // Select words based on strongest activations
-    std::vector<std::pair<float, int>> activation_indices;
-    for (size_t i = 0; i < activations.size(); ++i) {
-        activation_indices.push_back({std::abs(activations[i]), static_cast<int>(i)});
-    }
-
-    // Sort by activation strength (descending)
-    std::sort(activation_indices.begin(), activation_indices.end(),
-              [](const auto& a, const auto& b) { return a.first > b.first; });
-
-    // Select top words
-    for (int i = 0; i < num_words && i < static_cast<int>(activation_indices.size()); ++i) {
-        int word_idx = getWordIndexFromActivation(activation_indices[i].first);
-        if (word_idx >= 0 && word_idx < static_cast<int>(vocabulary_.size())) {
-            selected_words.push_back(vocabulary_[word_idx]);
-        }
-    }
-
-    return selected_words;
-}
-
-std::string AutonomousLearningAgent::decodeNeuralOutputToText(
-    const std::vector<float>& neural_output, int max_words) {
-
-    if (neural_output.empty() || vocabulary_.empty()) {
-        return "";
-    }
-
-    // Select words from neural activations
-    std::vector<std::string> words = selectWordsFromActivations(neural_output, max_words);
-
-    if (words.empty()) {
-        return "";
-    }
-
-    // Join words into a sentence
-    std::string result = words[0];
-    for (size_t i = 1; i < words.size(); ++i) {
-        // Don't add space before punctuation
-        if (words[i] == "." || words[i] == "," || words[i] == "?" ||
-            words[i] == "!" || words[i] == ";" || words[i] == ":") {
-            result += words[i];
-        } else {
-            result += " " + words[i];
-        }
-    }
-
-    return result;
 }
 
 // ============================================================================

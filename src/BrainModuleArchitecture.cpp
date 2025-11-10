@@ -7,8 +7,7 @@
 #include "NeuroGen/EnhancedNeuralModule.h"
 #include "NeuroGen/ModularNeuralNetwork.h"
 #include "NeuroGen/LearningStateManager.h"
-// CUDA disabled for NLP-only mode
-// #include "NeuroGen/cuda/NetworkCUDA.cuh"
+#include "NeuroGen/cuda/NetworkCUDA.cuh"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -79,26 +78,24 @@ bool BrainModuleArchitecture::initializeForNLP() {
         // Initialize context vector for language understanding
         global_context_vector_.resize(512, 0.0f);
 
-        // CUDA network disabled for NLP-only mode (CPU processing only)
-        // NetworkCUDA::CUDAConfig cuda_cfg;
-        // cuda_network_ = std::make_shared<NetworkCUDA>(cuda_cfg);
-        //
-        // size_t total_neurons = 0;
-        // for (const auto& [name, cfg] : module_configs_) {
-        //     total_neurons += cfg.num_neurons;
-        // }
-        //
-        // NetworkConfig net_cfg;
-        // net_cfg.num_neurons = static_cast<int>(total_neurons);
-        // auto [success, err] = cuda_network_->initialize(net_cfg);
-        // if (!success) {
-        //     std::cerr << "❌ Failed to initialize CUDA network: " << err << std::endl;
-        // } else {
-        //     cuda_network_->setBrainArchitecture(shared_from_this());
-        //     cuda_network_->setLearningStateManager(learning_state_manager_);
-        // }
+        // Setup CUDA network for biologically inspired processing
+        NetworkCUDA::CUDAConfig cuda_cfg;
+        cuda_network_ = std::make_shared<NetworkCUDA>(cuda_cfg);
 
-        std::cout << "✅ CUDA disabled - using CPU-only NLP processing" << std::endl;
+        size_t total_neurons = 0;
+        for (const auto& [name, cfg] : module_configs_) {
+            total_neurons += cfg.num_neurons;
+        }
+
+        NetworkConfig net_cfg;
+        net_cfg.num_neurons = static_cast<int>(total_neurons);
+        auto [success, err] = cuda_network_->initialize(net_cfg);
+        if (!success) {
+            std::cerr << "❌ Failed to initialize CUDA network: " << err << std::endl;
+        } else {
+            cuda_network_->setBrainArchitecture(shared_from_this());
+            cuda_network_->setLearningStateManager(learning_state_manager_);
+        }
 
         std::cout << "✅ Brain Module Architecture initialized successfully for NLP" << std::endl;
         std::cout << "📊 Architecture: " << modules_.size() << " modules, "
@@ -448,7 +445,7 @@ BrainModuleArchitecture::ModuleConfig BrainModuleArchitecture::getModuleConfig(
 std::vector<float> BrainModuleArchitecture::getModuleOutput(const std::string& module_name) const {
     auto it = modules_.find(module_name);
     if (it != modules_.end() && it->second) {
-        return it->second->process(std::vector<float>(it->second->get_name().length(), 0.1f));
+        return it->second->process(std::vector<float>(it->second->getName().length(), 0.1f));
     }
     return std::vector<float>();
 }
