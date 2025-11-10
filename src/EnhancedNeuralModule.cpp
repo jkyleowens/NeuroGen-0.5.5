@@ -10,7 +10,6 @@
 #include <vector>
 #include <memory>
 #include <mutex>
-#include <cmath>
 #include "NeuroGen/NetworkConfig.h"
 
 /**

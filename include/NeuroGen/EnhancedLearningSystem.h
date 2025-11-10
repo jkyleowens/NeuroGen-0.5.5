@@ -1,20 +1,19 @@
 #ifndef ENHANCED_LEARNING_SYSTEM_H
 #define ENHANCED_LEARNING_SYSTEM_H
 
-// Enhanced learning rule components
-#include <NeuroGen/LearningRuleConstants.h>
-
-// Only include CUDA headers if CUDA is available
-#ifdef __CUDACC__
+// Core NeuroGen includes with proper paths
 #include <NeuroGen/cuda/GPUNeuralStructures.h>
 #include <NeuroGen/cuda/GridBlockUtils.cuh>
+
+// Enhanced learning rule components
+#include <NeuroGen/LearningRuleConstants.h>
 #include <NeuroGen/cuda/EnhancedSTDPKernel.cuh>
 #include <NeuroGen/cuda/EligibilityAndRewardKernels.cuh>
 #include <NeuroGen/cuda/RewardModulationKernel.cuh>
 #include <NeuroGen/cuda/HebbianLearningKernel.cuh>
 #include <NeuroGen/cuda/HomeostaticMechanismsKernel.cuh>
+
 #include <cuda_runtime.h>
-#endif
 #include <vector>
 #include <memory>
 #include <string>
@@ -55,10 +54,8 @@ private:
     
     // CUDA resources
     bool cuda_initialized_;
-#ifdef __CUDACC__
     cudaStream_t learning_stream_;
     cudaStream_t attention_stream_;
-#endif
     
     // Module state tracking
     struct ModuleState {

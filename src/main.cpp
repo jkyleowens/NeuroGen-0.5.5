@@ -52,45 +52,36 @@ public:
     
     bool processLanguageInput(const std::string& input) {
         if (!session_active_ || !agent_) return false;
-
-        std::cout << "\n📝 Processing: \"" << input.substr(0, 50)
+        
+        std::cout << "\n📝 Processing: \"" << input.substr(0, 50) 
                   << (input.length() > 50 ? "..." : "") << "\"" << std::endl;
-
+        
         auto start_time = std::chrono::high_resolution_clock::now();
-
+        
         bool success = agent_->processLanguageInput(input);
-
-        // CRITICAL FIX: Allow neural processing to complete
-        // The original had only 10ms which is too fast
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
+        
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
+        
         if (success) {
             total_inputs_processed_++;
-
-            // Get response after processing completes
+            
+            // Get response after brief processing time
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
             std::string response = agent_->generateLanguageResponse();
-
-            // CRITICAL FIX: Check if response is empty and provide diagnostic
-            if (response.empty()) {
-                std::cout << "⚠️  WARNING: Empty response generated!" << std::endl;
-                response = "[ERROR: No response generated - check module initialization]";
-            }
-
+            
             std::cout << "🤖 Response: " << response << std::endl;
             std::cout << "⏱️  Processing time: " << duration.count() << "ms" << std::endl;
-
+            
             // Display metrics
             auto metrics = agent_->getLanguageMetrics();
-            std::cout << "📊 Metrics - Comprehension: " << std::fixed << std::setprecision(3)
-                      << metrics.comprehension_score << ", Reasoning: " << metrics.reasoning_score
+            std::cout << "📊 Metrics - Comprehension: " << std::fixed << std::setprecision(3) 
+                      << metrics.comprehension_score << ", Reasoning: " << metrics.reasoning_score 
                       << ", Quality: " << metrics.response_quality << std::endl;
         } else {
             std::cout << "❌ Failed to process input" << std::endl;
         }
-
+        
         return success;
     }
     
