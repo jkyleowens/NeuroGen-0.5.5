@@ -14,6 +14,7 @@
 #include <map>
 #include <deque>
 #include "NeuroGen/EnhancedNeuralModule.h"
+#include "NeuroGen/BiologicalNeuronModule.h"  // NEW: Real spiking neurons
 #include "NeuroGen/NetworkConfig.h"
 #include "NeuroGen/NetworkStats.h"
 
@@ -161,8 +162,12 @@ private:
     float learning_rate_modifier_ = 1.0f;
     float attention_weight_ = 0.5f;
     float excitability_level_ = 0.7f;
-    
-    // Processing buffers
+
+    // NEW: Biological neural substrate - REAL spiking neurons!
+    std::unique_ptr<BiologicalNeuronModule> biological_module_;
+    bool use_biological_neurons_ = true;  // Enable biologically realistic processing
+
+    // Processing buffers (for legacy compatibility)
     std::vector<float> processing_buffer_;
     std::vector<float> integration_buffer_;
     std::vector<float> output_buffer_;
