@@ -323,7 +323,13 @@ private:
     std::string last_language_input_;
     std::string current_language_response_;
     LanguageProcessingMetrics language_metrics_;
-    
+
+    // Vocabulary and text generation (NEW - FIX FOR BLANK OUTPUTS)
+    std::vector<std::string> vocabulary_;
+    std::unordered_map<std::string, int> word_to_index_;
+    std::unordered_map<int, std::string> index_to_word_;
+    static constexpr size_t VOCABULARY_SIZE = 1000;
+
     // Goals and learning objectives
     std::vector<std::unique_ptr<AutonomousGoal>> learning_goals_;
     
@@ -337,6 +343,7 @@ private:
     void initialize_nlp_attention_system();
     void setupNLPModuleConnections();
     void setupNLPLearningGoals();
+    void initializeVocabulary(); // NEW - Initialize word vocabulary
     
     // Core processing pipeline
     float nlpLearningStep(float dt);
@@ -345,11 +352,16 @@ private:
     
     // Language processing utilities
     std::vector<float> tokenizeTextInput(const std::string& text);
-    std::vector<float> modulateWithControl(const std::vector<float>& input, 
+    std::vector<float> modulateWithControl(const std::vector<float>& input,
                                           const std::vector<float>& control_signals);
     std::string generateLanguageResponseFromSpikes(const std::vector<float>& spike_data);
     void updateContextFromLanguageProcessing(const std::vector<float>& language_output,
                                            const std::vector<float>& reasoning_output);
+
+    // NEW - Text generation from neural outputs (FIX FOR BLANK OUTPUTS)
+    std::string decodeNeuralOutputToText(const std::vector<float>& neural_output, int max_words = 10);
+    std::vector<std::string> selectWordsFromActivations(const std::vector<float>& activations, int num_words);
+    int getWordIndexFromActivation(float activation) const;
     
     // Learning and metrics
     float computeLanguageUnderstandingReward();
