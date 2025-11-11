@@ -13,8 +13,8 @@ CUDA_OBJ_DIR := $(OBJ_DIR)/cuda
 DEPS_DIR := $(BUILD_DIR)/deps
 CUDA_DEPS_DIR := $(DEPS_DIR)/cuda
 
-# CUDA Path
-CUDA_PATH := /opt/cuda
+# CUDA Path (use stubs for CPU-only builds)
+CUDA_PATH := $(shell test -d /opt/cuda && echo /opt/cuda || echo include/cuda_stubs)
 
 # Executable Name
 TARGET := NeuroGen
@@ -22,7 +22,7 @@ TARGET_AUTONOMOUS := NeuroGen_Autonomous
 
 # Compiler Flags
 # Note: The -I$(INCLUDE_DIR) flag tells the compilers where to find your header files.
-CXXFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -I/usr/include/opencv4 -O3 -g -fPIC -Wall
+CXXFLAGS := -std=c++17 -I$(INCLUDE_DIR) -Iinclude/cuda_stubs -I/usr/include/opencv4 -O3 -g -fPIC -Wall
 NVCCFLAGS := -std=c++17 -I$(INCLUDE_DIR) -I$(CUDA_PATH)/include -I/usr/include/opencv4 -arch=sm_75 -O3 -g -lineinfo \
              -Xcompiler -fPIC -Xcompiler -Wall -use_fast_math \
              --expt-relaxed-constexpr --expt-extended-lambda -ccbin /usr/bin/clang++
