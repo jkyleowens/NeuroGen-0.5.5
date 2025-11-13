@@ -130,11 +130,47 @@ void BiologicalNeuronModule::update(
 }
 
 std::vector<float> BiologicalNeuronModule::process(const std::vector<float>& input) {
-    // Run one timestep with external input
-    update(1.0f, input, 0.0f);
+    // FIXED: Run for multiple timesteps to allow spiking network to generate meaningful activity
+    // Biological spiking neurons need time to integrate input and generate spikes!
 
-    // Return current spike outputs
-    return getSpikeOutputs();
+    const int num_steps = 20;  // Run for 20ms to allow proper spike generation
+    const float dt = 1.0f;      // 1ms timestep
+
+    // Accumulate spike counts over the processing window
+    std::vector<float> spike_accumulator(neurons_.size(), 0.0f);
+    std::vector<float> potential_accumulator(neurons_.size(), 0.0f);
+
+    for (int step = 0; step < num_steps; ++step) {
+        // Apply external input on first few steps for gradual integration
+        if (step < 5) {
+            update(dt, input, 0.0f);
+        } else {
+            update(dt, std::vector<float>(), 0.0f);  // Let network evolve
+        }
+
+        // Accumulate spikes and potentials
+        for (size_t i = 0; i < neurons_.size(); ++i) {
+            if (neurons_[i]->has_spiked()) {
+                spike_accumulator[i] += 1.0f;
+            }
+            // Also accumulate normalized membrane potentials for richer output
+            float normalized_potential = (neurons_[i]->get_potential() + 65.0f) / 95.0f; // Normalize -65mV to 30mV -> 0 to 1
+            potential_accumulator[i] += std::max(0.0f, std::min(1.0f, normalized_potential));
+        }
+    }
+
+    // Return combined firing rate and average potential for richer representation
+    std::vector<float> output(neurons_.size());
+    for (size_t i = 0; i < neurons_.size(); ++i) {
+        // Combine spike count (as firing rate) with average potential
+        float firing_rate = spike_accumulator[i] / static_cast<float>(num_steps);  // Spikes per timestep
+        float avg_potential = potential_accumulator[i] / static_cast<float>(num_steps);
+
+        // Weight firing rate more heavily (70%) than potential (30%)
+        output[i] = 0.7f * firing_rate + 0.3f * avg_potential;
+    }
+
+    return output;
 }
 
 // ============================================================================
