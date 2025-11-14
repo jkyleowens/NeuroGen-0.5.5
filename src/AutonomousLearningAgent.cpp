@@ -158,6 +158,55 @@ void AutonomousLearningAgent::update(float dt) {
     }
 }
 
+void AutonomousLearningAgent::handleCommand(const std::string& command) {
+    // Parse command type
+    if (command.rfind("LANGUAGE_INPUT:", 0) == 0) {
+        // Extract the text after "LANGUAGE_INPUT:"
+        std::string input_text = command.substr(15);  // 15 = length of "LANGUAGE_INPUT:"
+        
+        // Process the language input
+        if (processLanguageInput(input_text)) {
+            // Generate response
+            std::string response = generateLanguageResponse();
+            
+            // CRITICAL: Output the prediction to stdout
+            std::cout << "NEXT_WORD_PREDICTION:" << response << std::endl;
+            std::cout.flush();
+        } else {
+            std::cout << "NEXT_WORD_PREDICTION:" << std::endl;
+            std::cout.flush();
+        }
+    }
+    else if (command.rfind("SET_MODE:", 0) == 0) {
+        std::string mode = command.substr(9);
+        if (mode == "LANGUAGE_TRAINING") {
+            std::cout << "✅ Language training mode activated" << std::endl;
+            // Note: nlp_mode_active_ is already set to true in constructor
+            // Just acknowledge the mode change
+        }
+    }
+    else if (command.rfind("REWARD_SIGNAL:", 0) == 0) {
+        try {
+            float reward = std::stof(command.substr(14));
+            global_reward_signal_ = reward;
+            std::cout << "📈 Reward signal received: " << reward << std::endl;
+        } catch (...) {
+            std::cerr << "⚠️ Failed to parse reward signal" << std::endl;
+        }
+    }
+    else if (command == "SAVE_STATE") {
+        // Use the member variable save_path_ for the save location
+        if (saveAgentState(save_path_)) {
+            std::cout << "💾 Agent state saved to: " << save_path_ << std::endl;
+        } else {
+            std::cerr << "❌ Failed to save agent state" << std::endl;
+        }
+    }
+    else {
+        std::cerr << "⚠️ Unknown command: " << command << std::endl;
+    }
+}
+
 void AutonomousLearningAgent::startAutonomousLearning() {
     if (is_learning_active_) return;
 
