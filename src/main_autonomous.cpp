@@ -2,10 +2,12 @@
 // NeuroGen Version 0.5.5 - Advanced Autonomous Learning Framework
 
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <memory>
 #include <random>
 #include <cstdlib>
+#include <cstdio>
 #include <thread>
 #include <chrono>
 #include <functional>
@@ -615,30 +617,25 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::cout << "✅ Agent initialized. Waiting for commands..." << std::endl;
+    std::cout << "✅ Agent initialized and ready." << std::endl;
+    std::cout << "💡 Agent is running autonomously. Create /tmp/stop_neurogen to shutdown." << std::endl;
     std::cout.flush();
 
-    std::string line;
+    // Run agent autonomously without waiting for user input
+    // This prevents issues with input/output handling when processing Wikipedia or other data
     while (true) {
-        if (std::getline(std::cin, line)) {
-            if (line.rfind("COMMAND:", 0) == 0) {
-                agent.handleCommand(line.substr(8));
-                std::cout.flush(); // Ensure any output is immediately visible
-            } else if (line == "EXIT" || line == "QUIT") {
-                std::cout << "🛑 Exit command received. Shutting down." << std::endl;
-                break;
-            } else if (!line.empty()) {
-                std::cerr << "Warning: Received malformed input: " << line << std::endl;
-            }
-        } else {
-            // Check if stdin was closed (parent process died)
-            if (std::cin.eof()) {
-                std::cout << "🛑 Input stream closed. Shutting down." << std::endl;
-                break;
-            }
-            // Sleep briefly to avoid busy waiting
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // Check for emergency stop file
+        std::ifstream stop_file("/tmp/stop_neurogen");
+        if (stop_file.good()) {
+            std::cout << "🛑 Stop file detected. Shutting down." << std::endl;
+            stop_file.close();
+            // Remove the stop file for next run
+            std::remove("/tmp/stop_neurogen");
+            break;
         }
+
+        // Sleep to avoid busy waiting
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     std::cout << "🛑 Agent shutting down." << std::endl;
