@@ -4,9 +4,7 @@
 // ============================================================================
 
 #include "NeuroGen/AutonomousLearningAgent.h"
-#include "NeuroGen/NetworkIntegration.h"
 #include "NeuroGen/ControllerModule.h"
-#include "NeuroGen/SafetyManager.h"
 #include <iostream>
 #include <vector>
 #include <memory>

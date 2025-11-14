@@ -37,5 +37,35 @@ inline const char* cudaGetErrorString(cudaError_t error) { return "No error (CPU
 // Stub stream and event types
 typedef void* cudaStream_t;
 typedef void* cudaEvent_t;
+typedef void* cudaGraph_t;
+typedef void* cudaGraphExec_t;
+typedef void* cudaMemPool_t;
+
+// Stub device properties structure
+struct cudaDeviceProp {
+    char name[256];
+    size_t totalGlobalMem;
+    size_t sharedMemPerBlock;
+    int regsPerBlock;
+    int warpSize;
+    size_t memPitch;
+    int maxThreadsPerBlock;
+    int maxThreadsDim[3];
+    int maxGridSize[3];
+    int clockRate;
+    size_t totalConstMem;
+    int major;
+    int minor;
+    int multiProcessorCount;
+    int l2CacheSize;
+    int maxThreadsPerMultiProcessor;
+    int computeMode;
+};
+
+// Stub device functions
+inline cudaError_t cudaGetDeviceProperties(cudaDeviceProp* prop, int device) {
+    if (prop) prop->name[0] = '\0';
+    return cudaSuccess;
+}
 
 #endif // CUDA_RUNTIME_STUB_H
