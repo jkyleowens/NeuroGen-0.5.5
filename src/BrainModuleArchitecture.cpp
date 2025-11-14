@@ -445,7 +445,7 @@ BrainModuleArchitecture::ModuleConfig BrainModuleArchitecture::getModuleConfig(
 std::vector<float> BrainModuleArchitecture::getModuleOutput(const std::string& module_name) const {
     auto it = modules_.find(module_name);
     if (it != modules_.end() && it->second) {
-        return it->second->process(std::vector<float>(it->second->getName().length(), 0.1f));
+        return it->second->process(std::vector<float>(it->second->get_name().length(), 0.1f));
     }
     return std::vector<float>();
 }
