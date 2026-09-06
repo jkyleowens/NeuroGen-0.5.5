@@ -2,4 +2,6 @@
 /compile_output.txt
 /obj
 /build
+node_modules/
+npm-debug.log*
 *.d

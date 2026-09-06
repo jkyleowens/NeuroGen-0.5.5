@@ -1,0 +1,14 @@
+{
+  "name": "workbench-desktop",
+  "version": "1.0.0",
+  "description": "A focused desktop workspace for teams, projects, inventory, and time.",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "test": "node --test tests/*.test.js"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0"
+  }
+}
