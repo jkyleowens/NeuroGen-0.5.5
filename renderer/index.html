@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f6f7f9">
+  <title>Workbench</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">W</div><span>Workbench</span></div>
+      <nav id="primaryNav">
+        <button class="nav-item active" data-view="overview"><span>▦</span> Overview</button>
+        <button class="nav-item" data-view="projects"><span>◇</span> Projects <b>8</b></button>
+        <button class="nav-item" data-view="inventory"><span>□</span> Inventory <i></i></button>
+        <button class="nav-item" data-view="team"><span>♙</span> Team</button>
+        <button class="nav-item" data-view="time"><span>◷</span> Time</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <button class="nav-item"><span>⚙</span> Settings</button>
+        <div class="profile"><div class="avatar">AR</div><div><strong>Alex Rivera</strong><small>Workspace admin</small></div><button>•••</button></div>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <label class="search"><span>⌕</span><input id="globalSearch" placeholder="Search anything..."><kbd>⌘ K</kbd></label>
+        <div class="top-actions"><button class="icon-btn">?</button><button class="icon-btn notify">♢</button><button class="primary-btn" id="newProject">＋ New project</button></div>
+      </header>
+
+      <div class="content" id="overviewView">
+        <section class="welcome"><div><p>MONDAY, MARCH 24</p><h1>Good morning, Alex.</h1><span>Here's what's happening across your workspace today.</span></div><button class="outline-btn" id="quickAdd">＋ Quick add</button></section>
+
+        <section class="stats-grid">
+          <article class="stat"><div><span>ACTIVE PROJECTS</span><strong id="activeCount">8</strong><small><em>↑ 12%</em> from last month</small></div><div class="stat-icon purple">◇</div></article>
+          <article class="stat"><div><span>HOURS THIS WEEK</span><strong>32.5</strong><small><em>↑ 8%</em> from last week</small></div><div class="stat-icon blue">◷</div></article>
+          <article class="stat"><div><span>TEAM MEMBERS</span><strong>24</strong><small><em>＋2</em> this month</small></div><div class="stat-icon green">♙</div></article>
+          <article class="stat"><div><span>LOW STOCK ITEMS</span><strong>6</strong><small class="warn">Needs your attention</small></div><div class="stat-icon orange">□</div></article>
+        </section>
+
+        <section class="workspace-grid">
+          <article class="panel projects-panel">
+            <div class="panel-head"><div><h2>Active projects</h2><p>Your team's current focus</p></div><button class="text-btn" data-view-link="projects">View all →</button></div>
+            <div id="projectList" class="project-list"></div>
+          </article>
+          <article class="panel timer-panel">
+            <div class="panel-head"><div><h2>Focus timer</h2><p>Stay on track with your current task</p></div><button class="more">•••</button></div>
+            <div class="task-select"><div class="project-glyph plum">M</div><div><small>CURRENT TASK</small><strong>Homepage wireframes</strong><span>Website Redesign</span></div><button>⌄</button></div>
+            <div class="timer-ring"><svg viewBox="0 0 150 150"><circle cx="75" cy="75" r="66"></circle><circle class="progress" cx="75" cy="75" r="66"></circle></svg><div><strong id="timerText">24:36</strong><span>FOCUS</span></div></div>
+            <div class="timer-actions"><button id="resetTimer">↺</button><button class="play" id="toggleTimer">Ⅱ</button><button>□</button></div>
+            <div class="timer-footer"><span>Today's focus</span><strong>3h 24m <i>/ 6h</i></strong><div><b style="width:57%"></b></div></div>
+          </article>
+          <article class="panel activity-panel">
+            <div class="panel-head"><div><h2>Recent activity</h2><p>The latest across your workspace</p></div><button class="more">•••</button></div>
+            <div class="activity"><div class="avatar photo a1">MC</div><p><strong>Maya Chen</strong> completed <b>Design system audit</b><span>12 minutes ago</span></p><i class="check">✓</i></div>
+            <div class="activity"><div class="avatar photo a2">JK</div><p><strong>James Kim</strong> added 12 items to <b>Office Supplies</b><span>38 minutes ago</span></p><i class="box">□</i></div>
+            <div class="activity"><div class="avatar photo a3">SP</div><p><strong>Sarah Patel</strong> joined the team<span>2 hours ago</span></p><i class="person">♙</i></div>
+            <div class="activity"><div class="avatar photo a4">TW</div><p><strong>Tom Wilson</strong> commented on <b>Q2 Campaign</b><span>3 hours ago</span></p><i class="comment">◌</i></div>
+            <button class="activity-link">View all activity</button>
+          </article>
+        </section>
+      </div>
+
+      <div class="content subview hidden" id="subView"></div>
+    </main>
+  </div>
+
+  <dialog id="projectDialog">
+    <form method="dialog" id="projectForm"><div class="modal-head"><div><p>NEW WORK</p><h2>Create a project</h2></div><button value="cancel">×</button></div>
+      <label>Project name<input name="name" required placeholder="e.g. Spring product launch"></label>
+      <div class="form-row"><label>Owner<input name="owner" required placeholder="Team member"></label><label>Due date<input name="due" type="date" required></label></div>
+      <label>Accent color<select name="color"><option value="plum">Plum</option><option value="blue">Blue</option><option value="orange">Orange</option><option value="green">Green</option></select></label>
+      <div class="modal-actions"><button value="cancel" class="outline-btn">Cancel</button><button value="default" class="primary-btn">Create project</button></div>
+    </form>
+  </dialog>
+  <div id="toast" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>
